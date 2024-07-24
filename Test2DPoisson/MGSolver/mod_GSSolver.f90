@@ -22,12 +22,15 @@ module mod_GSSolver
     type :: GSSolver
         ! store grid quantities
         real(real64), allocatable :: sourceTerm(:), solution(:)
-        integer(int32), allocatable :: black_NESW_indx(:,:), red_NESW_indx(:,:)
-        integer(int32) :: numberBlackNodes, numberRedNodes, matDimension, iterNumber
-        real(real64) :: Residual, coeffX, coeffY, coeffSelf, omega
+        integer(int32), allocatable :: black_NESW_indx(:,:), red_NESW_indx(:,:), restrictionIndx(:,:)
+        integer(int32) :: numberBlackNodes, numberRedNodes, matDimension, iterNumber, numberRestrictionNodes
+        real(real64) :: Residual, coeffX, coeffY, coeffSelf, omega, N_x, N_y
     contains
         procedure, public, pass(self) :: constructPoissonEven
+        procedure, public, pass(self) :: constructRestrictionIndex
         procedure, public, pass(self) :: solveGS
+        procedure, public, pass(self) :: calcResidual
+        procedure, public, pass(self) :: smoothIterations
     end type
 
     interface GSSolver
@@ -95,12 +98,24 @@ contains
         self%numberRedNodes = tempNumRed
         allocate(self%black_NESW_indx(5, self%numberBlackNodes), self%red_NESW_indx(5, self%numberRedNodes))
 
-        ! fill in Dirichlet solution
+        ! fill in Dirichlet solution, and set source terms to 0 at these nodes
         self%solution = 0.0d0
-        if (upperBound == 1)self%solution(matDimension-N_x+2:matDimension-1) = upperPhi
-        if (rightBound == 1) self%solution(2*N_x:matDimension-N_x:N_x) = rightPhi
-        if (lowerBound == 1) self%solution(2:N_x-1) = lowerPhi
-        if (leftBound == 1) self%solution(N_x+1:matDimension-2*N_x + 1:N_x) = leftPhi
+        if (upperBound == 1) then
+            self%solution(matDimension-N_x+2:matDimension-1) = upperPhi
+            self%sourceTerm(matDimension-N_x+1:matDimension) = 0.0d0
+        end if
+        if (rightBound == 1) then
+            self%solution(2*N_x:matDimension-N_x:N_x) = rightPhi
+            self%sourceTerm(N_x:matDimension:N_x) = 0.0d0
+        end if
+        if (lowerBound == 1) then 
+            self%solution(2:N_x-1) = lowerPhi
+            self%sourceTerm(1:N_x) = 0.0d0
+        end if
+        if (leftBound == 1) then 
+            self%solution(N_x+1:matDimension-2*N_x + 1:N_x) = leftPhi
+            self%sourceTerm(1:matDimension-N_x + 1:N_x) = 0.0d0
+        end if
         if (boundaryConditions(1) == 1) then
             if (lowerBound == leftBound) then
                 self%solution(1) = MIN(leftPhi, lowerPhi)
@@ -231,6 +246,29 @@ contains
         
     end subroutine constructPoissonEven
 
+    subroutine constructRestrictionIndex(self, numResNodes, N_x, N_y)
+        class(GSSolver), intent(in out) :: self
+        integer(int32), intent(in) :: numResNodes, N_x, N_y
+        integer :: k, indx_fine, column_fine, row_fine, column_coarse, row_coarse, indx_coarse, i
+        ! Construct Restriction index
+        self%numberRestrictionNodes = numResNodes
+        allocate(self%restrictionIndx(2, self%numberRestrictionNodes))
+        i = 0
+        do k = 1, self%numberBlackNodes ! each coarse node is on fine grid black node
+            indx_fine = self%black_NESW_indx(1, k) ! get index on fine grid
+            row_fine = (indx_fine-1)/N_x + 1 ! row number
+            column_fine = indx_fine - (row_fine - 1)  * N_x ! column number
+            if (MOD(column_fine,2) == 1 .and. MOD(row_fine,2) == 1) then ! Determine if at coarse node
+                i = i + 1
+                row_coarse = (row_fine + 1)/2
+                column_coarse = (column_fine + 1)/2
+                self%restrictionIndx(1,i) = k ! index in black_NESW_indx to point to
+                self%restrictionIndx(2,i) = column_coarse + (row_coarse-1) * (N_x/2 + 1) ! index in coarse array to interpolate to
+            end if
+        end do
+         
+    end subroutine constructRestrictionIndex
+
     subroutine solveGS(self, tol)
         ! Solve GS down to some tolerance
         class(GSSolver), intent(in out) :: self
@@ -277,6 +315,77 @@ contains
 
 
     end subroutine solveGS
+
+    subroutine smoothIterations(self, iterNum)
+        ! Solve GS down to some tolerance
+        class(GSSolver), intent(in out) :: self
+        integer, intent(in) :: iterNum
+        integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i
+       ! No real difference putting openmp within the iteration loop
+        do i = 1, iterNum
+            !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx)
+            !$OMP do
+            do k = 1, self%numberBlackNodes
+                O_indx = self%black_NESW_indx(1,k)
+                N_indx = self%black_NESW_indx(2,k)
+                E_indx = self%black_NESW_indx(3,k)
+                S_indx = self%black_NESW_indx(4,k)
+                W_indx = self%black_NESW_indx(5,k)
+                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            end do
+            !$OMP end do
+            !$OMP do
+            do k = 1, self%numberRedNodes
+                O_indx = self%red_NESW_indx(1,k)
+                N_indx = self%red_NESW_indx(2,k)
+                E_indx = self%red_NESW_indx(3,k)
+                S_indx = self%red_NESW_indx(4,k)
+                W_indx = self%red_NESW_indx(5,k)
+                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            end do
+            !$OMP end do
+            !$OMP end parallel
+        end do
+
+
+
+    end subroutine smoothIterations
+
+    subroutine calcResidual(self)
+        ! For multigrid, caclulate b - Ax for current solution of x, store in sourceTerm
+        ! For Dirichlet boundaries, sourceTerm already 0, so can ignore
+        class(GSSolver), intent(in out) :: self
+        integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k
+        
+        !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx)
+        !$OMP do
+        do k = 1, self%numberBlackNodes
+            O_indx = self%black_NESW_indx(1,k)
+            N_indx = self%black_NESW_indx(2,k)
+            E_indx = self%black_NESW_indx(3,k)
+            S_indx = self%black_NESW_indx(4,k)
+            W_indx = self%black_NESW_indx(5,k)
+            self%sourceTerm(O_indx) = self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY &
+                - (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX - self%solution(O_indx)/self%coeffSelf
+        end do
+        !$OMP end do
+        !$OMP do
+        do k = 1, self%numberRedNodes
+            O_indx = self%red_NESW_indx(1,k)
+            N_indx = self%red_NESW_indx(2,k)
+            E_indx = self%red_NESW_indx(3,k)
+            S_indx = self%red_NESW_indx(4,k)
+            W_indx = self%red_NESW_indx(5,k)
+            self%sourceTerm(O_indx) = self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY &
+                - (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX - self%solution(O_indx)/self%coeffSelf
+        end do
+        !$OMP end do
+        !$OMP end parallel
+
+
+    end subroutine calcResidual
 
 
 end module mod_GSSolver

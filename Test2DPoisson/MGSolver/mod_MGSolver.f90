@@ -16,6 +16,7 @@ module mod_MGSolver
         integer, allocatable :: matDimensions(:), N_x(:), N_y(:)
     contains
         procedure, public, pass(self) :: makeSmootherStages
+        procedure, public, pass(self) :: orthogonalGridRestriction
     end type
 
     interface MGSolver
@@ -53,8 +54,8 @@ contains
         delX_temp = delX
     
         allocate(boundaryConditionsTemp(self%N_x(2) * self%N_y(2)))
-        print *, 'assembling new boundaries and generating new GS_smoothers'
-        do stageIter = 2, self%numberStages
+        print *, 'Assembling new boundaries and generating new GS_smoothers'
+        do stageIter = 2, self%smoothNumber
             delY_temp = delY_temp * 2.0d0
             delX_temp = delX_temp * 2.0d0
             do j = 1, self%N_y(1), 2**(stageIter-1)
@@ -71,8 +72,42 @@ contains
                 delX_temp, delY_temp, NESW_wallBoundaries, NESW_phiValues, boundaryConditionsTemp(1:(self%N_x(stageIter) * self%N_y(stageIter))))
         end do
 
+        do stageIter = 1, self%smoothNumber-1
+            ! get Restriction nodes for finer grids
+            k_temp = self%GS_smoothers(stageIter+1)%numberBlackNodes + self%GS_smoothers(stageIter+1)%numberRedNodes ! number of total non-dirichlet boundaries on coarse grid
+            call self%GS_smoothers(stageIter)%constructRestrictionIndex(k_temp, self%N_x(stageIter), self%N_y(stageIter))
+        end do
+
 
     end subroutine makeSmootherStages
+
+    subroutine orthogonalGridRestriction(self, stageInt)
+        ! Restriction of orthogonal grid to next coarse grid
+        class(MGSolver), intent(in out) :: self
+        integer(int32), intent(in) :: stageInt !stage of finer grid to restrict
+        integer(int32) :: nextStageInt, k, O_indx, N_indx, E_indx, S_indx, W_indx, O_indx_coarse, blackIdx
+        nextStageInt = stageInt+1 
+        ! Each fine node which overlaps coarse node is black, take advantage of that by only going through black nodes
+
+        !$OMP parallel private(blackIdx, O_indx_coarse, O_indx, N_indx, E_indx, S_indx, W_indx)
+        !$OMP do
+        do k = 1, self%GS_smoothers(stageInt)%numberRestrictionNodes
+            blackIdx = self%GS_smoothers(stageInt)%restrictionIndx(1, k) ! index in black_NESW for overlapping fine grid node
+            O_indx_coarse = self%GS_smoothers(stageInt)%restrictionIndx(2, k) ! index in coarse grid
+            O_indx = self%GS_smoothers(stageInt)%black_NESW_indx(1,blackIdx)
+            N_indx = self%GS_smoothers(stageInt)%black_NESW_indx(2,blackIdx)
+            E_indx = self%GS_smoothers(stageInt)%black_NESW_indx(3,blackIdx)
+            S_indx = self%GS_smoothers(stageInt)%black_NESW_indx(4,blackIdx)
+            W_indx = self%GS_smoothers(stageInt)%black_NESW_indx(5,blackIdx)
+            self%GS_smoothers(stageInt+1)%sourceTerm(O_indx_coarse) = 0.5d0 * self%GS_smoothers(stageInt)%sourceTerm(O_indx) + &
+                0.125d0 * (self%GS_smoothers(stageInt)%sourceTerm(N_indx) + self%GS_smoothers(stageInt)%sourceTerm(S_indx) + &
+                self%GS_smoothers(stageInt)%sourceTerm(E_indx) + self%GS_smoothers(stageInt)%sourceTerm(W_indx))
+            ! self%GS_smoothers(stageInt+1)%sourceTerm(O_indx_coarse) = self%GS_smoothers(stageInt)%sourceTerm(O_indx)
+        end do
+        !$OMP end do
+        !$OMP end parallel
+
+    end subroutine orthogonalGridRestriction
 
 
 
