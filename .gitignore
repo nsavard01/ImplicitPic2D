@@ -1,0 +1,7 @@
+*.o
+*.mod
+*.dat
+tmp*
+*.a
+*.pdf
+*.png
