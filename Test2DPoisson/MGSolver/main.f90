@@ -10,12 +10,12 @@ program main
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12
     integer(int32) :: N_x = 141, N_y = 141, numThreads = 6
     type(MGSolver) :: MG_Solver
-    integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages
+    integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate
     integer, allocatable :: boundaryConditions(:)
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
 
-    numberStages = 3
+    numberStages = 2
     omega = 1.6d0
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
@@ -63,11 +63,30 @@ program main
 
     MG_Solver = MGSolver(N_x, N_y, numberStages)
     call MG_Solver%makeSmootherStages(delX, delY, NESW_wallBoundaries, NESW_phiValues, boundaryConditions, omega)
-    MG_Solver%GS_smoothers(3)%sourceTerm = -rho/eps_0
-    call MG_Solver%GS_smoothers(3)%solveGS(1.d-6)
+    !$OMP parallel
+    !$OMP do
+    do i = 1, matDimension
+        if (boundaryConditions(i) /= 1) then
+            MG_Solver%GS_smoothers(1)%sourceTerm(i) = -rho/eps_0
+        end if
+    end do
+    !$OMP end do
+    !$OMP end parallel
+    call system_clock(count_rate = timingRate)
+    call system_clock(startTime)
+    call MG_Solver%GS_smoothers(1)%smoothIterations(2)
+    call system_clock(endTime)
+    print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
+    call MG_Solver%GS_smoothers(1)%calcResidual()
     open(41,file='GSRes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) MG_Solver%GS_smoothers(3)%solution
+    write(41) MG_Solver%GS_smoothers(1)%sourceTerm
     close(41)
+    call MG_Solver%orthogonalGridRestriction(1)
+    open(41,file='GSRes_1.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    write(41) MG_Solver%GS_smoothers(2)%sourceTerm
+    close(41)
+
+
 
 contains
     subroutine checkNodeDivisionMG(N_x, N_y, numberStages)
