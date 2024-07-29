@@ -12,13 +12,15 @@ module mod_MGSolver
 
     type :: MGSolver
         type(GSSolver), allocatable :: GS_smoothers(:)
-        integer :: numberStages, smoothNumber ! number of stages is total, so includes finest and coarsest grid
+        integer :: numberStages, smoothNumber, maxIter, numberSmoothOper, numIter ! number of stages is total, so includes finest and coarsest grid
         integer, allocatable :: matDimensions(:), N_x(:), N_y(:)
-        real(real64) :: residual_0, residualCurrent
+        real(real64) :: residual_0, residualCurrent, stepResidual
     contains
         procedure, public, pass(self) :: makeSmootherStages
         procedure, public, pass(self) :: orthogonalGridRestriction
         procedure, public, pass(self) :: orthogonalGridProlongation
+        procedure, public, pass(self) :: F_V_Cycle
+        procedure, public, pass(self) :: V_Cycle
     end type
 
     interface MGSolver
@@ -27,12 +29,15 @@ module mod_MGSolver
 
 contains
 
-    type(MGSolver) function MGSolver_constructor(N_x, N_y, numberStages) result(self)
+    type(MGSolver) function MGSolver_constructor(N_x, N_y, numberStages, maxIter, numberSmoothOper) result(self)
         ! Construct object, set initial variables
-        integer(int32), intent(in) :: N_x, N_y, numberStages
+        integer(int32), intent(in) :: N_x, N_y, numberStages, maxIter, numberSmoothOper
         integer :: i
         self%numberStages = numberStages
         self%smoothNumber = numberStages
+        self%maxIter = maxIter
+        self%numberSmoothOper = numberSmoothOper
+        self%numIter = 0
         allocate(self%GS_smoothers(self%smoothNumber), self%N_x(numberStages), self%N_y(numberStages))
         do i = 1, self%numberStages
             self%N_x(i) = (N_x + (2**(i-1) - 1))/(2**(i-1))
@@ -173,6 +178,100 @@ contains
         !$OMP end parallel
 
     end subroutine orthogonalGridProlongation
+
+
+    subroutine V_Cycle(self, stepTol, relTol)
+        ! V cycle for multigrid solver
+        class(MGSolver), intent(in out) :: self
+        real(real64), intent(in) :: stepTol, relTol
+        integer(int32) :: stageInt, i
+        
+        self%stepResidual = self%GS_smoothers(1)%smoothIterationsWithRes(self%numberSmoothOper)
+        call self%GS_smoothers(1)%calcResidual()
+        !$OMP parallel workshare
+        self%residualCurrent = SUM(self%GS_smoothers(1)%residual**2)
+        !$OMP end parallel workshare
+        
+        i = 0
+        if ((self%stepResidual > stepTol .and. self%residualCurrent > relTol)) then
+            do i = 1, self%maxIter
+                call self%orthogonalGridRestriction(1)
+                do stageInt = 2, self%numberStages-1
+                    ! Series of smoothers and restriction for each stage
+                    call self%GS_smoothers(stageInt)%smoothIterations(self%numberSmoothOper, .true.)  
+                    call self%GS_smoothers(stageInt)%calcResidual()
+                    call self%orthogonalGridRestriction(stageInt)
+                end do
+                ! Final Solver
+                call self%GS_smoothers(self%numberStages)%solveGS(stepTol)
+                do stageInt = self%numberStages-1, 2, -1
+                    ! Prolongation from each
+                    call self%orthogonalGridProlongation(stageInt)
+                    call self%GS_smoothers(stageInt)%smoothIterations(self%numberSmoothOper, .false.)
+                end do
+                call self%orthogonalGridProlongation(1)
+                self%stepResidual = self%GS_smoothers(1)%smoothIterationsWithRes(self%numberSmoothOper)
+                ! Final Residual calculation
+                call self%GS_smoothers(1)%calcResidual()
+                !$OMP parallel workshare
+                self%residualCurrent = SUM(self%GS_smoothers(1)%residual**2)
+                !$OMP end parallel workshare
+                if (self%stepResidual < stepTol .or. self%residualCurrent < relTol) exit
+            end do
+        end if
+        self%numIter = i
+    end subroutine V_Cycle
+
+    subroutine F_V_Cycle(self, stepTol, relTol)
+        ! first start with full multi-grid grid for good initial guess, then proceed with V-cycles
+        class(MGSolver), intent(in out) :: self
+        real(real64), intent(in) :: stepTol, relTol
+        integer(int32) :: stageInt, j
+        
+        do stageInt = 1, self%numberStages-1
+            ! Reduce the sourceTerm to the lowest grid through series of restrictions, no smoothing
+            !$OMP parallel
+            !$OMP workshare
+            self%GS_smoothers(stageInt)%residual = self%GS_smoothers(stageInt)%sourceTerm
+            !$OMP end workshare
+            !$OMP end parallel
+            call self%orthogonalGridRestriction(stageInt)
+        end do
+
+        ! First solve on coarsest grid
+        call self%GS_smoothers(self%numberStages)%solveGS(stepTol)
+        do j = self%numberStages-1, 2, -1
+            ! j is each stage between coarsest and finest grid to to inverted V-cycle
+            do stageInt = self%numberStages-1, j, -1
+                ! prolongate and smooth up to jth stage
+                call self%orthogonalGridProlongation(stageInt)
+                call self%GS_smoothers(stageInt)%smoothIterations(self%numberSmoothOper, .false.)
+            end do
+            ! when prolongated (with) to j-th stage, calculate residual, restrict to next stage
+            call self%GS_smoothers(j)%calcResidual()
+            call self%orthogonalGridRestriction(j)
+            do stageInt = j+1, self%numberStages-1
+                ! For each lower stage, restrict and recalculate residual
+                call self%GS_smoothers(stageInt)%smoothIterations(self%numberSmoothOper, .true.)  
+                call self%GS_smoothers(stageInt)%calcResidual()
+                call self%orthogonalGridRestriction(stageInt)
+            end do
+            ! Solve at lowest grid
+            call self%GS_smoothers(self%numberStages)%solveGS(stepTol)
+        end do
+        ! Now prolongate all the way to finest grid
+        do j = self%numberStages-1, 2, -1
+            ! Prolongation from each
+            call self%orthogonalGridProlongation(j)
+            call self%GS_smoothers(j)%smoothIterations(2, .false.)
+        end do
+        call self%orthogonalGridProlongation(1)
+        
+        ! No start V_Cycle
+        call self%V_Cycle(stepTol, relTol)
+        self%numIter = self%numIter + 1
+
+    end subroutine F_V_Cycle
 
 
 
