@@ -24,7 +24,7 @@ module mod_GSSolver
         real(real64), allocatable :: sourceTerm(:), solution(:), residual(:)
         integer(int32), allocatable :: black_NESW_indx(:,:), red_NESW_indx(:,:), restrictionIndx(:,:)
         integer(int32) :: numberBlackNodes, numberRedNodes, matDimension, iterNumber, numberRestrictionNodes, numberProlongation2PointNodes, numberProlongation4PointNodes
-        real(real64) :: coeffX, coeffY, coeffSelf, omega, stepResidual
+        real(real64) :: coeffX, coeffY, coeffSelf, omega
     contains
         procedure, public, pass(self) :: constructPoissonEven
         procedure, public, pass(self) :: constructRestrictionIndex
@@ -318,7 +318,7 @@ contains
 
     end subroutine smoothIterations
 
-    subroutine smoothIterationsWithRes(self, iterNum)
+    function smoothIterationsWithRes(self, iterNum) result(Res)
         ! Solve GS down to some tolerance, whilst calculating residual step in solution for last iteration
         ! Used for final stage to determine 
         class(GSSolver), intent(in out) :: self
@@ -383,10 +383,10 @@ contains
         end do
         !$OMP end do
         !$OMP end parallel
-        self%stepResidual = SQRT(Res/(self%numberRedNodes + self%numberBlackNodes))
+        Res = SQRT(Res/(self%numberRedNodes + self%numberBlackNodes))
 
 
-    end subroutine smoothIterationsWithRes
+    end function smoothIterationsWithRes
 
     subroutine calcResidual(self)
         ! For multigrid, caclulate b - Ax for current solution of x, store in sourceTerm
