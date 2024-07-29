@@ -11,22 +11,34 @@ program main
     integer(int32) :: N_x = 141, N_y = 141, numThreads = 6
     type(MGSolver) :: MG_Solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate
+    integer :: upperBound, lowerBound, rightBound, leftBound
     integer, allocatable :: boundaryConditions(:)
+    real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
 
-    numberStages = 2
-    omega = 1.6d0
+    numberStages = 6
+    omega = 1.0d0
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
-    NESW_phiValues(2) = 0.0d0
-    NESW_phiValues(3) = 1000.0d0
+    NESW_phiValues(2) = 1000.0d0
+    NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
+
+    upperPhi = NESW_phiValues(1)
+    rightPhi = NESW_phiValues(2)
+    lowerphi = NESW_phiValues(3)
+    leftPhi = NESW_phiValues(4)
+
+    upperBound = NESW_wallBoundaries(1)
+    rightBound = NESW_wallBoundaries(2)
+    lowerBound = NESW_wallBoundaries(3)
+    leftBound = NESW_wallBoundaries(4)
     
     
     call mkl_set_num_threads(numThreads)
@@ -62,7 +74,59 @@ program main
 
 
     MG_Solver = MGSolver(N_x, N_y, numberStages)
-    call MG_Solver%makeSmootherStages(delX, delY, NESW_wallBoundaries, NESW_phiValues, boundaryConditions, omega)
+    call MG_Solver%makeSmootherStages(delX, delY, NESW_wallBoundaries, boundaryConditions, omega)
+
+    ! Set phi values
+    if (upperBound == 1) then
+        MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+2:matDimension-1) = upperPhi
+    end if
+    if (rightBound == 1) then
+        MG_Solver%GS_smoothers(1)%solution(2*N_x:matDimension-N_x:N_x) = rightPhi
+    end if
+    if (lowerBound == 1) then 
+        MG_Solver%GS_smoothers(1)%solution(2:N_x-1) = lowerPhi
+    end if
+    if (leftBound == 1) then 
+        MG_Solver%GS_smoothers(1)%solution(N_x+1:matDimension-2*N_x + 1:N_x) = leftPhi
+    end if
+    if (boundaryConditions(1) == 1) then
+        if (lowerBound == leftBound) then
+            MG_Solver%GS_smoothers(1)%solution(1) = MIN(leftPhi, lowerPhi)
+        else if (lowerBound == 1) then
+            MG_Solver%GS_smoothers(1)%solution(1) = lowerPhi
+        else 
+            MG_Solver%GS_smoothers(1)%solution(1) = leftBound
+        end if
+    end if
+    if (boundaryConditions(N_x) == 1) then
+        if (lowerBound == rightBound) then
+            MG_Solver%GS_smoothers(1)%solution(N_x) = MIN(rightPhi, lowerPhi)
+        else if (lowerBound == 1) then
+            MG_Solver%GS_smoothers(1)%solution(N_x) = lowerPhi
+        else
+            MG_Solver%GS_smoothers(1)%solution(N_x) = rightPhi
+        end if
+    end if
+    if (boundaryConditions(matDimension-N_x+1) == 1) then
+        if (upperBound == leftBound) then
+            MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = MIN(leftPhi, upperPhi)
+        else if (upperBound == 1) then
+            MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = upperPhi
+        else
+            MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = leftPhi
+        end if
+    end if
+    if (boundaryConditions(matDimension) == 1) then
+        if (upperBound == rightBound) then
+            MG_Solver%GS_smoothers(1)%solution(matDimension) = MIN(rightPhi, upperPhi)
+        else if (upperBound == 1) then
+            MG_Solver%GS_smoothers(1)%solution(matDimension) = upperPhi
+        else
+            MG_Solver%GS_smoothers(1)%solution(matDimension) = rightPhi
+        end if
+    end if
+
+    ! set source Term first stage
     !$OMP parallel
     !$OMP do
     do i = 1, matDimension
@@ -74,16 +138,81 @@ program main
     !$OMP end parallel
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call MG_Solver%GS_smoothers(1)%smoothIterations(2)
+        
+    ! open(41,file='GSRes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(1)%solution
+    ! close(41)
+    call MG_Solver%GS_smoothers(1)%smoothIterationswithRes(2)
+    call MG_Solver%GS_smoothers(1)%calcResidual()
+    MG_Solver%residual_0 = SUM(MG_Solver%GS_smoothers(1)%residual**2)
+    do i = 1, 10
+        call MG_Solver%orthogonalGridRestriction(1)
+        do j = 2, MG_Solver%numberStages-1
+            ! Series of smoothers and restriction for each stage
+            call MG_Solver%GS_smoothers(j)%smoothIterations(2, .true.)  
+            call MG_Solver%GS_smoothers(j)%calcResidual()
+            call MG_Solver%orthogonalGridRestriction(j)
+        end do
+        ! Final Solver
+        call MG_Solver%GS_smoothers(MG_Solver%numberStages)%solveGS(1.d-6)
+        do j = MG_Solver%numberStages-1, 2, -1
+            ! Prolongation from each
+            call MG_Solver%orthogonalGridProlongation(j)
+            call MG_Solver%GS_smoothers(j)%smoothIterations(2, .false.)
+        end do
+        call MG_Solver%orthogonalGridProlongation(1)
+        call MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(2)
+        ! Final Residual calculation
+        call MG_Solver%GS_smoothers(1)%calcResidual()
+        MG_Solver%residualCurrent = SUM(MG_Solver%GS_smoothers(1)%residual**2)
+        print *, MG_Solver%residualCurrent/MG_Solver%residual_0, MG_Solver%GS_smoothers(1)%stepResidual
+        if (MG_Solver%GS_smoothers(1)%stepResidual < 1.0d-6) exit
+    end do
+
+    ! open(41,file='Res_1.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(1)%residual
+    ! close(41)
+    ! call MG_Solver%orthogonalGridRestriction(1)
+    ! open(41,file='Res_1_2.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(2)%sourceTerm
+    ! close(41)
+    ! call MG_Solver%GS_smoothers(2)%smoothIterations(2, .true.)
+    ! call MG_Solver%GS_smoothers(2)%calcResidual()
+    ! open(41,file='Res_2.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(2)%residual
+    ! close(41)
+    ! call MG_Solver%orthogonalGridRestriction(2)
+    ! open(41,file='Res_2_3.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(3)%sourceTerm
+    ! close(41)
+    ! call MG_Solver%GS_smoothers(3)%solveGS(1.d-6)
+    ! open(41,file='Sol_3.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(3)%solution
+    ! close(41)
+    ! call MG_Solver%orthogonalGridProlongation(2)
+    ! open(41,file='Sol_2_3.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(2)%solution
+    ! close(41)
+    ! call MG_Solver%GS_smoothers(2)%smoothIterations(2, .false.)
+    ! open(41,file='Sol_2.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(2)%solution
+    ! close(41)
+    ! call MG_Solver%orthogonalGridProlongation(1)
+    ! call MG_Solver%GS_smoothers(1)%smoothIterations(2, .false.)
+    ! open(41,file='Sol_1.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(1)%solution
+    ! close(41)
+    ! call MG_Solver%GS_smoothers(1)%calcResidual()
+    ! print *, SUM(MG_Solver%GS_smoothers(1)%residual**2)
+
+
+
+
     call system_clock(endTime)
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    call MG_Solver%GS_smoothers(1)%calcResidual()
-    open(41,file='GSRes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) MG_Solver%GS_smoothers(1)%sourceTerm
-    close(41)
-    call MG_Solver%orthogonalGridRestriction(1)
-    open(41,file='GSRes_1.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) MG_Solver%GS_smoothers(2)%sourceTerm
+    print *, 'Took', i, 'iterations'
+    open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    write(41) MG_Solver%GS_smoothers(1)%solution
     close(41)
 
 
