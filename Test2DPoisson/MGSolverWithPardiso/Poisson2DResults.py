@@ -93,8 +93,8 @@ Length = 0.05
 # plt.pcolormesh(grid2DX, grid2DY, np.reshape(GSRes, (numNodes, numNodes), order = 'F'))
 # plt.colorbar()
 
-numNodes = 251
-GSRes = np.fromfile('pardSol.dat')
+numNodes = 1025
+GSRes = np.fromfile('finalSol.dat')
 gridX = np.linspace(0, Length, numNodes)
 gridY = np.linspace(0, Length, numNodes)
 grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
