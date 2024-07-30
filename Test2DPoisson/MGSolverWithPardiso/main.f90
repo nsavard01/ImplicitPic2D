@@ -77,7 +77,7 @@ program main
     MG_Solver = MGSolver(N_x, N_y, numberStages, 50, numberSmoothOper)
     call MG_Solver%makeSmootherStages(delX, delY, NESW_wallBoundaries, boundaryConditions, omega)
 
-    ! Set phi values
+    ! Set phi values finer grid
     if (upperBound == 1) then
         MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+2:matDimension-1) = upperPhi
     end if
@@ -164,7 +164,7 @@ contains
         N_min = 3
         ! what is minimum grid size in X
         temp_min_real = real(N_x + (2**(numberStages-1) - 1))/real(2**(numberStages-1))
-        if (temp_min < N_min) then
+        if (temp_min_real < N_min) then
             print *, 'Number of course nodes in X direction at coarsest grid is less than the minimum!'
             stop
         else if (ABS(temp_min_real - INT(temp_min_real)) > 1.d-8) then
