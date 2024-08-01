@@ -10,7 +10,7 @@ program main
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12
     integer(int32) :: N_x = 1001, N_y = 1001, numThreads = 6
     type(MGSolver) :: MG_Solver
-    integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberSmoothOper
+    integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound
     integer, allocatable :: boundaryConditions(:)
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi
@@ -18,7 +18,10 @@ program main
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
 
     numberStages = 7
-    numberSmoothOper = 3
+    ! More skewed delX and delY, more smoothing operations needed
+    numberPreSmoothOper = 2
+    numberPostSmoothOper = 1
+    numberIter = 200
     omega = 1.0d0
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
@@ -26,7 +29,7 @@ program main
     NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
-    NESW_phiValues(1) = 1000.0d0
+    NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
@@ -74,9 +77,9 @@ program main
     boundaryConditions(matDimension-N_x+1) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
 
 
-    MG_Solver = MGSolver(N_x, N_y, numberStages, 50, numberSmoothOper)
+    MG_Solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
     call MG_Solver%makeSmootherStages(delX, delY, NESW_wallBoundaries, boundaryConditions, omega)
-
+    
     ! Set phi values finer grid
     if (upperBound == 1) then
         MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+2:matDimension-1) = upperPhi
@@ -96,7 +99,7 @@ program main
         else if (lowerBound == 1) then
             MG_Solver%GS_smoothers(1)%solution(1) = lowerPhi
         else 
-            MG_Solver%GS_smoothers(1)%solution(1) = leftBound
+            MG_Solver%GS_smoothers(1)%solution(1) = leftPhi
         end if
     end if
     if (boundaryConditions(N_x) == 1) then
@@ -140,7 +143,6 @@ program main
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
         
-
     call MG_Solver%V_Cycle(1.d-6, 1.d-8)
 
 
@@ -149,6 +151,8 @@ program main
     call system_clock(endTime)
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, 'Took', MG_Solver%numIter, 'iterations'
+
+
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) MG_Solver%GS_smoothers(1)%solution
     close(41)

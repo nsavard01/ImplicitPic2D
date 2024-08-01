@@ -229,13 +229,13 @@ contains
         ! Solve GS down to some tolerance
         class(GSSolver), intent(in out) :: self
         real(real64), intent(in) :: tol
-        real(real64) :: oldSol, Res
+        real(real64) :: Res
         integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k
         Res = 1.0
         self%iterNumber = 0
         do while (Res > tol)
             Res = 0.0d0
-            !$OMP parallel private(oldSol, O_indx, N_indx, E_indx, S_indx, W_indx) reduction(+:Res)
+            !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx) reduction(+:Res)
             !$OMP do
             do k = 1, self%numberBlackNodes
                 O_indx = self%black_NESW_indx(1,k)
@@ -243,12 +243,11 @@ contains
                 E_indx = self%black_NESW_indx(3,k)
                 S_indx = self%black_NESW_indx(4,k)
                 W_indx = self%black_NESW_indx(5,k)
-                oldSol = self%solution(O_indx)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-                Res = Res + (self%solution(O_indx) - oldSol)**2
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+                Res = Res + (self%residual(O_indx) - self%solution(O_indx))**2
             end do
-            !$OMP end do
+            !$OMP end do nowait
             !$OMP do
             do k = 1, self%numberRedNodes
                 O_indx = self%red_NESW_indx(1,k)
@@ -256,14 +255,25 @@ contains
                 E_indx = self%red_NESW_indx(3,k)
                 S_indx = self%red_NESW_indx(4,k)
                 W_indx = self%red_NESW_indx(5,k)
-                oldSol = self%solution(O_indx)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-                Res = Res + (self%solution(O_indx) - oldSol)**2
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+                Res = Res + (self%residual(O_indx) - self%solution(O_indx))**2
+            end do
+            !$OMP end do
+            !$OMP do
+            do k = 1, self%numberBlackNodes
+                O_indx = self%black_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
+            end do
+            !$OMP end do nowait
+            !$OMP do
+            do k = 1, self%numberRedNodes
+                O_indx = self%red_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
             end do
             !$OMP end do
             !$OMP end parallel
-            Res = SQRT(Res/(self%numberBlackNodes + self%numberRedNodes))
+            Res = SQRT(Res/self%matDimension)
             self%iterNumber = self%iterNumber + 1
         end do
 
@@ -295,10 +305,10 @@ contains
                 E_indx = self%black_NESW_indx(3,k)
                 S_indx = self%black_NESW_indx(4,k)
                 W_indx = self%black_NESW_indx(5,k)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
                     (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
             end do
-            !$OMP end do
+            !$OMP end do nowait
             !$OMP do
             do k = 1, self%numberRedNodes
                 O_indx = self%red_NESW_indx(1,k)
@@ -306,8 +316,20 @@ contains
                 E_indx = self%red_NESW_indx(3,k)
                 S_indx = self%red_NESW_indx(4,k)
                 W_indx = self%red_NESW_indx(5,k)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
                     (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            end do
+            !$OMP end do
+            !$OMP do
+            do k = 1, self%numberBlackNodes
+                O_indx = self%black_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
+            end do
+            !$OMP end do nowait
+            !$OMP do
+            do k = 1, self%numberRedNodes
+                O_indx = self%red_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
             end do
             !$OMP end do
             !$OMP end parallel
@@ -323,7 +345,7 @@ contains
         class(GSSolver), intent(in out) :: self
         integer, intent(in) :: iterNum
         integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i
-        real(real64) :: Res, oldSol, Res_0
+        real(real64) :: Res
         ! No real difference putting openmp within the iteration loop
         ! If lower stage need to reset solution to 0
         do i = 1, iterNum-1
@@ -335,10 +357,10 @@ contains
                 E_indx = self%black_NESW_indx(3,k)
                 S_indx = self%black_NESW_indx(4,k)
                 W_indx = self%black_NESW_indx(5,k)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
                     (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
             end do
-            !$OMP end do
+            !$OMP end do nowait
             !$OMP do
             do k = 1, self%numberRedNodes
                 O_indx = self%red_NESW_indx(1,k)
@@ -346,15 +368,27 @@ contains
                 E_indx = self%red_NESW_indx(3,k)
                 S_indx = self%red_NESW_indx(4,k)
                 W_indx = self%red_NESW_indx(5,k)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
                     (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            end do
+            !$OMP end do
+            !$OMP do
+            do k = 1, self%numberBlackNodes
+                O_indx = self%black_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
+            end do
+            !$OMP end do nowait
+            !$OMP do
+            do k = 1, self%numberRedNodes
+                O_indx = self%red_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
             end do
             !$OMP end do
             !$OMP end parallel
         end do
         Res = 0.0d0
         ! Add 
-        !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx, oldSol) reduction(+:Res)
+        !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx) reduction(+:Res)
         !$OMP do
         do k = 1, self%numberBlackNodes
             O_indx = self%black_NESW_indx(1,k)
@@ -362,12 +396,11 @@ contains
             E_indx = self%black_NESW_indx(3,k)
             S_indx = self%black_NESW_indx(4,k)
             W_indx = self%black_NESW_indx(5,k)
-            oldSol = self%solution(O_indx)
-            self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-                (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-            Res = Res + (self%solution(O_indx) - oldSol)**2
+            self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            Res = Res + (self%residual(O_indx) - self%solution(O_indx))**2
         end do
-        !$OMP end do
+        !$OMP end do nowait
         !$OMP do
         do k = 1, self%numberRedNodes
             O_indx = self%red_NESW_indx(1,k)
@@ -375,10 +408,21 @@ contains
             E_indx = self%red_NESW_indx(3,k)
             S_indx = self%red_NESW_indx(4,k)
             W_indx = self%red_NESW_indx(5,k)
-            oldSol = self%solution(O_indx)
-            self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-                (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-            Res = Res + (self%solution(O_indx) - oldSol)**2
+            self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            Res = Res + (self%residual(O_indx) - self%solution(O_indx))**2
+        end do
+        !$OMP end do
+        !$OMP do
+        do k = 1, self%numberBlackNodes
+            O_indx = self%black_NESW_indx(1,k)
+            self%solution(O_indx) = self%residual(O_indx)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedNodes
+            O_indx = self%red_NESW_indx(1,k)
+            self%solution(O_indx) = self%residual(O_indx)
         end do
         !$OMP end do
         !$OMP end parallel

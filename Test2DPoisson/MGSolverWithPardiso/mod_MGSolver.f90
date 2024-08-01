@@ -14,7 +14,7 @@ module mod_MGSolver
     type :: MGSolver
         type(GSSolver), allocatable :: GS_smoothers(:)
         type(pardisoSolver) :: directSolver
-        integer :: numberStages, smoothNumber, maxIter, numberSmoothOper, numIter ! number of stages is total, so includes finest and coarsest grid
+        integer :: numberStages, smoothNumber, maxIter, numberPreSmoothOper, numberPostSmoothOper, numIter ! number of stages is total, so includes finest and coarsest grid
         integer, allocatable :: N_x(:), N_y(:)
         real(real64) :: residual_0, residualCurrent, stepResidual
     contains
@@ -31,14 +31,15 @@ module mod_MGSolver
 
 contains
 
-    type(MGSolver) function MGSolver_constructor(N_x, N_y, numberStages, maxIter, numberSmoothOper) result(self)
+    type(MGSolver) function MGSolver_constructor(N_x, N_y, numberStages, maxIter, numberPreSmoothOper, numberPostSmoothOper) result(self)
         ! Construct object, set initial variables
-        integer(int32), intent(in) :: N_x, N_y, numberStages, maxIter, numberSmoothOper
+        integer(int32), intent(in) :: N_x, N_y, numberStages, maxIter, numberPreSmoothOper, numberPostSmoothOper
         integer :: i
         self%numberStages = numberStages
         self%smoothNumber = numberStages-1 ! number smoothing GS stages (excluse coarsest grid)
         self%maxIter = maxIter
-        self%numberSmoothOper = numberSmoothOper
+        self%numberPreSmoothOper = numberPreSmoothOper
+        self%numberPostSmoothOper = numberPostSmoothOper
         self%numIter = 0
         allocate(self%GS_smoothers(self%smoothNumber), self%N_x(numberStages), self%N_y(numberStages))
         do i = 1, self%numberStages
@@ -111,11 +112,18 @@ contains
         class(MGSolver), intent(in out) :: self
         real(real64), intent(in out) :: lowerSourceTerm(matDimension) ! source term of coarser stage
         integer(int32), intent(in) :: stageInt, matDimension !stage of finer grid to restrict
-        integer(int32) :: nextStageInt, k, O_indx, N_indx, E_indx, S_indx, W_indx, O_indx_coarse, blackIdx
+        integer(int32) :: nextStageInt, k, O_indx, N_indx, E_indx, S_indx, W_indx, O_indx_coarse, blackIdx, NE_indx, NW_indx, SE_indx, SW_indx
+        real(real64) :: weightX, weightY, weightTotal, weightXY
+        integer :: N_x
+        N_x = self%N_x(stageInt)
         nextStageInt = stageInt+1 
         ! Each fine node which overlaps coarse node is black, take advantage of that by only going through black nodes
-
-        !$OMP parallel private(blackIdx, O_indx_coarse, O_indx, N_indx, E_indx, S_indx, W_indx)
+        weightX = SQRT(self%GS_smoothers(stageInt)%coeffX)
+        weightY = SQRT(self%GS_smoothers(stageInt)%coeffY)
+        weightXY = 1.0d0/SQRT(1.0d0/self%GS_smoothers(stageInt)%coeffX + 1.0d0/self%GS_smoothers(stageInt)%coeffY) ! 1/(delX^2 + delY^2)
+        weightTotal = 1.0d0 / (2.0d0 * weightX + 2.0d0 *weightY + 4.0d0 * weightXY)
+        !$OMP parallel private(blackIdx, O_indx_coarse, O_indx, N_indx, E_indx, S_indx, W_indx, & 
+        !$OMP NE_indx, NW_indx, SE_indx, SW_indx)
         !$OMP do
         do k = 1, self%GS_smoothers(stageInt)%numberRestrictionNodes
             blackIdx = self%GS_smoothers(stageInt)%restrictionIndx(1, k) ! index in black_NESW for overlapping fine grid node
@@ -125,10 +133,63 @@ contains
             E_indx = self%GS_smoothers(stageInt)%black_NESW_indx(3,blackIdx)
             S_indx = self%GS_smoothers(stageInt)%black_NESW_indx(4,blackIdx)
             W_indx = self%GS_smoothers(stageInt)%black_NESW_indx(5,blackIdx)
-            lowerSourceTerm(O_indx_coarse) = 0.5d0 * self%GS_smoothers(stageInt)%residual(O_indx) + &
+            if (W_indx == E_indx - 2) then
+                ! Along inner row
+                SW_indx = S_indx-1
+                SE_indx = S_indx + 1
+                NW_indx = N_indx -1
+                NE_indx = N_indx + 1
+            else if (N_indx == S_indx + 2*N_x) then
+                ! Along inner column
+                SW_indx = W_indx - N_x
+                NW_indx = W_indx + N_x
+                SE_indx = E_indx - N_x
+                NE_indx = E_indx + N_x
+            else if (O_indx <= N_x) then
+                ! corner node bottom row
+                if (O_indx == 1) then
+                    ! left bottom
+                    NE_indx = N_indx + 1
+                    NW_indx = NE_indx
+                    SE_indx = NE_indx
+                    SW_indx = NE_indx
+                else
+                    ! right bottom
+                    NW_indx = N_indx -1
+                    NE_indx = NW_indx
+                    SW_indx = NW_indx
+                    SE_indx = NW_indx
+                end if
+            else
+                ! corner node top row
+                if (O_indx == self%GS_smoothers(stageInt)%matDimension) then
+                    ! right top
+                    SW_indx = S_indx-1
+                    SE_indx = SW_indx
+                    NW_indx = SW_indx
+                    NE_indx = SW_indx
+                else
+                    ! left top
+                    SE_indx = S_indx + 1
+                    SW_indx = SE_indx
+                    NE_indx = SE_indx
+                    NW_indx = SE_indx
+                end if
+            end if
+
+            ! lowerSourceTerm(O_indx_coarse) = 0.5d0 * self%GS_smoothers(stageInt)%residual(O_indx) + &
+            !     0.125d0 * (self%GS_smoothers(stageInt)%residual(N_indx) + self%GS_smoothers(stageInt)%residual(S_indx) + &
+            !         self%GS_smoothers(stageInt)%residual(E_indx) + self%GS_smoothers(stageInt)%residual(W_indx))
+            lowerSourceTerm(O_indx_coarse) = 0.25d0 * self%GS_smoothers(stageInt)%residual(O_indx) + &
                 0.125d0 * (self%GS_smoothers(stageInt)%residual(N_indx) + self%GS_smoothers(stageInt)%residual(S_indx) + &
-                self%GS_smoothers(stageInt)%residual(E_indx) + self%GS_smoothers(stageInt)%residual(W_indx))
-            !self%GS_smoothers(stageInt+1)%sourceTerm(O_indx_coarse) = self%GS_smoothers(stageInt)%residual(O_indx)
+                    self%GS_smoothers(stageInt)%residual(E_indx) + self%GS_smoothers(stageInt)%residual(W_indx)) + &
+                    0.0625d0 * (self%GS_smoothers(stageInt)%residual(NE_indx) + self%GS_smoothers(stageInt)%residual(SE_indx) + &
+                    self%GS_smoothers(stageInt)%residual(NW_indx) + self%GS_smoothers(stageInt)%residual(SW_indx))
+            ! lowerSourceTerm(O_indx_coarse) = 0.25d0 * self%GS_smoothers(stageInt)%residual(O_indx) + &
+            !     0.75d0 * weightTotal * ((self%GS_smoothers(stageInt)%residual(N_indx) + self%GS_smoothers(stageInt)%residual(S_indx)) * weightY + &
+            !         (self%GS_smoothers(stageInt)%residual(E_indx) + self%GS_smoothers(stageInt)%residual(W_indx)) * weightX + &
+            !         (self%GS_smoothers(stageInt)%residual(NE_indx) + self%GS_smoothers(stageInt)%residual(SE_indx) + &
+            !         self%GS_smoothers(stageInt)%residual(NW_indx) + self%GS_smoothers(stageInt)%residual(SW_indx)) * weightXY)
         end do
         !$OMP end do
         !$OMP end parallel
@@ -206,7 +267,8 @@ contains
         real(real64), intent(in) :: stepTol, relTol
         integer(int32) :: stageInt, i
         
-        self%stepResidual = self%GS_smoothers(1)%smoothIterationsWithRes(self%numberSmoothOper)
+        self%stepResidual = self%GS_smoothers(1)%smoothIterationsWithRes(self%numberPreSmoothOper)
+        
         call self%GS_smoothers(1)%calcResidual()
         !$OMP parallel workshare
         self%residualCurrent = SUM(self%GS_smoothers(1)%residual**2)
@@ -218,21 +280,21 @@ contains
                 do stageInt = 1, self%smoothNumber-1
                     ! Restrict to next smoother
                     call self%orthogonalGridRestriction(stageInt, self%GS_smoothers(stageInt+1)%sourceTerm, self%GS_smoothers(stageInt+1)%matDimension)
-                    call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberSmoothOper, .true.)  
-                    call self%GS_smoothers(stageInt+1)%calcResidual()
+                    call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper, .true.)
+                    call self%GS_smoothers(stageInt+1)%calcResidual() 
                 end do
                 ! Final Solver restriction and solution, then prolongation
                 call self%orthogonalGridRestriction(self%smoothNumber, self%directSolver%sourceTerm, self%directSolver%matDimension)
                 call self%directSolver%runPardiso()
                 call self%orthogonalGridProlongation(self%smoothNumber, self%directSolver%solution, self%directSolver%matDimension)
-
                 ! prolongation and smoothing to each additional grid
                 do stageInt = self%smoothNumber, 2, -1
                     ! Prolongation from each
-                    call self%GS_smoothers(stageInt)%smoothIterations(self%numberSmoothOper, .false.)
+                    call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper, .false.)
                     call self%orthogonalGridProlongation(stageInt-1, self%GS_smoothers(stageInt)%solution, self%GS_smoothers(stageInt)%matDimension)    
                 end do
-                self%stepResidual = self%GS_smoothers(1)%smoothIterationsWithRes(self%numberSmoothOper)
+
+                self%stepResidual = self%GS_smoothers(1)%smoothIterationsWithRes(self%numberPreSmoothOper)
                 ! Final Residual calculation
                 call self%GS_smoothers(1)%calcResidual()
                 !$OMP parallel workshare
@@ -241,7 +303,7 @@ contains
                 if (self%stepResidual < stepTol .or. self%residualCurrent < relTol) exit
             end do
         end if
-        self%numIter = i
+        self%numIter = i-1
     end subroutine V_Cycle
 
     subroutine F_V_Cycle(self, stepTol, relTol)
@@ -267,21 +329,22 @@ contains
         call self%orthogonalGridRestriction(self%smoothNumber, self%directSolver%sourceTerm, self%directSolver%matDimension)
         ! First solve on coarsest grid
         call self%directSolver%runPardiso()
+        
         do j = self%smoothNumber, 2, -1
             ! j is each stage between coarsest and finest grid to to inverted V-cycle
             call self%orthogonalGridProlongation(self%smoothNumber, self%directSolver%solution, self%directSolver%matDimension)
-            call self%GS_smoothers(self%smoothNumber)%smoothIterations(self%numberSmoothOper, .false.)
+            call self%GS_smoothers(self%smoothNumber)%smoothIterations(self%numberPostSmoothOper, .false.)
             do stageInt = self%smoothNumber-1, j, -1
                 ! prolongate and smooth up to jth stage
                 call self%orthogonalGridProlongation(stageInt, self%GS_smoothers(stageInt+1)%solution, self%GS_smoothers(stageInt+1)%matDimension)
-                call self%GS_smoothers(stageInt)%smoothIterations(self%numberSmoothOper, .false.)
+                call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper, .false.)
             end do
             ! when prolongated (with) to j-th stage, calculate residual, restrict to next stage
             call self%GS_smoothers(j)%calcResidual()
             do stageInt = j, self%smoothNumber-1
                 ! For each lower stage, restrict and recalculate residual
                 call self%orthogonalGridRestriction(stageInt, self%GS_smoothers(stageInt+1)%sourceTerm, self%GS_smoothers(stageInt+1)%matDimension)
-                call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberSmoothOper, .true.)  
+                call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper, .true.)  
                 call self%GS_smoothers(stageInt+1)%calcResidual()
             end do
             ! Restrict lowest grid
@@ -293,8 +356,8 @@ contains
         call self%orthogonalGridProlongation(self%smoothNumber, self%directSolver%solution, self%directSolver%matDimension)
         do stageInt = self%smoothNumber, 2, -1
             ! Prolongation from each
-            call self%GS_smoothers(stageInt)%smoothIterations(self%numberSmoothOper, .false.)
-            call self%orthogonalGridProlongation(stageInt+1, self%GS_smoothers(stageInt)%solution, self%GS_smoothers(stageInt)%matDimension)
+            call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper, .false.)
+            call self%orthogonalGridProlongation(stageInt-1, self%GS_smoothers(stageInt)%solution, self%GS_smoothers(stageInt)%matDimension)
         end do
         
         ! No start V_Cycle
