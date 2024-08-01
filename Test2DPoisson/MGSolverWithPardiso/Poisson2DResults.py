@@ -29,6 +29,7 @@ k_boltz = scipy.constants.k
 e = scipy.constants.e
 
 Length = 0.05
+Width = 0.05
 
 # numNodes = 145
 # GSRes = np.fromfile('Res_1.dat')
@@ -93,11 +94,15 @@ Length = 0.05
 # plt.pcolormesh(grid2DX, grid2DY, np.reshape(GSRes, (numNodes, numNodes), order = 'F'))
 # plt.colorbar()
 
-numNodes = 1025
+numNodes_x = 1025
+numNodes_y = 129
 GSRes = np.fromfile('finalSol.dat')
-gridX = np.linspace(0, Length, numNodes)
-gridY = np.linspace(0, Length, numNodes)
+gridX = np.linspace(0, Length, numNodes_x)
+gridY = np.linspace(0, Width, numNodes_y)
 grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 plt.figure()
-plt.pcolormesh(grid2DX, grid2DY, np.reshape(GSRes, (numNodes, numNodes), order = 'F'))
+plt.pcolormesh(grid2DX, grid2DY, np.reshape(GSRes, (numNodes_x, numNodes_y), order = 'F'))
 plt.colorbar()
+
+
+
