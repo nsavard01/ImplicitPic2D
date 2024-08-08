@@ -8,7 +8,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12
-    integer(int32) :: N_x = 501, N_y = 501, numThreads = 6
+    integer(int32) :: N_x = 1001, N_y = 101, numThreads = 6
     type(MGSolver) :: MG_Solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound
@@ -16,15 +16,17 @@ program main
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
-    real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes
+    real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
     real(real64), allocatable :: resFuture(:), D_vector(:), work(:), solutionCG(:), residualCG(:)
 
-    numberStages = 5
+    numberStages = 7
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 2
-    numberPostSmoothOper = 1
+    numberPreSmoothOper = 5
+    numberPostSmoothOper = 5
     numberIter = 200
     omega = 1.0d0
+    relTol = 1.d-8
+    stepTol = 1.d-6
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
     NESW_wallBoundaries(2) = 2 ! East
@@ -144,12 +146,14 @@ program main
     !$OMP end parallel
 
     allocate(resFuture(matDimension), D_vector(matDimension), work(matDimension), solutionCG(matDimension), residualCG(matDimension))
-
+    i = 0
     !$OMP parallel workshare
     solutionCG = MG_Solver%GS_smoothers(1)%solution
     !$OMP end parallel workshare
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
+
+    !call MG_Solver%MG_Cycle_Solve(stepTol, relTol, 0)
     
     call MG_Solver%GS_smoothers(1)%calcResidual()
     !$OMP parallel workshare
@@ -208,9 +212,8 @@ program main
         !$OMP end parallel workshare
 
         
-
-        print *, 'Relative error:', R2_future/R2_init
-        if (R2_future/R2_init < 1.d-8) then
+        if (R2_future/R2_init < relTol) then
+            print *, 'Exit relative error'
             exit
         end if
 
@@ -219,9 +222,10 @@ program main
         call MG_Solver%GS_smoothers(1)%calcResidual()
         call MG_Solver%V_Cycle()
         solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
-        print *, 'Step error:', solutionRes
-        if (solutionRes < 1.d-6) exit
-
+        if (solutionRes < stepTol) then
+            print *, 'Exit step error'
+            exit
+        end if
         !$OMP parallel workshare
         ! work contains preconditioned residual
         work = MG_Solver%GS_smoothers(1)%solution - solutionCG
