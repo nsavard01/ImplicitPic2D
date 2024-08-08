@@ -23,6 +23,7 @@ module mod_MGSolver
         procedure, public, pass(self) :: orthogonalGridProlongation
         procedure, public, pass(self) :: F_V_Cycle
         procedure, public, pass(self) :: V_Cycle
+        procedure, public, pass(self) :: V_Cycle_Solve
     end type
 
     interface MGSolver
@@ -261,7 +262,7 @@ contains
     end subroutine orthogonalGridProlongation
 
 
-    subroutine V_Cycle(self, stepTol, relTol)
+    subroutine V_Cycle_Solve(self, stepTol, relTol)
         ! V cycle for multigrid solver
         class(MGSolver), intent(in out) :: self
         real(real64), intent(in) :: stepTol, relTol
@@ -277,22 +278,7 @@ contains
         i = 0
         if ((self%stepResidual > stepTol .and. self%residualCurrent > relTol)) then
             do i = 1, self%maxIter
-                do stageInt = 1, self%smoothNumber-1
-                    ! Restrict to next smoother
-                    call self%orthogonalGridRestriction(stageInt, self%GS_smoothers(stageInt+1)%sourceTerm, self%GS_smoothers(stageInt+1)%matDimension)
-                    call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper, .true.)
-                    call self%GS_smoothers(stageInt+1)%calcResidual() 
-                end do
-                ! Final Solver restriction and solution, then prolongation
-                call self%orthogonalGridRestriction(self%smoothNumber, self%directSolver%sourceTerm, self%directSolver%matDimension)
-                call self%directSolver%runPardiso()
-                call self%orthogonalGridProlongation(self%smoothNumber, self%directSolver%solution, self%directSolver%matDimension)
-                ! prolongation and smoothing to each additional grid
-                do stageInt = self%smoothNumber, 2, -1
-                    ! Prolongation from each
-                    call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper, .false.)
-                    call self%orthogonalGridProlongation(stageInt-1, self%GS_smoothers(stageInt)%solution, self%GS_smoothers(stageInt)%matDimension)    
-                end do
+                call self%V_Cycle()
 
                 self%stepResidual = self%GS_smoothers(1)%smoothIterationsWithRes(self%numberPreSmoothOper)
                 ! Final Residual calculation
@@ -304,6 +290,30 @@ contains
             end do
         end if
         self%numIter = i-1
+    end subroutine V_Cycle_Solve
+
+    subroutine V_Cycle(self)
+        ! V cycle for multigrid solver
+        class(MGSolver), intent(in out) :: self
+        integer(int32) :: stageInt
+        
+        do stageInt = 1, self%smoothNumber-1
+            ! Restrict to next smoother
+            call self%orthogonalGridRestriction(stageInt, self%GS_smoothers(stageInt+1)%sourceTerm, self%GS_smoothers(stageInt+1)%matDimension)
+            call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper, .true.)
+            call self%GS_smoothers(stageInt+1)%calcResidual() 
+        end do
+        ! Final Solver restriction and solution, then prolongation
+        call self%orthogonalGridRestriction(self%smoothNumber, self%directSolver%sourceTerm, self%directSolver%matDimension)
+        call self%directSolver%runPardiso()
+        call self%orthogonalGridProlongation(self%smoothNumber, self%directSolver%solution, self%directSolver%matDimension)
+        ! prolongation and smoothing to each additional grid
+        do stageInt = self%smoothNumber, 2, -1
+            ! Prolongation from each
+            call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper, .false.)
+            call self%orthogonalGridProlongation(stageInt-1, self%GS_smoothers(stageInt)%solution, self%GS_smoothers(stageInt)%matDimension)    
+        end do
+
     end subroutine V_Cycle
 
     subroutine F_V_Cycle(self, stepTol, relTol)
@@ -361,7 +371,7 @@ contains
         end do
         
         ! No start V_Cycle
-        call self%V_Cycle(stepTol, relTol)
+        call self%V_Cycle_Solve(stepTol, relTol)
         self%numIter = self%numIter + 1
 
     end subroutine F_V_Cycle
