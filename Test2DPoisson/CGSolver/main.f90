@@ -8,7 +8,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12
-    integer(int32) :: N_x = 1001, N_y = 101, numThreads = 6
+    integer(int32) :: N_x = 1001, N_y = 10001, numThreads = 6
     type(MGSolver) :: MG_Solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound
@@ -19,9 +19,9 @@ program main
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
     real(real64), allocatable :: resFuture(:), D_vector(:), work(:), solutionCG(:), residualCG(:)
 
-    numberStages = 7
+    numberStages = 8
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 5
+    numberPreSmoothOper = 10
     numberPostSmoothOper = 5
     numberIter = 200
     omega = 1.0d0
@@ -29,12 +29,12 @@ program main
     stepTol = 1.d-6
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(2) = 1 ! East
     NESW_wallBoundaries(3) = 2 ! South
-    NESW_wallBoundaries(4) = 1 ! West
+    NESW_wallBoundaries(4) = 2 ! West
 
-    NESW_phiValues(1) = 1000.0d0
-    NESW_phiValues(2) = 0.0d0
+    NESW_phiValues(1) = 0.0d0
+    NESW_phiValues(2) = 1000.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
 
@@ -147,14 +147,20 @@ program main
 
     allocate(resFuture(matDimension), D_vector(matDimension), work(matDimension), solutionCG(matDimension), residualCG(matDimension))
     i = 0
-    !$OMP parallel workshare
+    !$OMP parallel 
+    !$OMP workshare
     solutionCG = MG_Solver%GS_smoothers(1)%solution
-    !$OMP end parallel workshare
+    !$OMP end workshare
+    !$OMP workshare
+    work = 0.0d0
+    !$OMP end workshare
+    !$OMP end parallel
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
 
-    !call MG_Solver%MG_Cycle_Solve(stepTol, relTol, 0)
-    
+    !call MG_Solver%MG_Cycle_Solve(stepTol, relTol, 1)
+   
+    ! ----------- MGCG ---------------------------------
     call MG_Solver%GS_smoothers(1)%calcResidual()
     !$OMP parallel workshare
     residualCG = MG_Solver%GS_smoothers(1)%residual
@@ -163,7 +169,7 @@ program main
     !call MG_Solver%GS_smoothers(1)%smoothIterations(10, .false.)
     call MG_Solver%GS_smoothers(1)%smoothIterations(MG_Solver%numberPreSmoothOper, .false.) 
     call MG_Solver%GS_smoothers(1)%calcResidual()
-    call MG_Solver%V_Cycle()
+    call MG_Solver%F_Cycle()
     solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
     !$OMP parallel
     !$OMP workshare
@@ -220,7 +226,7 @@ program main
         !call MG_Solver%GS_smoothers(1)%smoothIterations(10, .false.)
         call MG_Solver%GS_smoothers(1)%smoothIterations(MG_Solver%numberPreSmoothOper, .false.) 
         call MG_Solver%GS_smoothers(1)%calcResidual()
-        call MG_Solver%V_Cycle()
+        call MG_Solver%F_Cycle()
         solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
         if (solutionRes < stepTol) then
             print *, 'Exit step error'
@@ -246,19 +252,86 @@ program main
     end do
 
 
+    !-------------------- mixed MG and CG ----------------------------
+    ! call MG_Solver%GS_smoothers(1)%calcResidual()
+    ! !$OMP parallel
+    ! !$OMP workshare
+    ! R2_init = SUM(MG_Solver%GS_smoothers(1)%residual**2)
+    ! !$OMP end workshare
+    ! !$OMP end parallel
+    ! call MG_Solver%GS_smoothers(1)%smoothIterations(MG_Solver%numberPreSmoothOper, .false.) 
+    ! call MG_Solver%GS_smoothers(1)%calcResidual()
+    ! call MG_Solver%F_Cycle()
+    ! solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
+    ! call MG_Solver%GS_smoothers(1)%calcResidual()
+    ! !$OMP parallel
+    ! !$OMP workshare
+    ! D_vector = MG_Solver%GS_smoothers(1)%residual
+    ! !$OMP end workshare
+    ! !$OMP workshare
+    ! resProduct_old = SUM(MG_Solver%GS_smoothers(1)%residual**2)
+    ! !$OMP end workshare
+    ! !$OMP end parallel
+    
+    ! do i = 1, numberIter
+    !     call MG_Solver%GS_smoothers(1)%matMult(D_vector, work)
+    !     !$OMP parallel workshare
+    !     alpha = SUM(D_vector * work)
+    !     !$OMP end parallel workshare
+
+    !     alpha = resProduct_old/alpha
+
+    !     !$OMP parallel
+    !     !$OMP workshare
+    !     MG_Solver%GS_smoothers(1)%solution = MG_Solver%GS_smoothers(1)%solution + alpha * D_vector
+    !     !$OMP end workshare
+    !     !$OMP end parallel
+    !     call MG_Solver%GS_smoothers(1)%smoothIterations(MG_Solver%numberPreSmoothOper, .false.) 
+    !     call MG_Solver%GS_smoothers(1)%calcResidual()
+    !     call MG_Solver%F_Cycle()
+    !     solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
+    !     if (solutionRes < stepTol) then
+    !         print *, 'Exit step error'
+    !         exit
+    !     end if
+    !     call MG_Solver%GS_smoothers(1)%calcResidual
+
+    !     !$OMP parallel workshare
+    !     R2_future = SUM(MG_Solver%GS_smoothers(1)%residual**2)
+    !     !$OMP end parallel workshare
+
+        
+    !     if (R2_future/R2_init < relTol) then
+    !         print *, 'Exit relative error'
+    !         exit
+    !     end if
+
+    !     beta = R2_future/resProduct_old
+
+    !     !$OMP parallel workshare
+    !     D_vector = MG_Solver%GS_smoothers(1)%residual + beta * D_vector
+    !     !$OMP end parallel workshare
+
+    !     resProduct_old = R2_future
+
+
+    ! end do
+
+
 
     call system_clock(endTime)
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, 'Took', MG_Solver%numIter, 'MG iterations'
     print *, 'Took', i-1, 'CG iterations'
+    print *, 'solutionRes:', solutionRes
 
-    open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) MG_Solver%GS_smoothers(1)%solution
-    close(41)
+    ! open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(1)%solution
+    ! close(41)
 
-    open(41,file='finalRes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) MG_Solver%GS_smoothers(1)%residual
-    close(41)
+    ! open(41,file='finalRes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    ! write(41) MG_Solver%GS_smoothers(1)%residual
+    ! close(41)
 
 
 

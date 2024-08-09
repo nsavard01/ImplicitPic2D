@@ -115,16 +115,19 @@ contains
         real(real64), intent(in out) :: lowerSourceTerm(matDimension) ! source term of coarser stage
         integer(int32), intent(in) :: stageInt, matDimension !stage of finer grid to restrict
         integer(int32) :: nextStageInt, k, O_indx, N_indx, E_indx, S_indx, W_indx, O_indx_coarse, blackIdx, NE_indx, NW_indx, SE_indx, SW_indx
-        ! real(real64) :: weightX, weightY, weightTotal, weightXY
+        real(real64) :: weightX, weightY, weightTotal, weightXY
         integer :: N_x
         N_x = self%N_x(stageInt)
         nextStageInt = stageInt+1 
         ! Each fine node which overlaps coarse node is black, take advantage of that by only going through black nodes
         ! Weight interpolation does not seem to help, even with uneven delX and delY
-        ! weightX = self%GS_smoothers(stageInt)%coeffX ! 1/delX^2
-        ! weightY = self%GS_smoothers(stageInt)%coeffY ! 1/delY^2
-        ! weightXY = 1.0d0/(1.0d0/self%GS_smoothers(stageInt)%coeffX + 1.0d0/self%GS_smoothers(stageInt)%coeffY) ! 1/(delX^2 + delY^2)
-        ! weightTotal = 1.0d0 / (2.0d0 * weightX + 2.0d0 *weightY + 4.0d0 * weightXY)
+        weightX = SQRT(self%GS_smoothers(stageInt)%coeffX) ! 1/delX
+        weightY = SQRT(self%GS_smoothers(stageInt)%coeffY) ! 1/delY
+        weightXY = 1.0d0/SQRT(1.0d0/self%GS_smoothers(stageInt)%coeffX + 1.0d0/self%GS_smoothers(stageInt)%coeffY) ! 1/sqrt(delX^2 + delY^2)
+        weightTotal = 1.0d0 / (2.0d0 * weightX + 2.0d0 *weightY + 4.0d0 * weightXY)
+        weightX = 0.75d0 * weightX * weightTotal ! Total weight for x dir fine nodes
+        weightY = 0.75d0 * weightY * weightTotal
+        weightXY = 0.75d0 * weightXY * weightTotal
         !$OMP parallel private(blackIdx, O_indx_coarse, O_indx, N_indx, E_indx, S_indx, W_indx, & 
         !$OMP NE_indx, NW_indx, SE_indx, SW_indx)
         !$OMP do
@@ -186,10 +189,10 @@ contains
                     0.0625d0 * (self%GS_smoothers(stageInt)%residual(NE_indx) + self%GS_smoothers(stageInt)%residual(SE_indx) + &
                     self%GS_smoothers(stageInt)%residual(NW_indx) + self%GS_smoothers(stageInt)%residual(SW_indx))
             ! lowerSourceTerm(O_indx_coarse) = 0.25d0 * self%GS_smoothers(stageInt)%residual(O_indx) + &
-            !     0.75d0 * weightTotal * ((self%GS_smoothers(stageInt)%residual(N_indx) + self%GS_smoothers(stageInt)%residual(S_indx)) * weightY + &
+            !     (self%GS_smoothers(stageInt)%residual(N_indx) + self%GS_smoothers(stageInt)%residual(S_indx)) * weightY + &
             !         (self%GS_smoothers(stageInt)%residual(E_indx) + self%GS_smoothers(stageInt)%residual(W_indx)) * weightX + &
             !         (self%GS_smoothers(stageInt)%residual(NE_indx) + self%GS_smoothers(stageInt)%residual(SE_indx) + &
-            !         self%GS_smoothers(stageInt)%residual(NW_indx) + self%GS_smoothers(stageInt)%residual(SW_indx)) * weightXY)
+            !         self%GS_smoothers(stageInt)%residual(NW_indx) + self%GS_smoothers(stageInt)%residual(SW_indx)) * weightXY
         end do
         !$OMP end do
         !$OMP end parallel
@@ -200,7 +203,15 @@ contains
         class(MGSolver), intent(in out) :: self
         integer(int32), intent(in) :: stageInt, matDimension !stage of finer grid to do correction to
         real(real64), intent(in out) :: lowerSolution(matDimension)
+        real(real64) :: weightX, weightY, weightTotal, weightXY
         integer(int32) :: nextStageInt, O_indx,O_indx_coarse, i_coarse, j_coarse, N_x_fine, N_x_coarse
+        weightX = SQRT(self%GS_smoothers(stageInt)%coeffX) ! 1/delX
+        weightY = SQRT(self%GS_smoothers(stageInt)%coeffY) ! 1/delY
+        weightXY = 1.0d0/SQRT(1.0d0/self%GS_smoothers(stageInt)%coeffX + 1.0d0/self%GS_smoothers(stageInt)%coeffY) ! 1/sqrt(delX^2 + delY^2)
+        weightTotal = 1.0d0 / (2.0d0 * weightX + 2.0d0 *weightY + 4.0d0 * weightXY)
+        weightX = 3.0d0 * weightX * weightTotal ! Total weight for x dir fine nodes, mult by 4 for normalization
+        weightY = 3.0d0 * weightY * weightTotal
+        weightXY = 3.0d0 * weightXY * weightTotal
         nextStageInt = stageInt+1 
         N_x_fine = self%N_x(stageInt)
         N_x_coarse = self%N_x(nextStageInt)
@@ -228,6 +239,8 @@ contains
                 ! Average fine nodes between coarse nodes horizontally
                 self%GS_smoothers(stageInt)%solution(O_indx+1) = self%GS_smoothers(stageInt)%solution(O_indx+1) + &
                     0.5d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1))
+                ! self%GS_smoothers(stageInt)%solution(O_indx+1) = self%GS_smoothers(stageInt)%solution(O_indx+1) + &
+                !     weightX * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1))
             end do
         end do
         !$OMP end do nowait
@@ -240,6 +253,8 @@ contains
                 ! Average fine nodes between coarse nodes vertical direction
                 self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) = self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) + &
                     0.5d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+N_x_coarse))
+                ! self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) = self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) + &
+                !     weightY * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+N_x_coarse))
             end do
         end do
         !$OMP end do nowait
@@ -253,6 +268,9 @@ contains
                 self%GS_smoothers(stageInt)%solution(O_indx) =  self%GS_smoothers(stageInt)%solution(O_indx) + &
                     0.25d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1) &
                         + lowerSolution(O_indx_coarse+N_x_coarse) + lowerSolution(O_indx_coarse+N_x_coarse+1))
+                ! self%GS_smoothers(stageInt)%solution(O_indx) =  self%GS_smoothers(stageInt)%solution(O_indx) + &
+                !     weightXY * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1) &
+                !         + lowerSolution(O_indx_coarse+N_x_coarse) + lowerSolution(O_indx_coarse+N_x_coarse+1))
             end do
         end do
         !$OMP end do

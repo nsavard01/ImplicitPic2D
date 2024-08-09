@@ -22,7 +22,7 @@ module mod_GSSolver
         ! store grid quantities
         real(real64), allocatable :: sourceTerm(:), solution(:), residual(:)
         integer(int32), allocatable :: black_NESW_indx(:,:), red_NESW_indx(:,:), restrictionIndx(:,:)
-        integer(int32) :: numberBlackNodes, numberRedNodes, matDimension, iterNumber, numberRestrictionNodes, numberProlongation2PointNodes, numberProlongation4PointNodes
+        integer(int32) :: numberBlackNodes, numberRedNodes, matDimension, iterNumber, numberRestrictionNodes
         real(real64) :: coeffX, coeffY, coeffSelf, omega
     contains
         procedure, public, pass(self) :: constructPoissonEven
