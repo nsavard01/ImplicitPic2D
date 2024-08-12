@@ -3,7 +3,7 @@ CC=mpiifort
 BASE= -O3 -ipo -qopenmp -qmkl -xHost #-xCORE-AVX512 -mt_mpi 
 DEBUG = -qmkl -g -traceback -check all -fp-stack-check -warn all #-traceback -CB -fp-stack-check -warn all -check uninit -check pointers -check output_conversion -check format -check stack -fpe0 -check arg_temp_created -g
 OPT= $(BASE)
-OBJ= main.o mod_MGSolver.o mod_GSSolver.o mod_pardisoSolver.o mod_CSRMAtrix.o
+OBJ= main.o mod_PreCondCGSolver.o mod_MGSolver.o mod_GSSolver.o mod_pardisoSolver.o mod_CSRMAtrix.o
 RM = rm -f
 
 all: clean main
@@ -17,7 +17,10 @@ setDebug:
 main: $(OBJ)
 	$(FC) $(BASE) -o $@ $(OBJ)
 
-main.o: main.f90 mod_MGSolver.o mod_GSSolver.o mod_pardisoSolver.o mod_CSRMAtrix.o
+main.o: main.f90 mod_PreCondCGSolver.o mod_MGSolver.o mod_GSSolver.o mod_pardisoSolver.o mod_CSRMAtrix.o
+	$(FC) $(BASE) -c  -o $@ $<
+
+mod_PreCondCGSolver.o: mod_PreCondCGSolver.f90 mod_MGSolver.o mod_GSSolver.o mod_pardisoSolver.o mod_CSRMAtrix.o
 	$(FC) $(BASE) -c  -o $@ $<
 
 mod_MGSolver.o: mod_MGSolver.f90 mod_GSSolver.o mod_pardisoSolver.o mod_CSRMAtrix.o

@@ -3,12 +3,13 @@
 program main
     use iso_fortran_env, only: int32, real64
     use mod_MGSolver
+    use mod_PreCondCGSolver
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12
     integer(int32) :: N_x = 10001, N_y = 501, numThreads = 6
-    type(MGSolver) :: MG_Solver
+    type(PreCondCGSolver) :: CG_Solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound
     integer, allocatable :: boundaryConditions(:)
@@ -16,7 +17,6 @@ program main
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
-    real(real64), allocatable :: D_vector(:), work(:), solutionCG(:), residualCG(:)
 
     numberStages = 7
     ! More skewed delX and delY, more smoothing operations needed
@@ -80,56 +80,56 @@ program main
     boundaryConditions(matDimension-N_x+1) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
 
 
-    MG_Solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
-    call MG_Solver%makeSmootherStages(delX, delY, NESW_wallBoundaries, boundaryConditions, omega)
+    CG_Solver = PreCondCGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    call CG_Solver%makeSmootherStages(delX, delY, NESW_wallBoundaries, boundaryConditions, omega)
     
     ! Set phi values finer grid
     if (upperBound == 1) then
-        MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+2:matDimension-1) = upperPhi
+        CG_Solver%GS_smoothers(1)%solution(matDimension-N_x+2:matDimension-1) = upperPhi
     end if
     if (rightBound == 1) then
-        MG_Solver%GS_smoothers(1)%solution(2*N_x:matDimension-N_x:N_x) = rightPhi
+        CG_Solver%GS_smoothers(1)%solution(2*N_x:matDimension-N_x:N_x) = rightPhi
     end if
     if (lowerBound == 1) then 
-        MG_Solver%GS_smoothers(1)%solution(2:N_x-1) = lowerPhi
+        CG_Solver%GS_smoothers(1)%solution(2:N_x-1) = lowerPhi
     end if
     if (leftBound == 1) then 
-        MG_Solver%GS_smoothers(1)%solution(N_x+1:matDimension-2*N_x + 1:N_x) = leftPhi
+        CG_Solver%GS_smoothers(1)%solution(N_x+1:matDimension-2*N_x + 1:N_x) = leftPhi
     end if
     if (boundaryConditions(1) == 1) then
         if (lowerBound == leftBound) then
-            MG_Solver%GS_smoothers(1)%solution(1) = MIN(leftPhi, lowerPhi)
+            CG_Solver%GS_smoothers(1)%solution(1) = MIN(leftPhi, lowerPhi)
         else if (lowerBound == 1) then
-            MG_Solver%GS_smoothers(1)%solution(1) = lowerPhi
+            CG_Solver%GS_smoothers(1)%solution(1) = lowerPhi
         else 
-            MG_Solver%GS_smoothers(1)%solution(1) = leftPhi
+            CG_Solver%GS_smoothers(1)%solution(1) = leftPhi
         end if
     end if
     if (boundaryConditions(N_x) == 1) then
         if (lowerBound == rightBound) then
-            MG_Solver%GS_smoothers(1)%solution(N_x) = MIN(rightPhi, lowerPhi)
+            CG_Solver%GS_smoothers(1)%solution(N_x) = MIN(rightPhi, lowerPhi)
         else if (lowerBound == 1) then
-            MG_Solver%GS_smoothers(1)%solution(N_x) = lowerPhi
+            CG_Solver%GS_smoothers(1)%solution(N_x) = lowerPhi
         else
-            MG_Solver%GS_smoothers(1)%solution(N_x) = rightPhi
+            CG_Solver%GS_smoothers(1)%solution(N_x) = rightPhi
         end if
     end if
     if (boundaryConditions(matDimension-N_x+1) == 1) then
         if (upperBound == leftBound) then
-            MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = MIN(leftPhi, upperPhi)
+            CG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = MIN(leftPhi, upperPhi)
         else if (upperBound == 1) then
-            MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = upperPhi
+            CG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = upperPhi
         else
-            MG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = leftPhi
+            CG_Solver%GS_smoothers(1)%solution(matDimension-N_x+1) = leftPhi
         end if
     end if
     if (boundaryConditions(matDimension) == 1) then
         if (upperBound == rightBound) then
-            MG_Solver%GS_smoothers(1)%solution(matDimension) = MIN(rightPhi, upperPhi)
+            CG_Solver%GS_smoothers(1)%solution(matDimension) = MIN(rightPhi, upperPhi)
         else if (upperBound == 1) then
-            MG_Solver%GS_smoothers(1)%solution(matDimension) = upperPhi
+            CG_Solver%GS_smoothers(1)%solution(matDimension) = upperPhi
         else
-            MG_Solver%GS_smoothers(1)%solution(matDimension) = rightPhi
+            CG_Solver%GS_smoothers(1)%solution(matDimension) = rightPhi
         end if
     end if
 
@@ -138,133 +138,124 @@ program main
     !$OMP do
     do i = 1, matDimension
         if (boundaryConditions(i) /= 1) then
-            MG_Solver%GS_smoothers(1)%sourceTerm(i) = -rho/eps_0
+            CG_Solver%GS_smoothers(1)%sourceTerm(i) = -rho/eps_0
         end if
     end do
     !$OMP end do
     !$OMP end parallel
 
-    allocate(D_vector(matDimension), solutionCG(matDimension), residualCG(matDimension))
-    i = 0
-    !$OMP parallel 
-    !$OMP workshare
-    solutionCG = MG_Solver%GS_smoothers(1)%solution
-    !$OMP end workshare
-    !$OMP workshare
-    work = 0.0d0
-    !$OMP end workshare
-    !$OMP end parallel
-    
+    !$OMP parallel workshare
+    CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
+    !$OMP end parallel workshare
+
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-
-    !call MG_Solver%MG_Cycle_Solve(stepTol, relTol, 1)
+    call CG_Solver%solve(stepTol, relTol)
    
     ! ----------- MGCG ---------------------------------
-    call MG_Solver%GS_smoothers(1)%calcResidual()
-    !$OMP parallel workshare
-    residualCG = MG_Solver%GS_smoothers(1)%residual
-    !$OMP end parallel workshare
+    ! call CG_Solver%GS_smoothers(1)%calcResidual()
+    ! !$OMP parallel workshare
+    ! CG_Solver%residual = CG_Solver%GS_smoothers(1)%residual
+    ! !$OMP end parallel workshare
     
-    !call MG_Solver%GS_smoothers(1)%smoothIterations(10, .false.)
-    call MG_Solver%GS_smoothers(1)%smoothIterations(MG_Solver%numberPreSmoothOper, .false.) 
-    call MG_Solver%GS_smoothers(1)%calcResidual()
-    call MG_Solver%F_Cycle()
-    solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
-    !$OMP parallel
-    !$OMP workshare
-    MG_Solver%GS_smoothers(1)%solution = MG_Solver%GS_smoothers(1)%solution - solutionCG
-    !$OMP end workshare
-    !$OMP workshare
-    D_vector = MG_Solver%GS_smoothers(1)%solution
-    !$OMP end workshare
-    !$OMP end parallel
+    ! !call CG_Solver%GS_smoothers(1)%smoothIterations(10, .false.)
+    ! call CG_Solver%GS_smoothers(1)%smoothIterations(CG_Solver%numberPreSmoothOper, .false.) 
+    ! call CG_Solver%GS_smoothers(1)%calcResidual()
+    ! call CG_Solver%F_Cycle()
+    ! solutionRes = CG_Solver%GS_smoothers(1)%smoothIterationsWithRes(CG_Solver%numberPostSmoothOper) 
+    ! !$OMP parallel
+    ! !$OMP workshare
+    ! CG_Solver%GS_smoothers(1)%solution = CG_Solver%GS_smoothers(1)%solution - CG_Solver%solution
+    ! !$OMP end workshare
+    ! !$OMP workshare
+    ! CG_Solver%D_Vector = CG_Solver%GS_smoothers(1)%solution
+    ! !$OMP end workshare
+    ! !$OMP end parallel
     
 
 
-    !$OMP parallel
-    !$OMP workshare
-    R2_init = SUM(residualCG**2)
-    !$OMP end workshare
-    !$OMP workshare
-    resProduct_old = SUM(residualCG * MG_Solver%GS_smoothers(1)%solution)
-    !$OMP end workshare
-    !$OMP end parallel
-    do i = 1, numberIter
-        ! call MG_Solver%GS_smoothers(1)%matMult(D_vector, work)
-        ! !$OMP parallel workshare
-        ! alpha = SUM(D_vector * work)
-        ! !$OMP end parallel workshare
-        alpha = MG_Solver%GS_smoothers(1)%XAX_Mult(D_vector)
+    ! !$OMP parallel
+    ! !$OMP workshare
+    ! R2_init = SUM(CG_Solver%residual**2)
+    ! !$OMP end workshare
+    ! !$OMP workshare
+    ! resProduct_old = SUM(CG_Solver%residual * CG_Solver%GS_smoothers(1)%solution)
+    ! !$OMP end workshare
+    ! !$OMP end parallel
+    ! do i = 1, numberIter
+    !     ! call CG_Solver%GS_smoothers(1)%matMult(CG_Solver%D_Vector, work)
+    !     ! !$OMP parallel workshare
+    !     ! alpha = SUM(CG_Solver%D_Vector * work)
+    !     ! !$OMP end parallel workshare
+    !     alpha = CG_Solver%GS_smoothers(1)%XAX_Mult(CG_Solver%D_Vector)
 
-        alpha = resProduct_old/alpha
+    !     alpha = resProduct_old/alpha
 
-        !$OMP parallel
-        !$OMP workshare
-        solutionCG = solutionCG + alpha * D_vector
-        !$OMP end workshare
-        !$OMP workshare
-        MG_Solver%GS_smoothers(1)%solution = solutionCG
-        !$OMP end workshare
-        !$OMP end parallel
+    !     !$OMP parallel
+    !     !$OMP workshare
+    !     CG_Solver%solution = CG_Solver%solution + alpha * CG_Solver%D_Vector
+    !     !$OMP end workshare
+    !     !$OMP workshare
+    !     CG_Solver%GS_smoothers(1)%solution = CG_Solver%solution
+    !     !$OMP end workshare
+    !     !$OMP end parallel
 
 
-        call MG_Solver%GS_smoothers(1)%calcResidual
-        !$OMP parallel workshare
-        residualCG = MG_Solver%GS_smoothers(1)%residual
-        !$OMP end parallel workshare
+    !     call CG_Solver%GS_smoothers(1)%calcResidual
+    !     !$OMP parallel workshare
+    !     CG_Solver%residual = CG_Solver%GS_smoothers(1)%residual
+    !     !$OMP end parallel workshare
 
-        !$OMP parallel workshare
-        R2_future = SUM(residualCG**2)
-        !$OMP end parallel workshare
+    !     !$OMP parallel workshare
+    !     R2_future = SUM(CG_Solver%residual**2)
+    !     !$OMP end parallel workshare
 
         
-        if (R2_future/R2_init < relTol) then
-            print *, 'Exit relative error'
-            exit
-        end if
+    !     if (R2_future/R2_init < relTol) then
+    !         print *, 'Exit relative error'
+    !         exit
+    !     end if
 
-        !call MG_Solver%GS_smoothers(1)%smoothIterations(10, .false.)
-        call MG_Solver%GS_smoothers(1)%smoothIterations(MG_Solver%numberPreSmoothOper, .false.) 
-        call MG_Solver%GS_smoothers(1)%calcResidual()
-        call MG_Solver%F_Cycle()
-        solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
-        if (solutionRes < stepTol) then
-            print *, 'Exit step error'
-            exit
-        end if
-        !$OMP parallel workshare
-        ! work contains preconditioned residual
-        MG_Solver%GS_smoothers(1)%solution = MG_Solver%GS_smoothers(1)%solution - solutionCG
-        !$OMP end parallel workshare
+    !     !call CG_Solver%GS_smoothers(1)%smoothIterations(10, .false.)
+    !     call CG_Solver%GS_smoothers(1)%smoothIterations(CG_Solver%numberPreSmoothOper, .false.) 
+    !     call CG_Solver%GS_smoothers(1)%calcResidual()
+    !     call CG_Solver%F_Cycle()
+    !     solutionRes = CG_Solver%GS_smoothers(1)%smoothIterationsWithRes(CG_Solver%numberPostSmoothOper) 
+    !     if (solutionRes < stepTol) then
+    !         print *, 'Exit step error'
+    !         exit
+    !     end if
+    !     !$OMP parallel workshare
+    !     ! work contains preconditioned residual
+    !     CG_Solver%GS_smoothers(1)%solution = CG_Solver%GS_smoothers(1)%solution - CG_Solver%solution
+    !     !$OMP end parallel workshare
 
-        !$OMP parallel workshare
-        resProduct_new = SUM(residualCG * MG_Solver%GS_smoothers(1)%solution)
-        !$OMP end parallel workshare
-        beta = resProduct_new/resProduct_old
+    !     !$OMP parallel workshare
+    !     resProduct_new = SUM(CG_Solver%residual * CG_Solver%GS_smoothers(1)%solution)
+    !     !$OMP end parallel workshare
+    !     beta = resProduct_new/resProduct_old
 
-        !$OMP parallel workshare
-        D_vector = MG_Solver%GS_smoothers(1)%solution + beta * D_vector
-        !$OMP end parallel workshare
+    !     !$OMP parallel workshare
+    !     CG_Solver%D_Vector = CG_Solver%GS_smoothers(1)%solution + beta * CG_Solver%D_Vector
+    !     !$OMP end parallel workshare
 
-        resProduct_old = resProduct_new
+    !     resProduct_old = resProduct_new
 
 
-    end do
+    ! end do
 
 
     call system_clock(endTime)
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    print *, 'Took', MG_Solver%numIter, 'MG iterations'
-    print *, 'Took', i-1, 'CG iterations'
-    print *, 'solutionRes:', solutionRes
+    print *, 'Took', CG_Solver%numIter, 'CG iterations'
+    print *, 'Took', i-1, 'main iterations'
 
     ! open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    ! write(41) MG_Solver%GS_smoothers(1)%solution
+    ! write(41) CG_Solver%GS_smoothers(1)%solution
     ! close(41)
 
     ! open(41,file='finalRes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    ! write(41) MG_Solver%GS_smoothers(1)%residual
+    ! write(41) CG_Solver%GS_smoothers(1)%residual
     ! close(41)
 
 

@@ -349,23 +349,13 @@ contains
     end subroutine V_Cycle
 
     subroutine F_Cycle(self)
-        ! first start with full multi-grid grid for good initial guess, then proceed with V-cycles
+        ! first start with full multi-grid grid for good initial guess
         class(MGSolver), intent(in out) :: self
         integer(int32) :: stageInt, j
         
-        ! initialize residual to solve on fine grid (b - Ax) without smoothing
+        ! initialize residual to solve on fine grid (b - Ax)
         ! then restrict all the way to coarsest grid
-        ! For initial solution 0 this is same 
-        ! do stageInt = 1, self%smoothNumber-1
-        !     ! Reduce the sourceTerm to the lowest grid through series of restrictions, no smoothing
-        !     call self%orthogonalGridRestriction(stageInt, self%GS_smoothers(stageInt+1)%sourceTerm, self%GS_smoothers(stageInt+1)%matDimension)
-        !     !$OMP parallel
-        !     !$OMP workshare
-        !     self%GS_smoothers(stageInt+1)%residual = self%GS_smoothers(stageInt+1)%sourceTerm
-        !     !$OMP end workshare
-        !     !$OMP end parallel
-        ! end do
-        ! call self%orthogonalGridRestriction(self%smoothNumber, self%directSolver%sourceTerm, self%directSolver%matDimension)
+        ! works better if restrict residual after smoothing instead of just rho
         do stageInt = 1, self%smoothNumber-1
             ! Restrict to next smoother
             call self%orthogonalGridRestriction(stageInt, self%GS_smoothers(stageInt+1)%sourceTerm, self%GS_smoothers(stageInt+1)%matDimension)
