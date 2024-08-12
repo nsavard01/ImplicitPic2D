@@ -57,7 +57,7 @@ contains
         integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x(1)*self%N_y(1))
         real(real64), intent(in) :: delX, delY, omega
         real(real64) :: delY_temp, delX_temp, NESW_phiValTemp(4)
-        integer :: stageIter, i, j, k_orig, k_temp, j_temp, i_temp, matDimension
+        integer :: stageIter, i, j, k_orig, k_temp, j_temp, i_temp
         integer, allocatable :: boundaryConditionsTemp(:)
 
         ! Construct first stage GS smoother (finest grid)
@@ -87,8 +87,9 @@ contains
 
         do stageIter = 1, self%smoothNumber-1
             ! get Restriction nodes for finer grids
-            k_temp = self%GS_smoothers(stageIter+1)%numberBlackNodes + self%GS_smoothers(stageIter+1)%numberRedNodes ! number of total non-dirichlet boundaries on coarse grid
-            call self%GS_smoothers(stageIter)%constructRestrictionIndex(k_temp, self%N_x(stageIter), self%N_y(stageIter))
+            k_temp = self%GS_smoothers(stageIter+1)%numberBlackInnerNodes + self%GS_smoothers(stageIter+1)%numberRedInnerNodes ! number of total inner nodes on coarse grid
+            j_temp = self%GS_smoothers(stageIter+1)%numberBlackBoundNodes + self%GS_smoothers(stageIter+1)%numberRedBoundNodes ! number of total non-dirichlet boundaries on coarse grid
+            call self%GS_smoothers(stageIter)%constructRestrictionIndex(k_temp, j_temp, self%N_x(stageIter))
         end do
         
         ! Build direct pardiso solver
@@ -100,13 +101,19 @@ contains
         call self%directSolver%initializePardiso(1, 11, 1, 0) ! use default pardiso initialization values
         ! Use directSolver to get final restriction data for final smoother
         k_temp = 0
+        j_temp = 0
         do i = 1, self%directSolver%matDimension
             if (self%directSolver%rowIndex(i+1) - self%directSolver%rowIndex(i) /= 1) then
-                ! Add non-dirichlet nodes
-                k_temp = k_temp + 1
+                if (MOD(i,self%N_x(self%numberStages)) <=1 .or. MOD((i-1)/self%N_x(self%numberStages) + 1,self%N_y(self%numberStages)) <=1 ) then
+                    ! Add boundary nodes
+                    j_temp = j_temp + 1
+                else
+                    ! Add inner nodes
+                    k_temp = k_temp + 1
+                end if
             end if
         end do
-        call self%GS_smoothers(self%smoothNumber)%constructRestrictionIndex(k_temp, self%N_x(self%smoothNumber), self%N_y(self%smoothNumber))
+        call self%GS_smoothers(self%smoothNumber)%constructRestrictionIndex(k_temp, j_temp, self%N_x(self%smoothNumber))
     end subroutine makeSmootherStages
 
     subroutine orthogonalGridRestriction(self, stageInt, lowerSourceTerm, matDimension)
@@ -131,58 +138,47 @@ contains
         !$OMP parallel private(blackIdx, O_indx_coarse, O_indx, N_indx, E_indx, S_indx, W_indx, & 
         !$OMP NE_indx, NW_indx, SE_indx, SW_indx)
         !$OMP do
-        do k = 1, self%GS_smoothers(stageInt)%numberRestrictionNodes
-            blackIdx = self%GS_smoothers(stageInt)%restrictionIndx(1, k) ! index in black_NESW for overlapping fine grid node
-            O_indx_coarse = self%GS_smoothers(stageInt)%restrictionIndx(2, k) ! index in coarse grid
-            O_indx = self%GS_smoothers(stageInt)%black_NESW_indx(1,blackIdx)
-            N_indx = self%GS_smoothers(stageInt)%black_NESW_indx(2,blackIdx)
-            E_indx = self%GS_smoothers(stageInt)%black_NESW_indx(3,blackIdx)
-            S_indx = self%GS_smoothers(stageInt)%black_NESW_indx(4,blackIdx)
-            W_indx = self%GS_smoothers(stageInt)%black_NESW_indx(5,blackIdx)
-            if (W_indx == E_indx - 2) then
-                ! Along inner row
-                SW_indx = S_indx-1
-                SE_indx = S_indx + 1
-                NW_indx = N_indx -1
-                NE_indx = N_indx + 1
-            else if (N_indx == S_indx + 2*N_x) then
-                ! Along inner column
-                SW_indx = W_indx - N_x
-                NW_indx = W_indx + N_x
-                SE_indx = E_indx - N_x
-                NE_indx = E_indx + N_x
-            else if (O_indx <= N_x) then
-                ! corner node bottom row
-                if (O_indx == 1) then
-                    ! left bottom
-                    NE_indx = N_indx + 1
-                    NW_indx = NE_indx
-                    SE_indx = NE_indx
-                    SW_indx = NE_indx
-                else
-                    ! right bottom
-                    NW_indx = N_indx -1
-                    NE_indx = NW_indx
-                    SW_indx = NW_indx
-                    SE_indx = NW_indx
-                end if
-            else
-                ! corner node top row
-                if (O_indx == self%GS_smoothers(stageInt)%matDimension) then
-                    ! right top
-                    SW_indx = S_indx-1
-                    SE_indx = SW_indx
-                    NW_indx = SW_indx
-                    NE_indx = SW_indx
-                else
-                    ! left top
-                    SE_indx = S_indx + 1
-                    SW_indx = SE_indx
-                    NE_indx = SE_indx
-                    NW_indx = SE_indx
-                end if
-            end if
-
+        do k = 1, self%GS_smoothers(stageInt)%numberRestrictionInnerNodes
+            blackIdx = self%GS_smoothers(stageInt)%restrictionInnerIndx(1, k) ! index in black_Indx for overlapping fine grid node
+            O_indx_coarse = self%GS_smoothers(stageInt)%restrictionInnerIndx(2, k) ! index in coarse grid
+            O_indx = self%GS_smoothers(stageInt)%black_InnerIndx(blackIdx) ! overlapping index in fine grid
+            ! calculate fine indices around overlapping index
+            E_indx = O_indx + 1
+            W_indx = O_indx - 1
+            S_indx = O_indx - N_x
+            N_indx = O_indx + N_x
+            NW_indx = N_indx-1
+            NE_indx = N_indx+1
+            SW_indx = S_indx-1
+            SE_indx = S_indx+1
+            ! Interpolate residual to coarse grid
+            lowerSourceTerm(O_indx_coarse) = 0.25d0 * self%GS_smoothers(stageInt)%residual(O_indx) + &
+                0.125d0 * (self%GS_smoothers(stageInt)%residual(N_indx) + self%GS_smoothers(stageInt)%residual(S_indx) + &
+                    self%GS_smoothers(stageInt)%residual(E_indx) + self%GS_smoothers(stageInt)%residual(W_indx)) + &
+                    0.0625d0 * (self%GS_smoothers(stageInt)%residual(NE_indx) + self%GS_smoothers(stageInt)%residual(SE_indx) + &
+                    self%GS_smoothers(stageInt)%residual(NW_indx) + self%GS_smoothers(stageInt)%residual(SW_indx))
+            ! lowerSourceTerm(O_indx_coarse) = 0.25d0 * self%GS_smoothers(stageInt)%residual(O_indx) + &
+            !     (self%GS_smoothers(stageInt)%residual(N_indx) + self%GS_smoothers(stageInt)%residual(S_indx)) * weightY + &
+            !         (self%GS_smoothers(stageInt)%residual(E_indx) + self%GS_smoothers(stageInt)%residual(W_indx)) * weightX + &
+            !         (self%GS_smoothers(stageInt)%residual(NE_indx) + self%GS_smoothers(stageInt)%residual(SE_indx) + &
+            !         self%GS_smoothers(stageInt)%residual(NW_indx) + self%GS_smoothers(stageInt)%residual(SW_indx)) * weightXY
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%GS_smoothers(stageInt)%numberRestrictionBoundNodes
+            blackIdx = self%GS_smoothers(stageInt)%restrictionBoundIndx(1, k) ! index in black_Indx for overlapping fine grid node
+            O_indx_coarse = self%GS_smoothers(stageInt)%restrictionBoundIndx(2, k) ! index in coarse grid
+            O_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(1,blackIdx) ! overlapping index in fine grid
+            ! calculate fine indices around overlapping index
+            NW_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(2,blackIdx)
+            N_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(3,blackIdx)
+            NE_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(4,blackIdx)
+            E_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(5,blackIdx)
+            SE_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(6,blackIdx)
+            S_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(7,blackIdx)
+            SW_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(8,blackIdx)
+            W_indx = self%GS_smoothers(stageInt)%black_NESW_BoundIndx(9,blackIdx)
+            ! Interpolate residual to coarse grid
             lowerSourceTerm(O_indx_coarse) = 0.25d0 * self%GS_smoothers(stageInt)%residual(O_indx) + &
                 0.125d0 * (self%GS_smoothers(stageInt)%residual(N_indx) + self%GS_smoothers(stageInt)%residual(S_indx) + &
                     self%GS_smoothers(stageInt)%residual(E_indx) + self%GS_smoothers(stageInt)%residual(W_indx)) + &
@@ -285,7 +281,7 @@ contains
         real(real64), intent(in) :: stepTol, relTol
         integer(int32), intent(in) :: intSelect
         real(real64) :: initRes
-        integer(int32) :: stageInt, i
+        integer(int32) :: i
         
         call self%GS_smoothers(1)%calcResidual()
         !$OMP parallel workshare

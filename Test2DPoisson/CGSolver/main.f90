@@ -8,7 +8,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12
-    integer(int32) :: N_x = 1001, N_y = 10001, numThreads = 6
+    integer(int32) :: N_x = 10001, N_y = 501, numThreads = 6
     type(MGSolver) :: MG_Solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound
@@ -19,12 +19,12 @@ program main
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
     real(real64), allocatable :: resFuture(:), D_vector(:), work(:), solutionCG(:), residualCG(:)
 
-    numberStages = 8
+    numberStages = 7
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 10
-    numberPostSmoothOper = 5
+    numberPostSmoothOper = 10
     numberIter = 200
-    omega = 1.0d0
+    omega = 1.5d0
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
@@ -33,8 +33,8 @@ program main
     NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 2 ! West
 
-    NESW_phiValues(1) = 0.0d0
-    NESW_phiValues(2) = 1000.0d0
+    NESW_phiValues(1) = 1000.0d0
+    NESW_phiValues(2) = 0.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
 
@@ -155,6 +155,7 @@ program main
     work = 0.0d0
     !$OMP end workshare
     !$OMP end parallel
+    
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
 

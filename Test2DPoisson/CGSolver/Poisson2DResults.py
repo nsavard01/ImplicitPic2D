@@ -95,7 +95,7 @@ Width = 0.05
 # plt.colorbar()
 
 numNodes_x = 1025
-numNodes_y = 1025
+numNodes_y = 129
 GSRes = np.fromfile('finalSol.dat')
 gridX = np.linspace(0, Length, numNodes_x)
 gridY = np.linspace(0, Width, numNodes_y)
@@ -113,7 +113,6 @@ grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 plt.figure()
 plt.pcolormesh(grid2DX, grid2DY, np.reshape(GSRes, (numNodes_x, numNodes_y), order = 'F'))
 plt.colorbar()
-
 
 
 
