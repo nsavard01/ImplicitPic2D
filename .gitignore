@@ -5,4 +5,4 @@ tmp*
 *.a
 *.pdf
 *.png
-*.fuse*
+.fuse*
