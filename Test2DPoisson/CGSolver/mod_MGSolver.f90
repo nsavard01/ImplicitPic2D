@@ -16,7 +16,7 @@ module mod_MGSolver
         type(pardisoSolver) :: directSolver
         integer :: numberStages, smoothNumber, maxIter, numberPreSmoothOper, numberPostSmoothOper, numIter ! number of stages is total, so includes finest and coarsest grid
         integer, allocatable :: N_x(:), N_y(:)
-        real(real64) :: residual_0, residualCurrent, stepResidual
+        real(real64) :: R2_current, stepResidual
     contains
         procedure, public, pass(self) :: makeSmootherStages
         procedure, public, pass(self) :: orthogonalGridRestriction
@@ -291,11 +291,11 @@ contains
         
         call self%GS_smoothers(1)%calcResidual()
         !$OMP parallel workshare
-        self%residualCurrent = SUM(self%GS_smoothers(1)%residual**2)
+        self%R2_current = SUM(self%GS_smoothers(1)%residual**2)
         !$OMP end parallel workshare
         
         i = 0
-        if ((self%stepResidual > stepTol .and. self%residualCurrent/initRes > relTol)) then
+        if ((self%stepResidual > stepTol .and. self%R2_current/initRes > relTol)) then
             do i = 1, self%maxIter
                 if (intSelect == 0) then
                     ! V cycle
@@ -313,9 +313,9 @@ contains
                 ! Final Residual calculation
                 call self%GS_smoothers(1)%calcResidual()
                 !$OMP parallel workshare
-                self%residualCurrent = SUM(self%GS_smoothers(1)%residual**2)
+                self%R2_current = SUM(self%GS_smoothers(1)%residual**2)
                 !$OMP end parallel workshare
-                if (self%residualCurrent/initRes < relTol) then
+                if (self%R2_current/initRes < relTol) then
                     print *, 'Starting residual lowered'
                     exit
                 end if

@@ -27,12 +27,11 @@ module mod_GSSolver
     contains
         procedure, public, pass(self) :: constructPoissonEven
         procedure, public, pass(self) :: constructRestrictionIndex
-        ! procedure, public, pass(self) :: constructProlongationIndex
         procedure, public, pass(self) :: solveGS
         procedure, public, pass(self) :: calcResidual
-        ! procedure, public, pass(self) :: calcPrecondResidual
         procedure, public, pass(self) :: smoothIterations
         procedure, public, pass(self) :: matMult
+        procedure, public, pass(self) :: XAX_Mult
         procedure, public, pass(self) :: smoothIterationsWithRes
     end type
 
@@ -326,6 +325,62 @@ contains
         !$OMP end parallel
          
     end subroutine matMult
+
+    function XAX_Mult(self, x) result(res)
+        ! Use gauss-seidel to calculate x^T * A * x
+        class(GSSolver), intent(in out) :: self
+        real(real64), intent(in) :: x(self%matDimension)
+        integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k
+        real(real64) :: res
+        res = 0.0d0
+        !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx) reduction(+:res)
+        !$OMP do
+        do k = 1, self%numberBlackInnerNodes
+            O_indx = self%black_InnerIndx(k)
+            N_indx = O_indx + self%N_x
+            E_indx = O_indx + 1
+            S_indx = O_indx - self%N_x
+            W_indx = O_indx - 1
+            res = res + x(O_indx) * ((x(N_indx) + x(S_indx)) * self%coeffY &
+               + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberBlackBoundNodes
+            O_indx = self%black_NESW_BoundIndx(1,k)
+            N_indx = self%black_NESW_BoundIndx(3,k)
+            E_indx = self%black_NESW_BoundIndx(5,k)
+            S_indx = self%black_NESW_BoundIndx(7,k)
+            W_indx = self%black_NESW_BoundIndx(9,k)
+            res = res + x(O_indx) * ((x(N_indx) + x(S_indx)) * self%coeffY &
+               + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedInnerNodes
+            O_indx = self%red_InnerIndx(k)
+            N_indx = O_indx + self%N_x
+            E_indx = O_indx + 1
+            S_indx = O_indx - self%N_x
+            W_indx = O_indx - 1
+            res = res + x(O_indx) * ((x(N_indx) + x(S_indx)) * self%coeffY &
+               + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedBoundNodes
+            O_indx = self%red_NESW_BoundIndx(1,k)
+            N_indx = self%red_NESW_BoundIndx(3,k)
+            E_indx = self%red_NESW_BoundIndx(5,k)
+            S_indx = self%red_NESW_BoundIndx(7,k)
+            W_indx = self%red_NESW_BoundIndx(9,k)
+            res = res + x(O_indx) * ((x(N_indx) + x(S_indx)) * self%coeffY &
+               + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf)
+        end do
+        !$OMP end do
+        !$OMP end parallel
+         
+    end function XAX_Mult
 
     subroutine solveGS(self, tol)
         ! Solve GS down to some tolerance
@@ -641,40 +696,6 @@ contains
         !$OMP end parallel
 
     end subroutine calcResidual
-
-    ! subroutine calcPrecondResidual(self)
-    !     ! calculate residual x^k+1 - x^k
-    !     ! This is the same as P^-1 (b-Ax^k), so gives preconditioned residual for Krylov solver
-    !     class(GSSolver), intent(in out) :: self
-    !     integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k
-        
-    !     !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx)
-    !         !$OMP do
-    !     do k = 1, self%numberBlackNodes
-    !         O_indx = self%black_NESW_indx(1,k)
-    !         N_indx = self%black_NESW_indx(2,k)
-    !         E_indx = self%black_NESW_indx(3,k)
-    !         S_indx = self%black_NESW_indx(4,k)
-    !         W_indx = self%black_NESW_indx(5,k)
-    !         self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !             (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega - self%omega * self%solution(O_indx)
-    !     end do
-    !     !$OMP end do
-    !     !$OMP do
-    !     do k = 1, self%numberRedNodes
-    !         O_indx = self%red_NESW_indx(1,k)
-    !         N_indx = self%red_NESW_indx(2,k)
-    !         E_indx = self%red_NESW_indx(3,k)
-    !         S_indx = self%red_NESW_indx(4,k)
-    !         W_indx = self%red_NESW_indx(5,k)
-    !         self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !             (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega - self%omega * self%solution(O_indx)
-    !     end do
-    !     !$OMP end do
-    !     !$OMP end parallel
-
-
-    ! end subroutine calcPrecondResidual
 
 
 end module mod_GSSolver

@@ -3,7 +3,6 @@
 program main
     use iso_fortran_env, only: int32, real64
     use mod_MGSolver
-    use mod_GSSolver
     use omp_lib
     implicit none
 
@@ -17,7 +16,7 @@ program main
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
-    real(real64), allocatable :: resFuture(:), D_vector(:), work(:), solutionCG(:), residualCG(:)
+    real(real64), allocatable :: D_vector(:), work(:), solutionCG(:), residualCG(:)
 
     numberStages = 7
     ! More skewed delX and delY, more smoothing operations needed
@@ -145,7 +144,7 @@ program main
     !$OMP end do
     !$OMP end parallel
 
-    allocate(resFuture(matDimension), D_vector(matDimension), work(matDimension), solutionCG(matDimension), residualCG(matDimension))
+    allocate(D_vector(matDimension), solutionCG(matDimension), residualCG(matDimension))
     i = 0
     !$OMP parallel 
     !$OMP workshare
@@ -174,10 +173,10 @@ program main
     solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
     !$OMP parallel
     !$OMP workshare
-    work = MG_Solver%GS_smoothers(1)%solution - solutionCG
+    MG_Solver%GS_smoothers(1)%solution = MG_Solver%GS_smoothers(1)%solution - solutionCG
     !$OMP end workshare
     !$OMP workshare
-    D_vector = work
+    D_vector = MG_Solver%GS_smoothers(1)%solution
     !$OMP end workshare
     !$OMP end parallel
     
@@ -188,14 +187,15 @@ program main
     R2_init = SUM(residualCG**2)
     !$OMP end workshare
     !$OMP workshare
-    resProduct_old = SUM(residualCG * work)
+    resProduct_old = SUM(residualCG * MG_Solver%GS_smoothers(1)%solution)
     !$OMP end workshare
     !$OMP end parallel
     do i = 1, numberIter
-        call MG_Solver%GS_smoothers(1)%matMult(D_vector, work)
-        !$OMP parallel workshare
-        alpha = SUM(D_vector * work)
-        !$OMP end parallel workshare
+        ! call MG_Solver%GS_smoothers(1)%matMult(D_vector, work)
+        ! !$OMP parallel workshare
+        ! alpha = SUM(D_vector * work)
+        ! !$OMP end parallel workshare
+        alpha = MG_Solver%GS_smoothers(1)%XAX_Mult(D_vector)
 
         alpha = resProduct_old/alpha
 
@@ -235,89 +235,22 @@ program main
         end if
         !$OMP parallel workshare
         ! work contains preconditioned residual
-        work = MG_Solver%GS_smoothers(1)%solution - solutionCG
+        MG_Solver%GS_smoothers(1)%solution = MG_Solver%GS_smoothers(1)%solution - solutionCG
         !$OMP end parallel workshare
 
         !$OMP parallel workshare
-        resProduct_new = SUM(residualCG * work)
+        resProduct_new = SUM(residualCG * MG_Solver%GS_smoothers(1)%solution)
         !$OMP end parallel workshare
         beta = resProduct_new/resProduct_old
 
         !$OMP parallel workshare
-        D_vector = work + beta * D_vector
+        D_vector = MG_Solver%GS_smoothers(1)%solution + beta * D_vector
         !$OMP end parallel workshare
 
         resProduct_old = resProduct_new
 
 
     end do
-
-
-    !-------------------- mixed MG and CG ----------------------------
-    ! call MG_Solver%GS_smoothers(1)%calcResidual()
-    ! !$OMP parallel
-    ! !$OMP workshare
-    ! R2_init = SUM(MG_Solver%GS_smoothers(1)%residual**2)
-    ! !$OMP end workshare
-    ! !$OMP end parallel
-    ! call MG_Solver%GS_smoothers(1)%smoothIterations(MG_Solver%numberPreSmoothOper, .false.) 
-    ! call MG_Solver%GS_smoothers(1)%calcResidual()
-    ! call MG_Solver%F_Cycle()
-    ! solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
-    ! call MG_Solver%GS_smoothers(1)%calcResidual()
-    ! !$OMP parallel
-    ! !$OMP workshare
-    ! D_vector = MG_Solver%GS_smoothers(1)%residual
-    ! !$OMP end workshare
-    ! !$OMP workshare
-    ! resProduct_old = SUM(MG_Solver%GS_smoothers(1)%residual**2)
-    ! !$OMP end workshare
-    ! !$OMP end parallel
-    
-    ! do i = 1, numberIter
-    !     call MG_Solver%GS_smoothers(1)%matMult(D_vector, work)
-    !     !$OMP parallel workshare
-    !     alpha = SUM(D_vector * work)
-    !     !$OMP end parallel workshare
-
-    !     alpha = resProduct_old/alpha
-
-    !     !$OMP parallel
-    !     !$OMP workshare
-    !     MG_Solver%GS_smoothers(1)%solution = MG_Solver%GS_smoothers(1)%solution + alpha * D_vector
-    !     !$OMP end workshare
-    !     !$OMP end parallel
-    !     call MG_Solver%GS_smoothers(1)%smoothIterations(MG_Solver%numberPreSmoothOper, .false.) 
-    !     call MG_Solver%GS_smoothers(1)%calcResidual()
-    !     call MG_Solver%F_Cycle()
-    !     solutionRes = MG_Solver%GS_smoothers(1)%smoothIterationsWithRes(MG_Solver%numberPostSmoothOper) 
-    !     if (solutionRes < stepTol) then
-    !         print *, 'Exit step error'
-    !         exit
-    !     end if
-    !     call MG_Solver%GS_smoothers(1)%calcResidual
-
-    !     !$OMP parallel workshare
-    !     R2_future = SUM(MG_Solver%GS_smoothers(1)%residual**2)
-    !     !$OMP end parallel workshare
-
-        
-    !     if (R2_future/R2_init < relTol) then
-    !         print *, 'Exit relative error'
-    !         exit
-    !     end if
-
-    !     beta = R2_future/resProduct_old
-
-    !     !$OMP parallel workshare
-    !     D_vector = MG_Solver%GS_smoothers(1)%residual + beta * D_vector
-    !     !$OMP end parallel workshare
-
-    !     resProduct_old = R2_future
-
-
-    ! end do
-
 
 
     call system_clock(endTime)
