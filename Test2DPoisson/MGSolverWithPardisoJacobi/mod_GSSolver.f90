@@ -1,6 +1,5 @@
 module mod_GSSolver
     use iso_fortran_env, only: int32, int64, real64
-    use ieee_arithmetic
     use omp_lib
     implicit none
 
@@ -21,15 +20,6 @@ module mod_GSSolver
 
     type :: GSSolver
         ! store grid quantities
-<<<<<<< HEAD
-        real(real64), allocatable :: sourceTerm(:), solution(:)
-        integer(int32), allocatable :: black_NESW_indx(:,:), red_NESW_indx(:,:)
-        integer(int32) :: numberBlackNodes, numberRedNodes, matDimension, iterNumber
-        real(real64) :: Residual, coeffX, coeffY, coeffSelf, omega
-    contains
-        procedure, public, pass(self) :: constructPoissonEven
-        procedure, public, pass(self) :: solveGS
-=======
         real(real64), allocatable :: sourceTerm(:), solution(:), residual(:)
         integer(int32), allocatable :: black_NESW_indx(:,:), red_NESW_indx(:,:), restrictionIndx(:,:)
         integer(int32) :: numberBlackNodes, numberRedNodes, matDimension, iterNumber, numberRestrictionNodes, numberProlongation2PointNodes, numberProlongation4PointNodes
@@ -42,7 +32,6 @@ module mod_GSSolver
         procedure, public, pass(self) :: calcResidual
         procedure, public, pass(self) :: smoothIterations
         procedure, public, pass(self) :: smoothIterationsWithRes
->>>>>>> test1
     end type
 
     interface GSSolver
@@ -59,20 +48,11 @@ contains
         self%Residual = 0
     end function GSSolver_constructor
 
-<<<<<<< HEAD
-    subroutine constructPoissonEven(self, N_x, N_y, delX, delY, NESW_wallBoundaries, NESW_phiValues, boundaryConditions)
-        class(GSSolver), intent(in out) :: self
-        integer(int32), intent(in) :: N_x, N_y, NESW_wallBoundaries(4), boundaryConditions(N_x*N_y)
-        real(real64), intent(in) :: NESW_phiValues(4), delX, delY
-        integer :: matDimension, upperBound, lowerBound, rightBound, leftBound
-        real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi
-=======
     subroutine constructPoissonEven(self, N_x, N_y, delX, delY, NESW_wallBoundaries, boundaryConditions)
         class(GSSolver), intent(in out) :: self
         integer(int32), intent(in) :: N_x, N_y, NESW_wallBoundaries(4), boundaryConditions(N_x*N_y)
         real(real64), intent(in) :: delX, delY
         integer :: matDimension, upperBound, lowerBound, rightBound, leftBound
->>>>>>> test1
         integer :: i, j, k, tempNumRed, tempNumBlack
         matDimension = N_x * N_y
         self%matDimension = matDimension
@@ -82,22 +62,12 @@ contains
         lowerBound = NESW_wallBoundaries(3)
         leftBound = NESW_wallBoundaries(4)
 
-<<<<<<< HEAD
-        upperPhi = NESW_phiValues(1)
-        rightPhi = NESW_phiValues(2)
-        lowerphi = NESW_phiValues(3)
-        leftPhi = NESW_phiValues(4)
-=======
->>>>>>> test1
 
         self%coeffY = 1.0d0 / delY**2
         self%coeffX = 1.0d0 / delX**2
         self%coeffSelf = -2.0d0 * (1.0d0 / delX**2 + 1.0d0/ delY**2)
         self%coeffSelf = 1.0d0 / self%coeffSelf
 
-<<<<<<< HEAD
-        allocate(self%sourceTerm(matDimension), self%solution(matDimension))
-=======
         allocate(self%sourceTerm(matDimension), self%solution(matDimension), self%residual(matDimension))
         ! Set source terms and solutions to 0
         
@@ -113,7 +83,6 @@ contains
         !$OMP end workshare
         !$OMP end parallel
 
->>>>>>> test1
         tempNumRed = 0
         tempNumBlack = 0
         ! Count number red and black nodes
@@ -139,51 +108,6 @@ contains
         self%numberRedNodes = tempNumRed
         allocate(self%black_NESW_indx(5, self%numberBlackNodes), self%red_NESW_indx(5, self%numberRedNodes))
 
-<<<<<<< HEAD
-        ! fill in Dirichlet solution
-        self%solution = 0.0d0
-        if (upperBound == 1)self%solution(matDimension-N_x+2:matDimension-1) = upperPhi
-        if (rightBound == 1) self%solution(2*N_x:matDimension-N_x:N_x) = rightPhi
-        if (lowerBound == 1) self%solution(2:N_x-1) = lowerPhi
-        if (leftBound == 1) self%solution(N_x+1:matDimension-2*N_x + 1:N_x) = leftPhi
-        if (boundaryConditions(1) == 1) then
-            if (lowerBound == leftBound) then
-                self%solution(1) = MIN(leftPhi, lowerPhi)
-            else if (lowerBound == 1) then
-                self%solution(1) = lowerPhi
-            else 
-                self%solution(1) = leftBound
-            end if
-        end if
-        if (boundaryConditions(N_x) == 1) then
-            if (lowerBound == rightBound) then
-                self%solution(N_x) = MIN(rightPhi, lowerPhi)
-            else if (lowerBound == 1) then
-                self%solution(N_x) = lowerPhi
-            else
-                self%solution(N_x) = rightPhi
-            end if
-        end if
-        if (boundaryConditions(matDimension-N_x+1) == 1) then
-            if (upperBound == leftBound) then
-                self%solution(matDimension-N_x+1) = MIN(leftPhi, upperPhi)
-            else if (upperBound == 1) then
-                self%solution(matDimension-N_x+1) = upperPhi
-            else
-                self%solution(matDimension-N_x+1) = leftPhi
-            end if
-        end if
-        if (boundaryConditions(matDimension) == 1) then
-            if (upperBound == rightBound) then
-                self%solution(matDimension) = MIN(rightPhi, upperPhi)
-            else if (upperBound == 1) then
-                self%solution(matDimension) = upperPhi
-            else
-                self%solution(matDimension) = rightPhi
-            end if
-        end if
-=======
->>>>>>> test1
 
         i = 0
         ! Fill black index array
@@ -278,8 +202,6 @@ contains
         
     end subroutine constructPoissonEven
 
-<<<<<<< HEAD
-=======
     subroutine constructRestrictionIndex(self, numResNodes, N_x, N_y)
         class(GSSolver), intent(in out) :: self
         integer(int32), intent(in) :: numResNodes, N_x, N_y
@@ -303,18 +225,17 @@ contains
          
     end subroutine constructRestrictionIndex
 
->>>>>>> test1
     subroutine solveGS(self, tol)
         ! Solve GS down to some tolerance
         class(GSSolver), intent(in out) :: self
         real(real64), intent(in) :: tol
-        real(real64) :: oldSol, Res
+        real(real64) :: Res
         integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k
         Res = 1.0
         self%iterNumber = 0
         do while (Res > tol)
             Res = 0.0d0
-            !$OMP parallel private(oldSol, O_indx, N_indx, E_indx, S_indx, W_indx) reduction(+:Res)
+            !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx) reduction(+:Res)
             !$OMP do
             do k = 1, self%numberBlackNodes
                 O_indx = self%black_NESW_indx(1,k)
@@ -322,12 +243,11 @@ contains
                 E_indx = self%black_NESW_indx(3,k)
                 S_indx = self%black_NESW_indx(4,k)
                 W_indx = self%black_NESW_indx(5,k)
-                oldSol = self%solution(O_indx)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-                Res = Res + (self%solution(O_indx) - oldSol)**2
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+                Res = Res + (self%residual(O_indx) - self%solution(O_indx))**2
             end do
-            !$OMP end do
+            !$OMP end do nowait
             !$OMP do
             do k = 1, self%numberRedNodes
                 O_indx = self%red_NESW_indx(1,k)
@@ -335,27 +255,32 @@ contains
                 E_indx = self%red_NESW_indx(3,k)
                 S_indx = self%red_NESW_indx(4,k)
                 W_indx = self%red_NESW_indx(5,k)
-                oldSol = self%solution(O_indx)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-                Res = Res + (self%solution(O_indx) - oldSol)**2
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                    (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+                Res = Res + (self%residual(O_indx) - self%solution(O_indx))**2
+            end do
+            !$OMP end do
+            !$OMP do
+            do k = 1, self%numberBlackNodes
+                O_indx = self%black_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
+            end do
+            !$OMP end do nowait
+            !$OMP do
+            do k = 1, self%numberRedNodes
+                O_indx = self%red_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
             end do
             !$OMP end do
             !$OMP end parallel
             Res = SQRT(Res/self%matDimension)
             self%iterNumber = self%iterNumber + 1
         end do
-<<<<<<< HEAD
-        print *, 'took', self%iterNumber, 'iterations'
-=======
->>>>>>> test1
 
 
 
     end subroutine solveGS
 
-<<<<<<< HEAD
-=======
     subroutine smoothIterations(self, iterNum, resetBool)
         ! Solve GS down with a certain amount of iterations
         class(GSSolver), intent(in out) :: self
@@ -380,10 +305,10 @@ contains
                 E_indx = self%black_NESW_indx(3,k)
                 S_indx = self%black_NESW_indx(4,k)
                 W_indx = self%black_NESW_indx(5,k)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
                     (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
             end do
-            !$OMP end do
+            !$OMP end do nowait
             !$OMP do
             do k = 1, self%numberRedNodes
                 O_indx = self%red_NESW_indx(1,k)
@@ -391,8 +316,20 @@ contains
                 E_indx = self%red_NESW_indx(3,k)
                 S_indx = self%red_NESW_indx(4,k)
                 W_indx = self%red_NESW_indx(5,k)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
                     (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            end do
+            !$OMP end do
+            !$OMP do
+            do k = 1, self%numberBlackNodes
+                O_indx = self%black_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
+            end do
+            !$OMP end do nowait
+            !$OMP do
+            do k = 1, self%numberRedNodes
+                O_indx = self%red_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
             end do
             !$OMP end do
             !$OMP end parallel
@@ -408,7 +345,7 @@ contains
         class(GSSolver), intent(in out) :: self
         integer, intent(in) :: iterNum
         integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i
-        real(real64) :: Res, oldSol
+        real(real64) :: Res
         ! No real difference putting openmp within the iteration loop
         ! If lower stage need to reset solution to 0
         do i = 1, iterNum-1
@@ -420,10 +357,10 @@ contains
                 E_indx = self%black_NESW_indx(3,k)
                 S_indx = self%black_NESW_indx(4,k)
                 W_indx = self%black_NESW_indx(5,k)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
                     (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
             end do
-            !$OMP end do
+            !$OMP end do nowait
             !$OMP do
             do k = 1, self%numberRedNodes
                 O_indx = self%red_NESW_indx(1,k)
@@ -431,15 +368,27 @@ contains
                 E_indx = self%red_NESW_indx(3,k)
                 S_indx = self%red_NESW_indx(4,k)
                 W_indx = self%red_NESW_indx(5,k)
-                self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
                     (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            end do
+            !$OMP end do
+            !$OMP do
+            do k = 1, self%numberBlackNodes
+                O_indx = self%black_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
+            end do
+            !$OMP end do nowait
+            !$OMP do
+            do k = 1, self%numberRedNodes
+                O_indx = self%red_NESW_indx(1,k)
+                self%solution(O_indx) = self%residual(O_indx)
             end do
             !$OMP end do
             !$OMP end parallel
         end do
         Res = 0.0d0
         ! Add 
-        !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx, oldSol) reduction(+:Res)
+        !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx) reduction(+:Res)
         !$OMP do
         do k = 1, self%numberBlackNodes
             O_indx = self%black_NESW_indx(1,k)
@@ -447,12 +396,11 @@ contains
             E_indx = self%black_NESW_indx(3,k)
             S_indx = self%black_NESW_indx(4,k)
             W_indx = self%black_NESW_indx(5,k)
-            oldSol = self%solution(O_indx)
-            self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-                (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-            Res = Res + (self%solution(O_indx) - oldSol)**2
+            self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            Res = Res + (self%residual(O_indx) - self%solution(O_indx))**2
         end do
-        !$OMP end do
+        !$OMP end do nowait
         !$OMP do
         do k = 1, self%numberRedNodes
             O_indx = self%red_NESW_indx(1,k)
@@ -460,10 +408,21 @@ contains
             E_indx = self%red_NESW_indx(3,k)
             S_indx = self%red_NESW_indx(4,k)
             W_indx = self%red_NESW_indx(5,k)
-            oldSol = self%solution(O_indx)
-            self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-                (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-            Res = Res + (self%solution(O_indx) - oldSol)**2
+            self%residual(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
+                (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
+            Res = Res + (self%residual(O_indx) - self%solution(O_indx))**2
+        end do
+        !$OMP end do
+        !$OMP do
+        do k = 1, self%numberBlackNodes
+            O_indx = self%black_NESW_indx(1,k)
+            self%solution(O_indx) = self%residual(O_indx)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedNodes
+            O_indx = self%red_NESW_indx(1,k)
+            self%solution(O_indx) = self%residual(O_indx)
         end do
         !$OMP end do
         !$OMP end parallel
@@ -506,6 +465,5 @@ contains
 
     end subroutine calcResidual
 
->>>>>>> test1
 
 end module mod_GSSolver
