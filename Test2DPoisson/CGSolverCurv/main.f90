@@ -3,12 +3,15 @@
 program main
     use iso_fortran_env, only: int32, real64
     use mod_GSSolver
+    use mod_pardisoSolver
+    use mod_CSRMAtrix
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 21, N_y = 101, numThreads = 6
+    integer(int32) :: N_x = 101, N_y = 101, numThreads = 6
     type(GSSolver) :: solver
+    type(pardisoSolver) :: directSolver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound
     integer, allocatable :: boundaryConditions(:, :)
@@ -16,12 +19,12 @@ program main
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
-    real(real64), allocatable :: diffX(:), diffY(:)
+    real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
     logical :: makeX
 
     
     
-    numberStages = 1
+    numberStages = 2
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 10
     numberPostSmoothOper = 10
@@ -54,7 +57,7 @@ program main
     call mkl_set_num_threads(numThreads)
     call omp_set_num_threads(numThreads)
     call checkNodeDivisionMG(N_x, N_y, numberStages)
-    allocate(diffX(N_x-1), diffY(N_y-1))
+    allocate(diffX(N_x-1), diffY(N_y-1), test((N_x-1)/2 +1, (N_y-1)/2 + 1))
     delX = 0.01d0 * Length/real(N_x-1)
     delY = 0.01d0 * Width/real(N_y-1)
     makeX = .false.
@@ -145,7 +148,10 @@ program main
     end if
 
 
-    
+    directSolver = pardisoSolver(N_x * N_y)
+    call buildCurvGridOrthogonalPoissonMatrix(N_x, N_y, diffX, diffY &
+            , NESW_wallBoundaries, NESW_phiValues, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
+    call directSolver%initializePardiso(1, 11, 1, 0) ! use default pardiso initialization values
     ! ! set source Term first stage
     !$OMP parallel
     !$OMP do collapse(2)
@@ -153,13 +159,16 @@ program main
         do i = 1, N_x
             if (boundaryConditions(i,j) /= 1) then
                 solver%sourceTerm(i,j) = -rho/eps_0
+                k = (j-1) * N_x + i
+                directSolver%sourceTerm(k) = -rho/eps_0
             end if
         end do
     end do
     !$OMP end do
     !$OMP end parallel
-
     
+    test = 0.0d0
+    call solver%constructRestrictionIndex()
 
     ! !$OMP parallel workshare
     ! CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
@@ -167,15 +176,23 @@ program main
 
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
+    call directSolver%runPardiso()
     call solver%solveGS(stepTol)
-    !call CG_Solver%solve(stepTol, relTol)
-
-
     call system_clock(endTime)
+    call restriction(solver, test)
+    open(41,file='test.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    write(41) test
+    close(41)
+
+    
     print *, 'took', solver%iterNumber
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
 
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    write(41) directSolver%solution
+    close(41)
+    call solver%calcResidual()
+    open(41,file='finalRes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) solver%solution
     close(41)
     ! print *, 'Took', CG_Solver%numIter, 'CG iterations'
@@ -258,6 +275,76 @@ contains
         end if
 
     end subroutine createCurvGrid
+
+    subroutine restriction(solver, X)
+        ! Check to make sure N_x and N_y is divisible by however many stages in multigrid we want
+        type(GSSolver), intent(in) :: solver
+        real(real64), intent(in out) :: X(:,:)
+        real(real64) :: a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S
+        integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, blackIdx
+        !$OMP parallel private(blackIdx, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, &
+        !$OMP& a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S)
+        !$OMP do
+        do k = 1, solver%numberRestrictionInnerNodes
+            blackIdx = solver%restrictionInnerIndx(k) ! index in black_Indx for overlapping fine grid node
+            i_fine = solver%black_InnerIndx(1, blackIdx) ! overlapping index in fine grid
+            j_fine = solver%black_InnerIndx(2, blackIdx) ! overlapping index in fine grid
+            C_N = solver%matCoeffsInnerBlack(2, blackIdx)
+            C_E = solver%matCoeffsInnerBlack(3, blackIdx)
+            C_S = solver%matCoeffsInnerBlack(4, blackIdx)
+            C_W = solver%matCoeffsInnerBlack(5, blackIdx)
+            ! calculate fine indices around overlapping index
+            i_coarse = (i_fine + 1)/2
+            j_coarse = (j_fine + 1)/2
+            N_indx = j_fine+1
+            E_indx = i_fine+1
+            S_indx = j_fine-1
+            W_indx = i_fine-1
+            ! get weight coefficients in each direction
+            a_N = C_N/(C_N + C_S)
+            a_S = C_S/(C_N + C_S)
+            a_E = C_E/(C_E + C_W)
+            a_W = C_W/(C_E + C_W)
+            ! Interpolate residual to coarse grid
+            X(i_coarse, j_coarse) = 0.25d0 * (solver%solution(i_fine, j_fine) + &
+            solver%solution(E_indx, j_fine) * a_E + solver%solution(W_indx, j_fine) * a_W +  &
+            solver%solution(i_fine, N_indx) * a_N + solver%solution(i_fine, S_indx) * a_S + &
+            solver%solution(E_indx, N_indx) * a_E * a_N + solver%solution(E_indx, S_indx) * a_E * a_S + &
+            solver%solution(W_indx, N_indx) * a_W * a_N + solver%solution(W_indx, S_indx) * a_W * a_S)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, solver%numberRestrictionBoundNodes
+            blackIdx = solver%restrictionBoundIndx(k) ! index in black_Indx for overlapping fine grid node
+            i_fine = solver%black_NESW_BoundIndx(1, blackIdx) ! overlapping index in fine grid
+            j_fine = solver%black_NESW_BoundIndx(2, blackIdx) ! overlapping index in fine grid
+            C_N = solver%matCoeffsBoundBlack(2, blackIdx)
+            C_E = solver%matCoeffsBoundBlack(3, blackIdx)
+            C_S = solver%matCoeffsBoundBlack(4, blackIdx)
+            C_W = solver%matCoeffsBoundBlack(5, blackIdx)
+            ! calculate fine indices around overlapping index
+            i_coarse = (i_fine + 1)/2
+            j_coarse = (j_fine + 1)/2
+            E_indx = solver%black_NESW_BoundIndx(3, blackIdx)
+            W_indx = solver%black_NESW_BoundIndx(4, blackIdx)
+            N_indx = solver%black_NESW_BoundIndx(5, blackIdx)
+            S_indx = solver%black_NESW_BoundIndx(6, blackIdx)
+            ! get weight coefficients in each direction
+            a_N = C_N/(C_N + C_S)
+            a_S = C_S/(C_N + C_S)
+            a_E = C_E/(C_E + C_W)
+            a_W = C_W/(C_E + C_W)
+            ! Interpolate residual to coarse grid
+            X(i_coarse, j_coarse) = 0.25d0 * (solver%solution(i_fine, j_fine) + &
+            solver%solution(E_indx, j_fine) * a_E + solver%solution(W_indx, j_fine) * a_W +  &
+            solver%solution(i_fine, N_indx) * a_N + solver%solution(i_fine, S_indx) * a_S + &
+            solver%solution(E_indx, N_indx) * a_E * a_N + solver%solution(E_indx, S_indx) * a_E * a_S + &
+            solver%solution(W_indx, N_indx) * a_W * a_N + solver%solution(W_indx, S_indx) * a_W * a_S)
+        end do
+        !$OMP end do
+        !$OMP end parallel
+
+    end subroutine restriction
 
 
 

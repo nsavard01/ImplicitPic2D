@@ -21,20 +21,22 @@ module mod_GSSolver
     type :: GSSolver
         ! store grid quantities
         real(real64), allocatable :: sourceTerm(:,:), solution(:,:), residual(:,:)
-        integer(int32), allocatable :: black_InnerIndx(:,:), red_InnerIndx(:,:), black_NESW_BoundIndx(:,:), red_NESW_BoundIndx(:,:), restrictionInnerIndx(:,:), restrictionBoundIndx(:,:)
+        integer(int32), allocatable :: black_InnerIndx(:,:), red_InnerIndx(:,:), black_NESW_BoundIndx(:,:), red_NESW_BoundIndx(:,:), restrictionInnerIndx(:), restrictionBoundIndx(:)
         ! For Bound index, have [i, j, i_East, i_West, j_North, j_South], basically direction of each NESW
-        integer(int32) :: numberBlackInnerNodes, numberRedInnerNodes, numberBlackBoundNodes, numberRedBoundNodes, matDimension, iterNumber, numberRestrictionInnerNodes, numberRestrictionBoundNodes, N_x, N_y
-        real(real64) :: coeffX, coeffY, coeffSelf, omega
+        integer(int32) :: numberBlackInnerNodes, numberRedInnerNodes, numberBlackBoundNodes, numberRedBoundNodes, iterNumber, N_x, N_y, numberRestrictionInnerNodes, numberRestrictionBoundNodes
+        real(real64) :: omega
         real(real64), allocatable :: matCoeffsInnerBlack(:,:), matCoeffsInnerRed(:,:), matCoeffsBoundBlack(:,:), matCoeffsBoundRed(:,:)! Coefficients in order of O, N, E, S, W
+        ! Note that saving coefficients, while taking more memory, results in much faster (more than 50%) speedup. So assuming we are more limited by calculation time than memory, best to store
+        ! everything beforehand
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal
-        ! procedure, public, pass(self) :: constructRestrictionIndex
+        procedure, public, pass(self) :: constructRestrictionIndex
         procedure, public, pass(self) :: solveGS
-        ! procedure, public, pass(self) :: calcResidual
-        ! procedure, public, pass(self) :: smoothIterations
-        ! procedure, public, pass(self) :: matMult
-        ! procedure, public, pass(self) :: XAX_Mult
-        ! procedure, public, pass(self) :: smoothIterationsWithRes
+        procedure, public, pass(self) :: calcResidual
+        procedure, public, pass(self) :: smoothIterations
+        procedure, public, pass(self) :: matMult
+        procedure, public, pass(self) :: XAX_Mult
+        procedure, public, pass(self) :: smoothIterationsWithRes
     end type
 
     interface GSSolver
@@ -69,6 +71,7 @@ contains
 
 
         allocate(self%sourceTerm(self%N_x, self%N_y), self%solution(self%N_x, self%N_y), self%residual(self%N_x, self%N_y))
+        
         ! Set source terms and solutions to 0
         
         !$OMP parallel
@@ -236,155 +239,215 @@ contains
         
     end subroutine constructPoissonOrthogonal
 
-    ! subroutine constructRestrictionIndex(self, numInnerResNodes, numBoundResNodes, N_x)
-    !     class(GSSolver), intent(in out) :: self
-    !     integer(int32), intent(in) :: numInnerResNodes, numBoundResNodes, N_x
-    !     integer :: k, indx_fine, column_fine, row_fine, column_coarse, row_coarse, i
-    !     ! Construct Restriction index
-    !     self%numberRestrictionInnerNodes = numInnerResNodes
-    !     self%numberRestrictionBoundNodes = numBoundResNodes
-    !     allocate(self%restrictionInnerIndx(2,self%numberRestrictionInnerNodes), self%restrictionBoundIndx(2,self%numberRestrictionBoundNodes))
-    !     i = 0
-    !     do k = 1, self%numberBlackInnerNodes ! each coarse node is on fine grid black node
-    !         indx_fine = self%black_InnerIndx(k) ! get index on fine grid
-    !         row_fine = (indx_fine-1)/N_x + 1 ! row number
-    !         column_fine = indx_fine - (row_fine - 1)  * N_x ! column number
-    !         if (MOD(column_fine,2) == 1 .and. MOD(row_fine,2) == 1) then ! Determine if at coarse node
-    !             i = i + 1
-    !             row_coarse = (row_fine + 1)/2
-    !             column_coarse = (column_fine + 1)/2
-    !             self%restrictionInnerIndx(1,i) = k ! index in black_NESW_InnerIndx to point to
-    !             self%restrictionInnerIndx(2,i) = column_coarse + (row_coarse-1) * (N_x/2 + 1) ! index in coarse array to interpolate to
-    !         end if
-    !     end do
+    subroutine constructRestrictionIndex(self)
+        class(GSSolver), intent(in out) :: self
+        integer :: k, i_fine, j_fine, i_coarse, j_coarse, numInnerResNodes, numBoundResNodes
+        ! Construct Restriction index
+        ! coarse nodes overlap black nodes on odd rows (j index)
+        numInnerResNodes = 0
+        numBoundResNodes = 0
+        !$OMP parallel private(j_fine) reduction(+:numInnerResNodes, numBoundResNodes)
+        !$OMP do
+        do k = 1, self%numberBlackInnerNodes
+            j_fine = self%black_InnerIndx(2, k)
+            if (MOD(j_fine, 2) == 1) then
+                numInnerResNodes = numInnerResNodes + 1
+            end if
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberBlackBoundNodes
+            j_fine = self%black_NESW_BoundIndx(2, k)
+            if (MOD(j_fine, 2) == 1) then
+                numBoundResNodes = numBoundResNodes + 1
+            end if
+        end do
+        !$OMP end do
+        !$OMP end parallel
+        self%numberRestrictionInnerNodes = numInnerResNodes 
+        self%numberRestrictionBoundNodes = numBoundResNodes
 
-    !     i = 0
-    !     do k = 1, self%numberBlackBoundNodes ! each coarse node is on fine grid black node
-    !         indx_fine = self%black_NESW_BoundIndx(1,k) ! get index on fine grid
-    !         row_fine = (indx_fine-1)/N_x + 1 ! row number
-    !         column_fine = indx_fine - (row_fine - 1)  * N_x ! column number
-    !         if (MOD(column_fine,2) == 1 .and. MOD(row_fine,2) == 1) then ! Determine if at coarse node
-    !             i = i + 1
-    !             row_coarse = (row_fine + 1)/2
-    !             column_coarse = (column_fine + 1)/2
-    !             self%restrictionBoundIndx(1,i) = k ! index in black_NESW_InnerIndx to point to
-    !             self%restrictionBoundIndx(2,i) = column_coarse + (row_coarse-1) * (N_x/2 + 1) ! index in coarse array to interpolate to
-    !         end if
-    !     end do
-         
-    ! end subroutine constructRestrictionIndex
+        allocate(self%restrictionInnerIndx(self%numberRestrictionInnerNodes), self%restrictionBoundIndx(self%numberRestrictionBoundNodes))
+        numInnerResNodes = 0
+        do k = 1, self%numberBlackInnerNodes ! each coarse node is on fine grid black node
+            j_fine = self%black_InnerIndx(2, k)
+            if (MOD(j_fine, 2) == 1) then
+                numInnerResNodes = numInnerResNodes + 1
+                self%restrictionInnerIndx(numInnerResNodes) = k
+            end if
+        end do
 
-    ! subroutine matMult(self, x, y)
-    !     ! Use gauss-seidel to calculate A*x, store solution into y
-    !     class(GSSolver), intent(in out) :: self
-    !     real(real64), intent(in) :: x(self%matDimension)
-    !     real(real64), intent(in out) :: y(self%matDimension)
-    !     integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k
-        
-    !     !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx)
-    !     !$OMP do
-    !     do k = 1, self%numberBlackInnerNodes
-    !         O_indx = self%black_InnerIndx(k)
-    !         N_indx = O_indx + self%N_x
-    !         E_indx = O_indx + 1
-    !         S_indx = O_indx - self%N_x
-    !         W_indx = O_indx - 1
-    !         y(O_indx) = (x(N_indx) + x(S_indx)) * self%coeffY &
-    !            + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberBlackBoundNodes
-    !         O_indx = self%black_NESW_BoundIndx(1,k)
-    !         N_indx = self%black_NESW_BoundIndx(3,k)
-    !         E_indx = self%black_NESW_BoundIndx(5,k)
-    !         S_indx = self%black_NESW_BoundIndx(7,k)
-    !         W_indx = self%black_NESW_BoundIndx(9,k)
-    !         y(O_indx) = (x(N_indx) + x(S_indx)) * self%coeffY &
-    !            + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedInnerNodes
-    !         O_indx = self%red_InnerIndx(k)
-    !         N_indx = O_indx + self%N_x
-    !         E_indx = O_indx + 1
-    !         S_indx = O_indx - self%N_x
-    !         W_indx = O_indx - 1
-    !         y(O_indx) = (x(N_indx) + x(S_indx)) * self%coeffY &
-    !            + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedBoundNodes
-    !         O_indx = self%red_NESW_BoundIndx(1,k)
-    !         N_indx = self%red_NESW_BoundIndx(3,k)
-    !         E_indx = self%red_NESW_BoundIndx(5,k)
-    !         S_indx = self%red_NESW_BoundIndx(7,k)
-    !         W_indx = self%red_NESW_BoundIndx(9,k)
-    !         y(O_indx) = (x(N_indx) + x(S_indx)) * self%coeffY &
-    !            + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf
-    !     end do
-    !     !$OMP end do
-    !     !$OMP end parallel
+        numBoundResNodes = 0
+        do k = 1, self%numberBlackBoundNodes ! each coarse node is on fine grid black node
+            j_fine = self%black_NESW_BoundIndx(2, k) ! get index on fine grid
+            if (MOD(j_fine, 2) == 1) then
+                numBoundResNodes = numBoundResNodes + 1
+                self%restrictionBoundIndx(numBoundResNodes) = k
+            end if
+        end do
          
-    ! end subroutine matMult
+    end subroutine constructRestrictionIndex
 
-    ! function XAX_Mult(self, x) result(res)
-    !     ! Use gauss-seidel to calculate x^T * A * x
-    !     class(GSSolver), intent(in out) :: self
-    !     real(real64), intent(in) :: x(self%matDimension)
-    !     integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k
-    !     real(real64) :: res
-    !     res = 0.0d0
-    !     !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx) reduction(+:res)
-    !     !$OMP do
-    !     do k = 1, self%numberBlackInnerNodes
-    !         O_indx = self%black_InnerIndx(k)
-    !         N_indx = O_indx + self%N_x
-    !         E_indx = O_indx + 1
-    !         S_indx = O_indx - self%N_x
-    !         W_indx = O_indx - 1
-    !         res = res + x(O_indx) * ((x(N_indx) + x(S_indx)) * self%coeffY &
-    !            + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf)
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberBlackBoundNodes
-    !         O_indx = self%black_NESW_BoundIndx(1,k)
-    !         N_indx = self%black_NESW_BoundIndx(3,k)
-    !         E_indx = self%black_NESW_BoundIndx(5,k)
-    !         S_indx = self%black_NESW_BoundIndx(7,k)
-    !         W_indx = self%black_NESW_BoundIndx(9,k)
-    !         res = res + x(O_indx) * ((x(N_indx) + x(S_indx)) * self%coeffY &
-    !            + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf)
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedInnerNodes
-    !         O_indx = self%red_InnerIndx(k)
-    !         N_indx = O_indx + self%N_x
-    !         E_indx = O_indx + 1
-    !         S_indx = O_indx - self%N_x
-    !         W_indx = O_indx - 1
-    !         res = res + x(O_indx) * ((x(N_indx) + x(S_indx)) * self%coeffY &
-    !            + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf)
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedBoundNodes
-    !         O_indx = self%red_NESW_BoundIndx(1,k)
-    !         N_indx = self%red_NESW_BoundIndx(3,k)
-    !         E_indx = self%red_NESW_BoundIndx(5,k)
-    !         S_indx = self%red_NESW_BoundIndx(7,k)
-    !         W_indx = self%red_NESW_BoundIndx(9,k)
-    !         res = res + x(O_indx) * ((x(N_indx) + x(S_indx)) * self%coeffY &
-    !            + (x(E_indx) + x(W_indx)) * self%coeffX + x(O_indx)/self%coeffSelf)
-    !     end do
-    !     !$OMP end do
-    !     !$OMP end parallel
+    subroutine matMult(self, x, y)
+        ! Use gauss-seidel to calculate A*x, store solution into y
+        class(GSSolver), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y)
+        real(real64), intent(in out) :: y(self%N_x, self%N_y)
+        integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i, j
+        real(real64) :: C_N, C_E, C_O, C_W, C_S
+
+        !$OMP parallel private(i, j, N_indx, E_indx, S_indx, W_indx, C_N, C_E, C_O, C_W, C_S)
+        !$OMP do
+        do k = 1, self%numberBlackInnerNodes
+            i = self%black_InnerIndx(1, k)
+            j = self%black_InnerIndx(2, k)
+            N_indx = j + 1
+            E_indx = i+1
+            S_indx = j-1
+            W_indx = i-1
+            C_O = self%matCoeffsInnerBlack(1, k)
+            C_N = self%matCoeffsInnerBlack(2, k)
+            C_E = self%matCoeffsInnerBlack(3, k)
+            C_S = self%matCoeffsInnerBlack(4, k)
+            C_W = self%matCoeffsInnerBlack(5, k)
+            y(i, j) = x(i,N_indx)*C_N + x(i,S_indx) * C_S &
+                + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberBlackBoundNodes
+            i = self%black_NESW_BoundIndx(1, k)
+            j = self%black_NESW_BoundIndx(2, k)
+            E_indx = self%black_NESW_BoundIndx(3, k)
+            W_indx = self%black_NESW_BoundIndx(4, k)
+            N_indx = self%black_NESW_BoundIndx(5, k)
+            S_indx = self%black_NESW_BoundIndx(6, k)
+            C_O = self%matCoeffsBoundBlack(1, k)
+            C_N = self%matCoeffsBoundBlack(2, k)
+            C_E = self%matCoeffsBoundBlack(3, k)
+            C_S = self%matCoeffsBoundBlack(4, k)
+            C_W = self%matCoeffsBoundBlack(5, k)
+            y(i, j) = x(i,N_indx)*C_N + x(i,S_indx) * C_S &
+                + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedInnerNodes
+            i = self%red_InnerIndx(1, k)
+            j = self%red_InnerIndx(2, k)
+            N_indx = j + 1
+            E_indx = i+1
+            S_indx = j-1
+            W_indx = i-1
+            C_O = self%matCoeffsInnerRed(1, k)
+            C_N = self%matCoeffsInnerRed(2, k)
+            C_E = self%matCoeffsInnerRed(3, k)
+            C_S = self%matCoeffsInnerRed(4, k)
+            C_W = self%matCoeffsInnerRed(5, k)
+            y(i, j) = x(i,N_indx)*C_N + x(i,S_indx) * C_S &
+                + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedBoundNodes
+            i = self%red_NESW_BoundIndx(1, k)
+            j = self%red_NESW_BoundIndx(2, k)
+            E_indx = self%red_NESW_BoundIndx(3, k)
+            W_indx = self%red_NESW_BoundIndx(4, k)
+            N_indx = self%red_NESW_BoundIndx(5, k)
+            S_indx = self%red_NESW_BoundIndx(6, k)
+            C_O = self%matCoeffsBoundRed(1, k)
+            C_N = self%matCoeffsBoundRed(2, k)
+            C_E = self%matCoeffsBoundRed(3, k)
+            C_S = self%matCoeffsBoundRed(4, k)
+            C_W = self%matCoeffsBoundRed(5, k)
+            y(i, j) = x(i,N_indx)*C_N + x(i,S_indx) * C_S &
+                + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O
+        end do
+        !$OMP end do
+        !$OMP end parallel
          
-    ! end function XAX_Mult
+    end subroutine matMult
+
+    function XAX_Mult(self, x) result(res)
+        ! Use gauss-seidel to calculate x^T * A * x
+        class(GSSolver), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y)
+        integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i, j
+        real(real64) :: res, C_N, C_E, C_O, C_W, C_S
+        res = 0.0d0
+        !$OMP parallel private(i, j, N_indx, E_indx, S_indx, W_indx, C_N, C_E, C_O, C_W, C_S)
+        !$OMP do
+        do k = 1, self%numberBlackInnerNodes
+            i = self%black_InnerIndx(1, k)
+            j = self%black_InnerIndx(2, k)
+            N_indx = j + 1
+            E_indx = i+1
+            S_indx = j-1
+            W_indx = i-1
+            C_O = self%matCoeffsInnerBlack(1, k)
+            C_N = self%matCoeffsInnerBlack(2, k)
+            C_E = self%matCoeffsInnerBlack(3, k)
+            C_S = self%matCoeffsInnerBlack(4, k)
+            C_W = self%matCoeffsInnerBlack(5, k)
+            res = res + x(i,j)*(x(i,N_indx)*C_N + x(i,S_indx) * C_S &
+                + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberBlackBoundNodes
+            i = self%black_NESW_BoundIndx(1, k)
+            j = self%black_NESW_BoundIndx(2, k)
+            E_indx = self%black_NESW_BoundIndx(3, k)
+            W_indx = self%black_NESW_BoundIndx(4, k)
+            N_indx = self%black_NESW_BoundIndx(5, k)
+            S_indx = self%black_NESW_BoundIndx(6, k)
+            C_O = self%matCoeffsBoundBlack(1, k)
+            C_N = self%matCoeffsBoundBlack(2, k)
+            C_E = self%matCoeffsBoundBlack(3, k)
+            C_S = self%matCoeffsBoundBlack(4, k)
+            C_W = self%matCoeffsBoundBlack(5, k)
+            res = res + x(i,j)*(x(i,N_indx)*C_N + x(i,S_indx) * C_S &
+                + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedInnerNodes
+            i = self%red_InnerIndx(1, k)
+            j = self%red_InnerIndx(2, k)
+            N_indx = j + 1
+            E_indx = i+1
+            S_indx = j-1
+            W_indx = i-1
+            C_O = self%matCoeffsInnerRed(1, k)
+            C_N = self%matCoeffsInnerRed(2, k)
+            C_E = self%matCoeffsInnerRed(3, k)
+            C_S = self%matCoeffsInnerRed(4, k)
+            C_W = self%matCoeffsInnerRed(5, k)
+            res = res + x(i,j)*(x(i,N_indx)*C_N + x(i,S_indx) * C_S &
+                + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O)
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedBoundNodes
+            i = self%red_NESW_BoundIndx(1, k)
+            j = self%red_NESW_BoundIndx(2, k)
+            E_indx = self%red_NESW_BoundIndx(3, k)
+            W_indx = self%red_NESW_BoundIndx(4, k)
+            N_indx = self%red_NESW_BoundIndx(5, k)
+            S_indx = self%red_NESW_BoundIndx(6, k)
+            C_O = self%matCoeffsBoundRed(1, k)
+            C_N = self%matCoeffsBoundRed(2, k)
+            C_E = self%matCoeffsBoundRed(3, k)
+            C_S = self%matCoeffsBoundRed(4, k)
+            C_W = self%matCoeffsBoundRed(5, k)
+            res = res + x(i,j)*(x(i,N_indx)*C_N + x(i,S_indx) * C_S &
+                + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O)
+        end do
+        !$OMP end do
+        !$OMP end parallel
+         
+    end function XAX_Mult
 
     subroutine solveGS(self, tol)
         ! Solve GS down to some tolerance
@@ -484,247 +547,274 @@ contains
 
     end subroutine solveGS
 
-    ! subroutine smoothIterations(self, iterNum, resetBool)
-    !     ! Solve GS down with a certain amount of iterations
-    !     class(GSSolver), intent(in out) :: self
-    !     integer, intent(in) :: iterNum
-    !     logical :: resetBool
-    !     integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i
-    !     ! No real difference putting openmp within the iteration loop
-    !     ! If lower stage need to reset solution to 0
-    !     if (resetBool) then
-    !         !$OMP parallel
-    !         !$OMP workshare
-    !         self%solution = 0.0d0
-    !         !$OMP end workshare
-    !         !$OMP end parallel
-    !     end if
-    !     do i = 1, iterNum
-    !         !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx)
-    !         !$OMP do
-    !         do k = 1, self%numberBlackInnerNodes
-    !             O_indx = self%black_InnerIndx(k)
-    !             N_indx = O_indx + self%N_x
-    !             E_indx = O_indx + 1
-    !             S_indx = O_indx - self%N_x
-    !             W_indx = O_indx - 1
-    !             self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !                 (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do
-    !         do k = 1, self%numberBlackBoundNodes
-    !             O_indx = self%black_NESW_BoundIndx(1,k)
-    !             N_indx = self%black_NESW_BoundIndx(3,k)
-    !             E_indx = self%black_NESW_BoundIndx(5,k)
-    !             S_indx = self%black_NESW_BoundIndx(7,k)
-    !             W_indx = self%black_NESW_BoundIndx(9,k)
-    !             self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !                 (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
-    !         end do
-    !         !$OMP end do
-    !         ! Now red nodes
-    !         !$OMP do
-    !         do k = 1, self%numberRedInnerNodes
-    !             O_indx = self%red_InnerIndx(k)
-    !             N_indx = O_indx + self%N_x
-    !             E_indx = O_indx + 1
-    !             S_indx = O_indx - self%N_x
-    !             W_indx = O_indx - 1
-    !             self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !                 (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do
-    !         do k = 1, self%numberRedBoundNodes
-    !             O_indx = self%red_NESW_BoundIndx(1,k)
-    !             N_indx = self%red_NESW_BoundIndx(3,k)
-    !             E_indx = self%red_NESW_BoundIndx(5,k)
-    !             S_indx = self%red_NESW_BoundIndx(7,k)
-    !             W_indx = self%red_NESW_BoundIndx(9,k)
-    !             self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !                 (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
-    !         end do
-    !         !$OMP end do
-    !         !$OMP end parallel
-    !     end do
+    subroutine smoothIterations(self, iterNum, resetBool)
+        ! Solve GS down with a certain amount of iterations
+        class(GSSolver), intent(in out) :: self
+        integer, intent(in) :: iterNum
+        logical :: resetBool
+        integer :: N_indx, E_indx, S_indx, W_indx, k, i, j, l
+        real(real64) :: C_N, C_E, C_O, C_W, C_S
+        ! No real difference putting openmp within the iteration loop
+        ! If lower stage need to reset solution to 0
+        if (resetBool) then
+            !$OMP parallel
+            !$OMP workshare
+            self%solution = 0.0d0
+            !$OMP end workshare
+            !$OMP end parallel
+        end if
+        do l = 1, iterNum
+            !$OMP parallel private(i,j,N_indx, E_indx, S_indx, W_indx, C_N, C_E, C_O, C_W, C_S)
+            !$OMP do
+            do k = 1, self%numberBlackInnerNodes
+                i = self%black_InnerIndx(1, k)
+                j = self%black_InnerIndx(2, k)
+                N_indx = j + 1
+                E_indx = i+1
+                S_indx = j-1
+                W_indx = i-1
+                C_O = self%matCoeffsInnerBlack(1, k)
+                C_N = self%matCoeffsInnerBlack(2, k)
+                C_E = self%matCoeffsInnerBlack(3, k)
+                C_S = self%matCoeffsInnerBlack(4, k)
+                C_W = self%matCoeffsInnerBlack(5, k)
+                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S  - &
+                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + (1.0d0 - self%omega) * self%solution(i,j)
+            end do
+            !$OMP end do nowait
+            !$OMP do
+            do k = 1, self%numberBlackBoundNodes
+                i = self%black_NESW_BoundIndx(1, k)
+                j = self%black_NESW_BoundIndx(2, k)
+                E_indx = self%black_NESW_BoundIndx(3, k)
+                W_indx = self%black_NESW_BoundIndx(4, k)
+                N_indx = self%black_NESW_BoundIndx(5, k)
+                S_indx = self%black_NESW_BoundIndx(6, k)
+                C_O = self%matCoeffsBoundBlack(1, k)
+                C_N = self%matCoeffsBoundBlack(2, k)
+                C_E = self%matCoeffsBoundBlack(3, k)
+                C_S = self%matCoeffsBoundBlack(4, k)
+                C_W = self%matCoeffsBoundBlack(5, k)
+                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S  - &
+                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + (1.0d0 - self%omega) * self%solution(i,j)
+            end do
+            !$OMP end do
+            ! Now red nodes
+            !$OMP do
+            do k = 1, self%numberRedInnerNodes
+                i = self%red_InnerIndx(1, k)
+                j = self%red_InnerIndx(2, k)
+                N_indx = j + 1
+                E_indx = i+1
+                S_indx = j-1
+                W_indx = i-1
+                C_O = self%matCoeffsInnerRed(1, k)
+                C_N = self%matCoeffsInnerRed(2, k)
+                C_E = self%matCoeffsInnerRed(3, k)
+                C_S = self%matCoeffsInnerRed(4, k)
+                C_W = self%matCoeffsInnerRed(5, k)
+                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S  - &
+                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + (1.0d0 - self%omega) * self%solution(i,j)
+            end do
+            !$OMP end do nowait
+            !$OMP do
+            do k = 1, self%numberRedBoundNodes
+                i = self%red_NESW_BoundIndx(1, k)
+                j = self%red_NESW_BoundIndx(2, k)
+                E_indx = self%red_NESW_BoundIndx(3, k)
+                W_indx = self%red_NESW_BoundIndx(4, k)
+                N_indx = self%red_NESW_BoundIndx(5, k)
+                S_indx = self%red_NESW_BoundIndx(6, k)
+                C_O = self%matCoeffsBoundRed(1, k)
+                C_N = self%matCoeffsBoundRed(2, k)
+                C_E = self%matCoeffsBoundRed(3, k)
+                C_S = self%matCoeffsBoundRed(4, k)
+                C_W = self%matCoeffsBoundRed(5, k)
+                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S  - &
+                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + (1.0d0 - self%omega) * self%solution(i,j)
+            end do
+            !$OMP end do
+            !$OMP end parallel
+        end do
 
-    ! end subroutine smoothIterations
+    end subroutine smoothIterations
 
-    ! function smoothIterationsWithRes(self, iterNum) result(Res)
-    !     ! Solve GS down to some tolerance, whilst calculating residual step in solution for last iteration
-    !     ! Used for final stage to determine 
-    !     class(GSSolver), intent(in out) :: self
-    !     integer, intent(in) :: iterNum
-    !     integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i
-    !     real(real64) :: Res, oldSol
-    !     ! No real difference putting openmp within the iteration loop
-    !     ! If lower stage need to reset solution to 0
-    !     do i = 1, iterNum-1
-    !         !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx)
-    !         !$OMP do
-    !         do k = 1, self%numberBlackInnerNodes
-    !             O_indx = self%black_InnerIndx(k)
-    !             N_indx = O_indx + self%N_x
-    !             E_indx = O_indx + 1
-    !             S_indx = O_indx - self%N_x
-    !             W_indx = O_indx - 1
-    !             self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !                 (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do
-    !         do k = 1, self%numberBlackBoundNodes
-    !             O_indx = self%black_NESW_BoundIndx(1,k)
-    !             N_indx = self%black_NESW_BoundIndx(3,k)
-    !             E_indx = self%black_NESW_BoundIndx(5,k)
-    !             S_indx = self%black_NESW_BoundIndx(7,k)
-    !             W_indx = self%black_NESW_BoundIndx(9,k)
-    !             self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !                 (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
-    !         end do
-    !         !$OMP end do
-    !         ! Now red nodes
-    !         !$OMP do
-    !         do k = 1, self%numberRedInnerNodes
-    !             O_indx = self%red_InnerIndx(k)
-    !             N_indx = O_indx + self%N_x
-    !             E_indx = O_indx + 1
-    !             S_indx = O_indx - self%N_x
-    !             W_indx = O_indx - 1
-    !             self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !                 (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do
-    !         do k = 1, self%numberRedBoundNodes
-    !             O_indx = self%red_NESW_BoundIndx(1,k)
-    !             N_indx = self%red_NESW_BoundIndx(3,k)
-    !             E_indx = self%red_NESW_BoundIndx(5,k)
-    !             S_indx = self%red_NESW_BoundIndx(7,k)
-    !             W_indx = self%red_NESW_BoundIndx(9,k)
-    !             self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !                 (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * self%solution(O_indx)
-    !         end do
-    !         !$OMP end do
-    !         !$OMP end parallel
-    !     end do
-    !     Res = 0.0d0
-    !     ! Add 
-    !     !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx, oldSol) reduction(+:Res)
-    !     !$OMP do
-    !     do k = 1, self%numberBlackInnerNodes
-    !         O_indx = self%black_InnerIndx(k)
-    !         N_indx = O_indx + self%N_x
-    !         E_indx = O_indx + 1
-    !         S_indx = O_indx - self%N_x
-    !         W_indx = O_indx - 1
-    !         oldSol = self%solution(O_indx)
-    !         self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !             (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-    !         Res = Res + (self%solution(O_indx) - oldSol)**2
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberBlackBoundNodes
-    !         O_indx = self%black_NESW_BoundIndx(1,k)
-    !         N_indx = self%black_NESW_BoundIndx(3,k)
-    !         E_indx = self%black_NESW_BoundIndx(5,k)
-    !         S_indx = self%black_NESW_BoundIndx(7,k)
-    !         W_indx = self%black_NESW_BoundIndx(9,k)
-    !         oldSol = self%solution(O_indx)
-    !         self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !             (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-    !         Res = Res + (self%solution(O_indx) - oldSol)**2
-    !     end do
-    !     !$OMP end do
-    !     ! Now red nodes
-    !     !$OMP do
-    !     do k = 1, self%numberRedInnerNodes
-    !         O_indx = self%red_InnerIndx(k)
-    !         N_indx = O_indx + self%N_x
-    !         E_indx = O_indx + 1
-    !         S_indx = O_indx - self%N_x
-    !         W_indx = O_indx - 1
-    !         oldSol = self%solution(O_indx)
-    !         self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !             (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-    !         Res = Res + (self%solution(O_indx) - oldSol)**2
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedBoundNodes
-    !         O_indx = self%red_NESW_BoundIndx(1,k)
-    !         N_indx = self%red_NESW_BoundIndx(3,k)
-    !         E_indx = self%red_NESW_BoundIndx(5,k)
-    !         S_indx = self%red_NESW_BoundIndx(7,k)
-    !         W_indx = self%red_NESW_BoundIndx(9,k)
-    !         oldSol = self%solution(O_indx)
-    !         self%solution(O_indx) = (self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY - &
-    !             (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX) * self%coeffSelf * self%omega + (1.0d0 - self%omega) * oldSol
-    !         Res = Res + (self%solution(O_indx) - oldSol)**2
-    !     end do
-    !     !$OMP end do
-    !     !$OMP end parallel
-    !     Res = SQRT(Res/(self%numberBlackInnerNodes + self%numberRedInnerNodes + self%numberBlackBoundNodes + self%numberRedBoundNodes))
+    function smoothIterationsWithRes(self, iterNum) result(Res)
+        ! Solve GS down to some tolerance, whilst calculating residual step in solution for last iteration
+        ! Used for final stage to determine 
+        class(GSSolver), intent(in out) :: self
+        integer, intent(in) :: iterNum
+        integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i, j
+        real(real64) :: Res, oldSol, C_O, C_N, C_E, C_S, C_W
+        ! No real difference putting openmp within the iteration loop
+        ! If lower stage need to reset solution to 0
+        ! Do a few iteratuibs
+        call self%smoothIterations(iterNum-1, .false.)
+        Res = 0.0d0
+        !$OMP parallel private(oldSol, i, j, N_indx, E_indx, S_indx, &
+        !$OMP&  W_indx, C_O, C_N, C_E, C_S, C_W) reduction(+:Res)
+        !$OMP do
+        do k = 1, self%numberBlackInnerNodes
+            i = self%black_InnerIndx(1, k)
+            j = self%black_InnerIndx(2, k)
+            N_indx = j + 1
+            E_indx = i+1
+            S_indx = j-1
+            W_indx = i-1
+            C_O = self%matCoeffsInnerBlack(1, k)
+            C_N = self%matCoeffsInnerBlack(2, k)
+            C_E = self%matCoeffsInnerBlack(3, k)
+            C_S = self%matCoeffsInnerBlack(4, k)
+            C_W = self%matCoeffsInnerBlack(5, k)
+            oldSol = self%solution(i,j)
+            self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S  - &
+                self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + (1.0d0 - self%omega) * oldSol
+            Res = Res + (self%solution(i,j) - oldSol)**2
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberBlackBoundNodes
+            i = self%black_NESW_BoundIndx(1, k)
+            j = self%black_NESW_BoundIndx(2, k)
+            E_indx = self%black_NESW_BoundIndx(3, k)
+            W_indx = self%black_NESW_BoundIndx(4, k)
+            N_indx = self%black_NESW_BoundIndx(5, k)
+            S_indx = self%black_NESW_BoundIndx(6, k)
+            C_O = self%matCoeffsBoundBlack(1, k)
+            C_N = self%matCoeffsBoundBlack(2, k)
+            C_E = self%matCoeffsBoundBlack(3, k)
+            C_S = self%matCoeffsBoundBlack(4, k)
+            C_W = self%matCoeffsBoundBlack(5, k)
+            oldSol = self%solution(i,j)
+            self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S  - &
+                self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + (1.0d0 - self%omega) * oldSol
+            Res = Res + (self%solution(i,j) - oldSol)**2
+        end do
+        !$OMP end do
+        ! Now red nodes
+        !$OMP do
+        do k = 1, self%numberRedInnerNodes
+            i = self%red_InnerIndx(1, k)
+            j = self%red_InnerIndx(2, k)
+            N_indx = j + 1
+            E_indx = i+1
+            S_indx = j-1
+            W_indx = i-1
+            C_O = self%matCoeffsInnerRed(1, k)
+            C_N = self%matCoeffsInnerRed(2, k)
+            C_E = self%matCoeffsInnerRed(3, k)
+            C_S = self%matCoeffsInnerRed(4, k)
+            C_W = self%matCoeffsInnerRed(5, k)
+            oldSol = self%solution(i,j)
+            self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S  - &
+                self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + (1.0d0 - self%omega) * oldSol
+            Res = Res + (self%solution(i,j) - oldSol)**2
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedBoundNodes
+            i = self%red_NESW_BoundIndx(1, k)
+            j = self%red_NESW_BoundIndx(2, k)
+            E_indx = self%red_NESW_BoundIndx(3, k)
+            W_indx = self%red_NESW_BoundIndx(4, k)
+            N_indx = self%red_NESW_BoundIndx(5, k)
+            S_indx = self%red_NESW_BoundIndx(6, k)
+            C_O = self%matCoeffsBoundRed(1, k)
+            C_N = self%matCoeffsBoundRed(2, k)
+            C_E = self%matCoeffsBoundRed(3, k)
+            C_S = self%matCoeffsBoundRed(4, k)
+            C_W = self%matCoeffsBoundRed(5, k)
+            oldSol = self%solution(i,j)
+            self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S  - &
+                self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + (1.0d0 - self%omega) * oldSol
+            Res = Res + (self%solution(i,j) - oldSol)**2
+        end do
+        !$OMP end do
+        !$OMP end parallel
+        Res = SQRT(Res/(self%numberBlackInnerNodes + self%numberRedInnerNodes + self%numberBlackBoundNodes + self%numberRedBoundNodes))
 
 
-    ! end function smoothIterationsWithRes
+    end function smoothIterationsWithRes
 
-    ! subroutine calcResidual(self)
-    !     ! For multigrid, caclulate b - Ax for current solution of x, store in sourceTerm
-    !     ! For Dirichlet boundaries, sourceTerm already 0, so can ignore
-    !     class(GSSolver), intent(in out) :: self
-    !     integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k
+    subroutine calcResidual(self)
+        ! For multigrid, caclulate b - Ax for current solution of x, store in sourceTerm
+        ! For Dirichlet boundaries, sourceTerm already 0, so can ignore
+        class(GSSolver), intent(in out) :: self
+        integer :: N_indx, E_indx, S_indx, W_indx, k, i, j
+        real(real64) :: C_N, C_E, C_O, C_W, C_S
         
-    !     !$OMP parallel private(O_indx, N_indx, E_indx, S_indx, W_indx)
-    !     !$OMP do
-    !     do k = 1, self%numberBlackInnerNodes
-    !         O_indx = self%black_InnerIndx(k)
-    !         N_indx = O_indx + self%N_x
-    !         E_indx = O_indx + 1
-    !         S_indx = O_indx - self%N_x
-    !         W_indx = O_indx - 1
-    !         self%residual(O_indx) = self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY &
-    !             - (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX - self%solution(O_indx)/self%coeffSelf
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberBlackBoundNodes
-    !         O_indx = self%black_NESW_BoundIndx(1,k)
-    !         N_indx = self%black_NESW_BoundIndx(3,k)
-    !         E_indx = self%black_NESW_BoundIndx(5,k)
-    !         S_indx = self%black_NESW_BoundIndx(7,k)
-    !         W_indx = self%black_NESW_BoundIndx(9,k)
-    !         self%residual(O_indx) = self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY &
-    !             - (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX - self%solution(O_indx)/self%coeffSelf
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedInnerNodes
-    !         O_indx = self%red_InnerIndx(k)
-    !         N_indx = O_indx + self%N_x
-    !         E_indx = O_indx + 1
-    !         S_indx = O_indx - self%N_x
-    !         W_indx = O_indx - 1
-    !         self%residual(O_indx) = self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY &
-    !             - (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX - self%solution(O_indx)/self%coeffSelf
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedBoundNodes
-    !         O_indx = self%red_NESW_BoundIndx(1,k)
-    !         N_indx = self%red_NESW_BoundIndx(3,k)
-    !         E_indx = self%red_NESW_BoundIndx(5,k)
-    !         S_indx = self%red_NESW_BoundIndx(7,k)
-    !         W_indx = self%red_NESW_BoundIndx(9,k)
-    !         self%residual(O_indx) = self%sourceTerm(O_indx) - (self%solution(N_indx) + self%solution(S_indx)) * self%coeffY &
-    !             - (self%solution(E_indx) + self%solution(W_indx)) * self%coeffX - self%solution(O_indx)/self%coeffSelf
-    !     end do
-    !     !$OMP end do
-    !     !$OMP end parallel
+        !$OMP parallel private(i, j, N_indx, E_indx, S_indx, W_indx, C_N, C_E, C_O, C_W, C_S)
+        !$OMP do
+        do k = 1, self%numberBlackInnerNodes
+            i = self%black_InnerIndx(1, k)
+            j = self%black_InnerIndx(2, k)
+            N_indx = j + 1
+            E_indx = i+1
+            S_indx = j-1
+            W_indx = i-1
+            C_O = self%matCoeffsInnerBlack(1, k)
+            C_N = self%matCoeffsInnerBlack(2, k)
+            C_E = self%matCoeffsInnerBlack(3, k)
+            C_S = self%matCoeffsInnerBlack(4, k)
+            C_W = self%matCoeffsInnerBlack(5, k)
+            self%residual(i, j) = self%sourceTerm(i,j) - self%solution(i,N_indx)*C_N - self%solution(i,S_indx) * C_S &
+                - self%solution(E_indx, j) *C_E - self%solution(W_indx, j) * C_W - self%solution(i,j)/C_O
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberBlackBoundNodes
+            i = self%black_NESW_BoundIndx(1, k)
+            j = self%black_NESW_BoundIndx(2, k)
+            E_indx = self%black_NESW_BoundIndx(3, k)
+            W_indx = self%black_NESW_BoundIndx(4, k)
+            N_indx = self%black_NESW_BoundIndx(5, k)
+            S_indx = self%black_NESW_BoundIndx(6, k)
+            C_O = self%matCoeffsBoundBlack(1, k)
+            C_N = self%matCoeffsBoundBlack(2, k)
+            C_E = self%matCoeffsBoundBlack(3, k)
+            C_S = self%matCoeffsBoundBlack(4, k)
+            C_W = self%matCoeffsBoundBlack(5, k)
+            self%residual(i, j) = self%sourceTerm(i,j) - self%solution(i,N_indx)*C_N - self%solution(i,S_indx) * C_S &
+                - self%solution(E_indx, j) *C_E - self%solution(W_indx, j) * C_W - self%solution(i,j)/C_O
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedInnerNodes
+            i = self%red_InnerIndx(1, k)
+            j = self%red_InnerIndx(2, k)
+            N_indx = j + 1
+            E_indx = i+1
+            S_indx = j-1
+            W_indx = i-1
+            C_O = self%matCoeffsInnerRed(1, k)
+            C_N = self%matCoeffsInnerRed(2, k)
+            C_E = self%matCoeffsInnerRed(3, k)
+            C_S = self%matCoeffsInnerRed(4, k)
+            C_W = self%matCoeffsInnerRed(5, k)
+            self%residual(i, j) = self%sourceTerm(i,j) - self%solution(i,N_indx)*C_N - self%solution(i,S_indx) * C_S &
+                - self%solution(E_indx, j) *C_E - self%solution(W_indx, j) * C_W - self%solution(i,j)/C_O
+        end do
+        !$OMP end do nowait
+        !$OMP do
+        do k = 1, self%numberRedBoundNodes
+            i = self%red_NESW_BoundIndx(1, k)
+            j = self%red_NESW_BoundIndx(2, k)
+            E_indx = self%red_NESW_BoundIndx(3, k)
+            W_indx = self%red_NESW_BoundIndx(4, k)
+            N_indx = self%red_NESW_BoundIndx(5, k)
+            S_indx = self%red_NESW_BoundIndx(6, k)
+            C_O = self%matCoeffsBoundRed(1, k)
+            C_N = self%matCoeffsBoundRed(2, k)
+            C_E = self%matCoeffsBoundRed(3, k)
+            C_S = self%matCoeffsBoundRed(4, k)
+            C_W = self%matCoeffsBoundRed(5, k)
+            self%residual(i, j) = self%sourceTerm(i,j) - self%solution(i,N_indx)*C_N - self%solution(i,S_indx) * C_S &
+                - self%solution(E_indx, j) *C_E - self%solution(W_indx, j) * C_W - self%solution(i,j)/C_O
+        end do
+        !$OMP end do
+        !$OMP end parallel
 
-    ! end subroutine calcResidual
+    end subroutine calcResidual
 
 
 end module mod_GSSolver
