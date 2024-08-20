@@ -50,13 +50,12 @@ def sinFunc(numNodes, length, del_x):
 numNodes = np.fromfile('NumNodes.dat', dtype=int)
 gridX = np.fromfile('gridX.dat')
 gridY = np.fromfile('gridY.dat')
+grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 Length = gridX[-1] - gridX[0]
 Width = gridY[-1] - gridY[0]
 sol_1 = np.fromfile('finalSol.dat')
-sol_2 = np.fromfile('finalRes.dat')
-GSRes = sol_1 - sol_2
 plt.figure()
-plt.pcolormesh(gridX, gridY, np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F'), shading = 'nearest')
+plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F'), shading = 'nearest', norm = 'log')
 plt.colorbar()
 
 # GSRes = np.fromfile('finalRes.dat')

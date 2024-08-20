@@ -33,14 +33,14 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(1) = 2 ! North
     NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 2 ! West
 
-    NESW_phiValues(1) = 1000.0d0
+    NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
-    NESW_phiValues(3) = 0.0d0
+    NESW_phiValues(3) = 1000.0d0
     NESW_phiValues(4) = 0.0d0
 
     upperPhi = NESW_phiValues(1)
@@ -146,8 +146,7 @@ program main
             solver%solution(N_x, N_y) = rightPhi
         end if
     end if
-
-
+    
     directSolver = pardisoSolver(N_x * N_y)
     call buildCurvGridOrthogonalPoissonMatrix(N_x, N_y, diffX, diffY &
             , NESW_wallBoundaries, NESW_phiValues, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
@@ -168,17 +167,17 @@ program main
     !$OMP end parallel
     
     test = 0.0d0
-    call solver%constructRestrictionIndex()
 
     ! !$OMP parallel workshare
     ! CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
     ! !$OMP end parallel workshare
+    
 
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
     call solver%solveGS(stepTol)
     call system_clock(endTime)
-    call restriction(solver, test)
+    ! call restriction(solver, test)
     open(41,file='test.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) test
     close(41)
@@ -187,9 +186,10 @@ program main
     print *, 'took', solver%iterNumber
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
 
-    ! open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    ! write(41) directSolver%solution
-    ! close(41)
+    open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    write(41) solver%solution
+    close(41)
+    stop
     ! call solver%calcResidual()
     ! open(41,file='finalRes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     ! write(41) solver%solution
@@ -275,147 +275,147 @@ contains
 
     end subroutine createCurvGrid
 
-    subroutine restriction(solver, X)
-        ! Check to make sure N_x and N_y is divisible by however many stages in multigrid we want
-        type(GSSolver), intent(in) :: solver
-        real(real64), intent(in out) :: X(:,:)
-        real(real64) :: a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S
-        integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, blackIdx
-        !$OMP parallel private(blackIdx, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, &
-        !$OMP& a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S)
-        !$OMP do
-        do k = 1, solver%numberRestrictionInnerNodes
-            blackIdx = solver%restrictionInnerIndx(k) ! index in black_Indx for overlapping fine grid node
-            i_fine = solver%black_InnerIndx(1, blackIdx) ! overlapping index in fine grid
-            j_fine = solver%black_InnerIndx(2, blackIdx) ! overlapping index in fine grid
-            C_N = solver%matCoeffsInnerBlack(2, blackIdx)
-            C_E = solver%matCoeffsInnerBlack(3, blackIdx)
-            C_S = solver%matCoeffsInnerBlack(4, blackIdx)
-            C_W = solver%matCoeffsInnerBlack(5, blackIdx)
-            ! calculate fine indices around overlapping index
-            i_coarse = (i_fine + 1)/2
-            j_coarse = (j_fine + 1)/2
-            N_indx = j_fine+1
-            E_indx = i_fine+1
-            S_indx = j_fine-1
-            W_indx = i_fine-1
-            ! get weight coefficients in each direction
-            a_N = C_N/(C_N + C_S)
-            a_S = C_S/(C_N + C_S)
-            a_E = C_E/(C_E + C_W)
-            a_W = C_W/(C_E + C_W)
-            ! Interpolate residual to coarse grid
-            X(i_coarse, j_coarse) = 0.25d0 * (solver%solution(i_fine, j_fine) + &
-            solver%solution(E_indx, j_fine) * a_E + solver%solution(W_indx, j_fine) * a_W +  &
-            solver%solution(i_fine, N_indx) * a_N + solver%solution(i_fine, S_indx) * a_S + &
-            solver%solution(E_indx, N_indx) * a_E * a_N + solver%solution(E_indx, S_indx) * a_E * a_S + &
-            solver%solution(W_indx, N_indx) * a_W * a_N + solver%solution(W_indx, S_indx) * a_W * a_S)
-        end do
-        !$OMP end do nowait
-        !$OMP do
-        do k = 1, solver%numberRestrictionBoundNodes
-            blackIdx = solver%restrictionBoundIndx(k) ! index in black_Indx for overlapping fine grid node
-            i_fine = solver%black_NESW_BoundIndx(1, blackIdx) ! overlapping index in fine grid
-            j_fine = solver%black_NESW_BoundIndx(2, blackIdx) ! overlapping index in fine grid
-            C_N = solver%matCoeffsBoundBlack(2, blackIdx)
-            C_E = solver%matCoeffsBoundBlack(3, blackIdx)
-            C_S = solver%matCoeffsBoundBlack(4, blackIdx)
-            C_W = solver%matCoeffsBoundBlack(5, blackIdx)
-            ! calculate fine indices around overlapping index
-            i_coarse = (i_fine + 1)/2
-            j_coarse = (j_fine + 1)/2
-            E_indx = solver%black_NESW_BoundIndx(3, blackIdx)
-            W_indx = solver%black_NESW_BoundIndx(4, blackIdx)
-            N_indx = solver%black_NESW_BoundIndx(5, blackIdx)
-            S_indx = solver%black_NESW_BoundIndx(6, blackIdx)
-            ! get weight coefficients in each direction
-            a_N = C_N/(C_N + C_S)
-            a_S = C_S/(C_N + C_S)
-            a_E = C_E/(C_E + C_W)
-            a_W = C_W/(C_E + C_W)
-            ! Interpolate residual to coarse grid
-            X(i_coarse, j_coarse) = 0.25d0 * (solver%solution(i_fine, j_fine) + &
-            solver%solution(E_indx, j_fine) * a_E + solver%solution(W_indx, j_fine) * a_W +  &
-            solver%solution(i_fine, N_indx) * a_N + solver%solution(i_fine, S_indx) * a_S + &
-            solver%solution(E_indx, N_indx) * a_E * a_N + solver%solution(E_indx, S_indx) * a_E * a_S + &
-            solver%solution(W_indx, N_indx) * a_W * a_N + solver%solution(W_indx, S_indx) * a_W * a_S)
-        end do
-        !$OMP end do
-        !$OMP end parallel
+    ! subroutine restriction(solver, X)
+    !     ! Check to make sure N_x and N_y is divisible by however many stages in multigrid we want
+    !     type(GSSolver), intent(in) :: solver
+    !     real(real64), intent(in out) :: X(:,:)
+    !     real(real64) :: a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S
+    !     integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, blackIdx
+    !     !$OMP parallel private(blackIdx, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, &
+    !     !$OMP& a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S)
+    !     !$OMP do
+    !     do k = 1, solver%numberRestrictionInnerNodes
+    !         blackIdx = solver%restrictionInnerIndx(k) ! index in black_Indx for overlapping fine grid node
+    !         i_fine = solver%black_InnerIndx(1, blackIdx) ! overlapping index in fine grid
+    !         j_fine = solver%black_InnerIndx(2, blackIdx) ! overlapping index in fine grid
+    !         C_N = solver%matCoeffsInnerBlack(2, blackIdx)
+    !         C_E = solver%matCoeffsInnerBlack(3, blackIdx)
+    !         C_S = solver%matCoeffsInnerBlack(4, blackIdx)
+    !         C_W = solver%matCoeffsInnerBlack(5, blackIdx)
+    !         ! calculate fine indices around overlapping index
+    !         i_coarse = (i_fine + 1)/2
+    !         j_coarse = (j_fine + 1)/2
+    !         N_indx = j_fine+1
+    !         E_indx = i_fine+1
+    !         S_indx = j_fine-1
+    !         W_indx = i_fine-1
+    !         ! get weight coefficients in each direction
+    !         a_N = C_N/(C_N + C_S)
+    !         a_S = C_S/(C_N + C_S)
+    !         a_E = C_E/(C_E + C_W)
+    !         a_W = C_W/(C_E + C_W)
+    !         ! Interpolate residual to coarse grid
+    !         X(i_coarse, j_coarse) = 0.25d0 * (solver%solution(i_fine, j_fine) + &
+    !         solver%solution(E_indx, j_fine) * a_E + solver%solution(W_indx, j_fine) * a_W +  &
+    !         solver%solution(i_fine, N_indx) * a_N + solver%solution(i_fine, S_indx) * a_S + &
+    !         solver%solution(E_indx, N_indx) * a_E * a_N + solver%solution(E_indx, S_indx) * a_E * a_S + &
+    !         solver%solution(W_indx, N_indx) * a_W * a_N + solver%solution(W_indx, S_indx) * a_W * a_S)
+    !     end do
+    !     !$OMP end do nowait
+    !     !$OMP do
+    !     do k = 1, solver%numberRestrictionBoundNodes
+    !         blackIdx = solver%restrictionBoundIndx(k) ! index in black_Indx for overlapping fine grid node
+    !         i_fine = solver%black_NESW_BoundIndx(1, blackIdx) ! overlapping index in fine grid
+    !         j_fine = solver%black_NESW_BoundIndx(2, blackIdx) ! overlapping index in fine grid
+    !         C_N = solver%matCoeffsBoundBlack(2, blackIdx)
+    !         C_E = solver%matCoeffsBoundBlack(3, blackIdx)
+    !         C_S = solver%matCoeffsBoundBlack(4, blackIdx)
+    !         C_W = solver%matCoeffsBoundBlack(5, blackIdx)
+    !         ! calculate fine indices around overlapping index
+    !         i_coarse = (i_fine + 1)/2
+    !         j_coarse = (j_fine + 1)/2
+    !         E_indx = solver%black_NESW_BoundIndx(3, blackIdx)
+    !         W_indx = solver%black_NESW_BoundIndx(4, blackIdx)
+    !         N_indx = solver%black_NESW_BoundIndx(5, blackIdx)
+    !         S_indx = solver%black_NESW_BoundIndx(6, blackIdx)
+    !         ! get weight coefficients in each direction
+    !         a_N = C_N/(C_N + C_S)
+    !         a_S = C_S/(C_N + C_S)
+    !         a_E = C_E/(C_E + C_W)
+    !         a_W = C_W/(C_E + C_W)
+    !         ! Interpolate residual to coarse grid
+    !         X(i_coarse, j_coarse) = 0.25d0 * (solver%solution(i_fine, j_fine) + &
+    !         solver%solution(E_indx, j_fine) * a_E + solver%solution(W_indx, j_fine) * a_W +  &
+    !         solver%solution(i_fine, N_indx) * a_N + solver%solution(i_fine, S_indx) * a_S + &
+    !         solver%solution(E_indx, N_indx) * a_E * a_N + solver%solution(E_indx, S_indx) * a_E * a_S + &
+    !         solver%solution(W_indx, N_indx) * a_W * a_N + solver%solution(W_indx, S_indx) * a_W * a_S)
+    !     end do
+    !     !$OMP end do
+    !     !$OMP end parallel
 
-    end subroutine restriction
+    ! end subroutine restriction
 
-    subroutine prolongation(solver, X)
-        ! Restriction of orthogonal grid to next coarse grid
-        type(GSSolver), intent(in) :: solver
-        real(real64), intent(in out) :: X(:,:)
-        real(real64) :: weightX, weightY, weightTotal, weightXY
-        integer(int32) :: N_x_coarse, N_y_coarse, i_coarse, j_coarse, i_fine, j_fine
-        N_x_coarse = (solver%N_x + 1)/2
-        N_y_coarse = (solver%N_y + 1)/2
-        ! Each fine node which overlaps coarse node is black, take advantage of that by only going through black nodes
-        !$OMP parallel private(i_coarse, j_coarse, i_fine, j_fine)
-        ! do each do loop individually because can't think of fewer loops which do several calculations without doing same operation on each
-        !$OMP do collapse(2)
-        ! set similar nodes
-        do i_coarse = 1, N_x_coarse
-            do j_coarse = 1, N_y_coarse
-                i_fine = i_coarse*2 - 1
-                j_fine = j_coarse*2-1
-                O_indx = (2*j_coarse-2) * N_x_fine + 2*i_coarse-1
-                ! Add overlapping coarse nodes
-                solver%solution(i_fine, j_fine) = X(i_coarse, j_coarse)
-            end do
-        end do
-        !$OMP end do nowait
-        !$OMP do collapse(2)
-        ! go horizontal each row,
-        do i_coarse = 1, N_x_coarse-1
-            do j_coarse = 1, N_y_coarse
-                i_fine = i_coarse*2 - 1
-                j_fine = j_coarse*2 - 1
+    ! subroutine prolongation(solver, X)
+    !     ! Restriction of orthogonal grid to next coarse grid
+    !     type(GSSolver), intent(in) :: solver
+    !     real(real64), intent(in out) :: X(:,:)
+    !     real(real64) :: weightX, weightY, weightTotal, weightXY
+    !     integer(int32) :: N_x_coarse, N_y_coarse, i_coarse, j_coarse, i_fine, j_fine
+    !     N_x_coarse = (solver%N_x + 1)/2
+    !     N_y_coarse = (solver%N_y + 1)/2
+    !     ! Each fine node which overlaps coarse node is black, take advantage of that by only going through black nodes
+    !     !$OMP parallel private(i_coarse, j_coarse, i_fine, j_fine)
+    !     ! do each do loop individually because can't think of fewer loops which do several calculations without doing same operation on each
+    !     !$OMP do collapse(2)
+    !     ! set similar nodes
+    !     do i_coarse = 1, N_x_coarse
+    !         do j_coarse = 1, N_y_coarse
+    !             i_fine = i_coarse*2 - 1
+    !             j_fine = j_coarse*2-1
+    !             O_indx = (2*j_coarse-2) * N_x_fine + 2*i_coarse-1
+    !             ! Add overlapping coarse nodes
+    !             solver%solution(i_fine, j_fine) = X(i_coarse, j_coarse)
+    !         end do
+    !     end do
+    !     !$OMP end do nowait
+    !     !$OMP do collapse(2)
+    !     ! go horizontal each row,
+    !     do i_coarse = 1, N_x_coarse-1
+    !         do j_coarse = 1, N_y_coarse
+    !             i_fine = i_coarse*2 - 1
+    !             j_fine = j_coarse*2 - 1
 
-                ! Average fine nodes between coarse nodes horizontally
-                self%GS_smoothers(stageInt)%solution(O_indx+1) = self%GS_smoothers(stageInt)%solution(O_indx+1) + &
-                    0.5d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1))
-                ! self%GS_smoothers(stageInt)%solution(O_indx+1) = self%GS_smoothers(stageInt)%solution(O_indx+1) + &
-                !     weightX * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1))
-            end do
-        end do
-        !$OMP end do nowait
-        !$OMP do collapse(2)
-        ! go vertical
-        do i_coarse = 1, N_x_coarse
-            do j_coarse = 1, self%N_y(nextStageInt)-1
-                O_indx_coarse = (j_coarse-1) * N_x_coarse + i_coarse
-                O_indx = (2*j_coarse-2) * N_x_fine + 2*i_coarse-1
-                ! Average fine nodes between coarse nodes vertical direction
-                self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) = self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) + &
-                    0.5d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+N_x_coarse))
-                ! self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) = self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) + &
-                !     weightY * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+N_x_coarse))
-            end do
-        end do
-        !$OMP end do nowait
-        !$OMP do collapse(2)
-        ! add offset fine nodes which require 4 point interpolation
-        ! first loop through SW corner coarse nodes
-        do i_coarse = 1, N_x_coarse-1
-            do j_coarse = 1, self%N_y(nextStageInt)-1
-                O_indx_coarse = (j_coarse-1) * N_x_coarse + i_coarse
-                O_indx = (2*j_coarse-1) * N_x_fine + 2*i_coarse ! index to uper right of coarse node
-                self%GS_smoothers(stageInt)%solution(O_indx) =  self%GS_smoothers(stageInt)%solution(O_indx) + &
-                    0.25d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1) &
-                        + lowerSolution(O_indx_coarse+N_x_coarse) + lowerSolution(O_indx_coarse+N_x_coarse+1))
-                ! self%GS_smoothers(stageInt)%solution(O_indx) =  self%GS_smoothers(stageInt)%solution(O_indx) + &
-                !     weightXY * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1) &
-                !         + lowerSolution(O_indx_coarse+N_x_coarse) + lowerSolution(O_indx_coarse+N_x_coarse+1))
-            end do
-        end do
-        !$OMP end do
-        !$OMP end parallel
+    !             ! Average fine nodes between coarse nodes horizontally
+    !             self%GS_smoothers(stageInt)%solution(O_indx+1) = self%GS_smoothers(stageInt)%solution(O_indx+1) + &
+    !                 0.5d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1))
+    !             ! self%GS_smoothers(stageInt)%solution(O_indx+1) = self%GS_smoothers(stageInt)%solution(O_indx+1) + &
+    !             !     weightX * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1))
+    !         end do
+    !     end do
+    !     !$OMP end do nowait
+    !     !$OMP do collapse(2)
+    !     ! go vertical
+    !     do i_coarse = 1, N_x_coarse
+    !         do j_coarse = 1, self%N_y(nextStageInt)-1
+    !             O_indx_coarse = (j_coarse-1) * N_x_coarse + i_coarse
+    !             O_indx = (2*j_coarse-2) * N_x_fine + 2*i_coarse-1
+    !             ! Average fine nodes between coarse nodes vertical direction
+    !             self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) = self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) + &
+    !                 0.5d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+N_x_coarse))
+    !             ! self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) = self%GS_smoothers(stageInt)%solution(O_indx+N_x_fine) + &
+    !             !     weightY * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+N_x_coarse))
+    !         end do
+    !     end do
+    !     !$OMP end do nowait
+    !     !$OMP do collapse(2)
+    !     ! add offset fine nodes which require 4 point interpolation
+    !     ! first loop through SW corner coarse nodes
+    !     do i_coarse = 1, N_x_coarse-1
+    !         do j_coarse = 1, self%N_y(nextStageInt)-1
+    !             O_indx_coarse = (j_coarse-1) * N_x_coarse + i_coarse
+    !             O_indx = (2*j_coarse-1) * N_x_fine + 2*i_coarse ! index to uper right of coarse node
+    !             self%GS_smoothers(stageInt)%solution(O_indx) =  self%GS_smoothers(stageInt)%solution(O_indx) + &
+    !                 0.25d0 * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1) &
+    !                     + lowerSolution(O_indx_coarse+N_x_coarse) + lowerSolution(O_indx_coarse+N_x_coarse+1))
+    !             ! self%GS_smoothers(stageInt)%solution(O_indx) =  self%GS_smoothers(stageInt)%solution(O_indx) + &
+    !             !     weightXY * (lowerSolution(O_indx_coarse) + lowerSolution(O_indx_coarse+1) &
+    !             !         + lowerSolution(O_indx_coarse+N_x_coarse) + lowerSolution(O_indx_coarse+N_x_coarse+1))
+    !         end do
+    !     end do
+    !     !$OMP end do
+    !     !$OMP end parallel
 
-    end subroutine prolongation
+    ! end subroutine prolongation
 
 
 
