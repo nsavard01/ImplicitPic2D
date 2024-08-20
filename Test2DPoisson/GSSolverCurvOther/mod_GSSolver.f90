@@ -126,81 +126,81 @@ contains
         ! Fill arrays 
         do j = 1, self%N_y
             do i = 1, self%N_x
-                if (boundaryConditions(i,j) /= 1) then
-                    if (boundaryConditions(i,j) == 0) then
-                        delX_E = diffX(i)
-                        delX_W = diffX(i-1)
-                        delY_N = diffY(j)
-                        delY_S = diffY(j-1)
-                        ! Inner node, set coefficients
-                        C_N = 1.0d0 / (delY_N * 0.5d0 * (delY_N + delY_S)) ! N
-                        C_E = 1.0d0 / (delX_E * 0.5d0 * (delX_E + delX_W)) ! E
-                        C_S = 1.0d0 / (delY_S * 0.5d0 * (delY_N + delY_S)) ! S
-                        C_W = 1.0d0 / (delX_W * 0.5d0 * (delX_E + delX_W)) ! W
-                        C_O = -1.0d0 / (C_N + C_E + C_W + C_S) ! O
-                    else
-                        ! Initial indices
-                        N_indx = j+1
-                        S_indx = j-1
-                        E_indx = i+1
-                        W_indx = i-1
-                        if (boundaryConditions(i,j) == 2) then
-                            !Neumann boundary
-                            if (i == 1) then
-                                ! left boundary, Switch west
-                                W_indx = E_indx
-                                delX_E = diffX(i)
-                                delX_W = delX_E
-                            else if (i == self%N_x) then
-                                ! right boundary, Switch east
-                                E_indx = W_indx
-                                delX_W = diffX(i-1)
-                                delX_E = delX_W
-                            else
-                                delX_E = diffX(i)
-                                delX_W = diffX(i-1)
-                            end if
-                            if (j == 1) then
-                                ! lower boundary, switch south
-                                S_indx = N_indx
-                                delY_N = diffY(j)
-                                delY_S = delY_N
-                            else if (j == self%N_y) then
-                                ! upper boundary, switch north
-                                N_indx = S_indx
-                                delY_S = diffY(j-1)
-                                delY_N = delY_S
-                            else
-                                delY_N = diffY(j)
-                                delY_S = diffY(j-1)
-                            end if
+                if (boundaryConditions(i,j) == 0) then
+                    delX_E = diffX(i)
+                    delX_W = diffX(i-1)
+                    delY_N = diffY(j)
+                    delY_S = diffY(j-1)
+                    ! Inner node, set coefficients
+                    C_N = 1.0d0 / (delY_N * 0.5d0 * (delY_N + delY_S)) ! N
+                    C_E = 1.0d0 / (delX_E * 0.5d0 * (delX_E + delX_W)) ! E
+                    C_S = 1.0d0 / (delY_S * 0.5d0 * (delY_N + delY_S)) ! S
+                    C_W = 1.0d0 / (delX_W * 0.5d0 * (delX_E + delX_W)) ! W
+                    C_O = -1.0d0 / (C_N + C_E + C_W + C_S) ! O
+                else
+                    ! Initial indices
+                    N_indx = j+1
+                    S_indx = j-1
+                    E_indx = i+1
+                    W_indx = i-1
+                    if (boundaryConditions(i,j) <= 2) then
+                        !Neumann boundary or dirichlet, have reflected grid
+                        if (i == 1) then
+                            ! left boundary, Switch west
+                            W_indx = E_indx
+                            delX_E = diffX(i)
+                            delX_W = delX_E
+                        else if (i == self%N_x) then
+                            ! right boundary, Switch east
+                            E_indx = W_indx
+                            delX_W = diffX(i-1)
+                            delX_E = delX_W
                         else
-                            ! periodic boundary
-                            if (i == 1) then
-                                ! left boundary, Switch west
-                                W_indx = self%N_x - 1
-                            else if (i == self%N_x) then
-                                ! right boundary, Switch east
-                                E_indx = 2
-                            end if
-                            if (j == 1) then
-                                ! lower boundary, switch south
-                                S_indx = self%N_y - 1
-                            else if (j == self%N_y) then
-                                ! upper boundary, switch north
-                                N_indx = 2
-                            end if
-                            delX_E = diffX(E_indx-1)
-                            delX_W = diffX(W_indx)
-                            delY_N = diffY(N_indx-1)
-                            delY_S = diffY(S_indx)
+                            delX_E = diffX(i)
+                            delX_W = diffX(i-1)
                         end if
-                        ! Bound node, set coefficients
-                        C_N = 1.0d0 / (delY_N * 0.5d0 * (delY_N + delY_S)) ! N
-                        C_E = 1.0d0 / (delX_E * 0.5d0 * (delX_E + delX_W)) ! E
-                        C_S = 1.0d0 / (delY_S * 0.5d0 * (delY_N + delY_S)) ! S
-                        C_W = 1.0d0 / (delX_W * 0.5d0 * (delX_E + delX_W)) ! W
-                        C_O = -1.0d0 / (C_N + C_E + C_W + C_S) ! O
+                        if (j == 1) then
+                            ! lower boundary, switch south
+                            S_indx = N_indx
+                            delY_N = diffY(j)
+                            delY_S = delY_N
+                        else if (j == self%N_y) then
+                            ! upper boundary, switch north
+                            N_indx = S_indx
+                            delY_S = diffY(j-1)
+                            delY_N = delY_S
+                        else
+                            delY_N = diffY(j)
+                            delY_S = diffY(j-1)
+                        end if
+                    else
+                        ! periodic boundary
+                        if (i == 1) then
+                            ! left boundary, Switch west
+                            W_indx = self%N_x - 1
+                        else if (i == self%N_x) then
+                            ! right boundary, Switch east
+                            E_indx = 2
+                        end if
+                        if (j == 1) then
+                            ! lower boundary, switch south
+                            S_indx = self%N_y - 1
+                        else if (j == self%N_y) then
+                            ! upper boundary, switch north
+                            N_indx = 2
+                        end if
+                        delX_E = diffX(E_indx-1)
+                        delX_W = diffX(W_indx)
+                        delY_N = diffY(N_indx-1)
+                        delY_S = diffY(S_indx)
+                    end if
+                    ! Bound node, set coefficients
+                    C_N = 1.0d0 / (delY_N * 0.5d0 * (delY_N + delY_S)) ! N
+                    C_E = 1.0d0 / (delX_E * 0.5d0 * (delX_E + delX_W)) ! E
+                    C_S = 1.0d0 / (delY_S * 0.5d0 * (delY_N + delY_S)) ! S
+                    C_W = 1.0d0 / (delX_W * 0.5d0 * (delX_E + delX_W)) ! W
+                    C_O = -1.0d0 / (C_N + C_E + C_W + C_S) ! O
+                    if (boundaryConditions(i,j) /=1) then
                         if (MOD(i,2) == MOD(j,2)) then
                             ! Black node
                             tempNumBoundBlack = tempNumBoundBlack + 1
@@ -211,10 +211,8 @@ contains
                             self%red_NESW_BoundIndx(:, tempNumBoundRed) = [i,j,E_indx, W_indx, N_indx, S_indx]
                         end if
                     end if
-                    self%matCoeffs(:, i, j) = [C_O, C_N, C_E, C_S, C_W]
-                else
-                    self%matCoeffs(:, i, j) = 0.0d0
                 end if
+                self%matCoeffs(:, i, j) = [C_O, C_N, C_E, C_S, C_W]
             end do
         end do
         

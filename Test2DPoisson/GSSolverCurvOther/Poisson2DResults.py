@@ -54,13 +54,26 @@ grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 Length = gridX[-1] - gridX[0]
 Width = gridY[-1] - gridY[0]
 sol_1 = np.fromfile('finalSol.dat')
+
 plt.figure()
-plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F'), shading = 'nearest', norm = 'log')
+plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F'), shading = 'nearest')
 plt.colorbar()
 
-# GSRes = np.fromfile('finalRes.dat')
+
+
+numNodes_x = int((numNodes[0]+1)/2)
+numNodes_y = int((numNodes[1]+1)/2)
+GSRes = np.fromfile('test.dat')
+gridX = gridX[0:numNodes[0]:2]
+gridY = gridY[0:numNodes[1]:2]
+grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
+plt.figure()
+plt.pcolormesh(grid2DX, grid2DY, np.reshape(GSRes, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
+plt.colorbar()
+
+# test = np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F')[0:numNodes[0]:2, 0:numNodes[1]:2] - np.reshape(GSRes, (numNodes_x, numNodes_y), order = 'F')
 # plt.figure()
-# plt.pcolormesh(grid2DX, grid2DY, np.reshape(np.absolute(GSRes, (numNodes[0], numNodes[1]), order = 'F'))
+# plt.pcolormesh(grid2DX, grid2DY, test, shading = 'nearest')
 # plt.colorbar()
 
 # test = np.fromfile('test.dat')
