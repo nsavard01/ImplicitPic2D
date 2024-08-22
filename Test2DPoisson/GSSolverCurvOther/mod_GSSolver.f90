@@ -747,34 +747,36 @@ contains
                 S_indx = j_fine-1
                 W_indx = i_fine-1
 
-                ! ! interpolation from north point
-                ! C_N = self%matCoeffs(2, i_fine, N_indx)
-                ! C_S = self%matCoeffs(4, i_fine, N_indx)
-                ! a_N = C_S/(C_N + C_S)
+                ! Transpose of prolongation, seems to work best
+                ! interpolation from north point
+                C_N = self%matCoeffs(2, i_fine, N_indx)
+                C_S = self%matCoeffs(4, i_fine, N_indx)
+                a_N = C_S/(C_N + C_S)
 
-                ! ! interpolation from south point
-                ! C_N = self%matCoeffs(2, i_fine, S_indx)
-                ! C_S = self%matCoeffs(4, i_fine, S_indx)
-                ! a_S = C_N/(C_N + C_S)
+                ! interpolation from south point
+                C_N = self%matCoeffs(2, i_fine, S_indx)
+                C_S = self%matCoeffs(4, i_fine, S_indx)
+                a_S = C_N/(C_N + C_S)
 
-                ! ! interpolation from east point
-                ! C_E = self%matCoeffs(3, E_indx, j_fine)
-                ! C_W = self%matCoeffs(5, E_indx, j_fine)
-                ! a_E = C_W/(C_E + C_W)
+                ! interpolation from east point
+                C_E = self%matCoeffs(3, E_indx, j_fine)
+                C_W = self%matCoeffs(5, E_indx, j_fine)
+                a_E = C_W/(C_E + C_W)
 
-                ! ! interpolation from west point
-                ! C_E = self%matCoeffs(3, W_indx, j_fine)
-                ! C_W = self%matCoeffs(5, W_indx, j_fine)
-                ! a_W = C_E/(C_E + C_W)
+                ! interpolation from west point
+                C_E = self%matCoeffs(3, W_indx, j_fine)
+                C_W = self%matCoeffs(5, W_indx, j_fine)
+                a_W = C_E/(C_E + C_W)
 
-                C_N = self%matCoeffs(2, i_fine, j_fine)
-                C_E = self%matCoeffs(3, i_fine, j_fine)
-                C_S = self%matCoeffs(4, i_fine, j_fine)
-                C_W = self%matCoeffs(5, i_fine, j_fine)
-                a_N = C_N/(C_N + C_S)
-                a_S = C_S/(C_N + C_S)
-                a_E = C_E/(C_E + C_W)
-                a_W = C_W/(C_E + C_W)
+                ! node based restriction
+                ! C_N = self%matCoeffs(2, i_fine, j_fine)
+                ! C_E = self%matCoeffs(3, i_fine, j_fine)
+                ! C_S = self%matCoeffs(4, i_fine, j_fine)
+                ! C_W = self%matCoeffs(5, i_fine, j_fine)
+                ! a_N = C_N/(C_N + C_S)
+                ! a_S = C_S/(C_N + C_S)
+                ! a_E = C_E/(C_E + C_W)
+                ! a_W = C_W/(C_E + C_W)
 
 
                 ! Interpolate residual to coarse grid
@@ -783,6 +785,13 @@ contains
                 fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
                 fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
                 fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+
+                ! Simple interpolation can be surprisingly good
+                ! coarseGrid(i_coarse, j_coarse) = 0.25d0 * fineGrid(i_fine, j_fine) + &
+                ! 0.125d0 * (fineGrid(E_indx, j_fine) + fineGrid(W_indx, j_fine) +  &
+                ! fineGrid(i_fine, N_indx) + fineGrid(i_fine, S_indx)) + &
+                ! 0.0625d0 * (fineGrid(E_indx, N_indx) + fineGrid(E_indx, S_indx) + &
+                ! fineGrid(W_indx, N_indx)+ fineGrid(W_indx, S_indx))
             end do
         end do
         !$OMP end do nowait
@@ -799,67 +808,69 @@ contains
             ! calculate fine indices around overlapping index
             i_coarse = (i_fine + 1)/2
             j_coarse = (j_fine + 1)/2
-            ! if (N_indx == S_indx) then
-            !     ! neumann boundary
-            !     if (j_fine == 1) then
-            !         ! bottom boundary
-            !         C_N = self%matCoeffs(2, i_fine, N_indx)
-            !         C_S = self%matCoeffs(4, i_fine, N_indx)
-            !         a_N = C_S/(C_N + C_S)
-            !         a_S = a_N
-            !     else
-            !         ! top boundary
-            !         C_N = self%matCoeffs(2, i_fine, S_indx)
-            !         C_S = self%matCoeffs(4, i_fine, S_indx)
-            !         a_S = C_N/(C_N + C_S)
-            !         a_N = a_S
-            !     end if
-            ! else
-            !     ! interpolation from north point
-            !     C_N = self%matCoeffs(2, i_fine, N_indx)
-            !     C_S = self%matCoeffs(4, i_fine, N_indx)
-            !     a_N = C_S/(C_N + C_S)
+            ! From transpose of prolongation, works fairly well
+            if (N_indx == S_indx) then
+                ! neumann boundary
+                if (j_fine == 1) then
+                    ! bottom boundary
+                    C_N = self%matCoeffs(2, i_fine, N_indx)
+                    C_S = self%matCoeffs(4, i_fine, N_indx)
+                    a_N = C_S/(C_N + C_S)
+                    a_S = a_N
+                else
+                    ! top boundary
+                    C_N = self%matCoeffs(2, i_fine, S_indx)
+                    C_S = self%matCoeffs(4, i_fine, S_indx)
+                    a_S = C_N/(C_N + C_S)
+                    a_N = a_S
+                end if
+            else
+                ! interpolation from north point
+                C_N = self%matCoeffs(2, i_fine, N_indx)
+                C_S = self%matCoeffs(4, i_fine, N_indx)
+                a_N = C_S/(C_N + C_S)
 
-            !     ! interpolation from south point
-            !     C_N = self%matCoeffs(2, i_fine, S_indx)
-            !     C_S = self%matCoeffs(4, i_fine, S_indx)
-            !     a_S = C_N/(C_N + C_S)
-            ! end if
+                ! interpolation from south point
+                C_N = self%matCoeffs(2, i_fine, S_indx)
+                C_S = self%matCoeffs(4, i_fine, S_indx)
+                a_S = C_N/(C_N + C_S)
+            end if
             
-            ! if (E_indx == W_indx) then
-            !     ! neumann boundary
-            !     if (i_fine == 1) then
-            !         ! left boundary
-            !         C_E = self%matCoeffs(3, E_indx, j_fine)
-            !         C_W = self%matCoeffs(5, E_indx, j_fine)
-            !         a_E = C_W/(C_E + C_W)
-            !         a_W = a_E
-            !     else
-            !         C_E = self%matCoeffs(3, W_indx, j_fine)
-            !         C_W = self%matCoeffs(5, W_indx, j_fine)
-            !         a_W = C_E/(C_E + C_W)
-            !         a_E = a_W
-            !     end if
-            ! else
-            !     ! interpolation from east point
-            !     C_E = self%matCoeffs(3, E_indx, j_fine)
-            !     C_W = self%matCoeffs(5, E_indx, j_fine)
-            !     a_E = C_W/(C_E + C_W)
+            if (E_indx == W_indx) then
+                ! neumann boundary
+                if (i_fine == 1) then
+                    ! left boundary
+                    C_E = self%matCoeffs(3, E_indx, j_fine)
+                    C_W = self%matCoeffs(5, E_indx, j_fine)
+                    a_E = C_W/(C_E + C_W)
+                    a_W = a_E
+                else
+                    C_E = self%matCoeffs(3, W_indx, j_fine)
+                    C_W = self%matCoeffs(5, W_indx, j_fine)
+                    a_W = C_E/(C_E + C_W)
+                    a_E = a_W
+                end if
+            else
+                ! interpolation from east point
+                C_E = self%matCoeffs(3, E_indx, j_fine)
+                C_W = self%matCoeffs(5, E_indx, j_fine)
+                a_E = C_W/(C_E + C_W)
 
-            !     ! interpolation from west point
-            !     C_E = self%matCoeffs(3, W_indx, j_fine)
-            !     C_W = self%matCoeffs(5, W_indx, j_fine)
-            !     a_W = C_E/(C_E + C_W)
-            ! end if
+                ! interpolation from west point
+                C_E = self%matCoeffs(3, W_indx, j_fine)
+                C_W = self%matCoeffs(5, W_indx, j_fine)
+                a_W = C_E/(C_E + C_W)
+            end if
 
-            C_N = self%matCoeffs(2, i_fine, j_fine)
-            C_E = self%matCoeffs(3, i_fine, j_fine)
-            C_S = self%matCoeffs(4, i_fine, j_fine)
-            C_W = self%matCoeffs(5, i_fine, j_fine)
-            a_N = C_N/(C_N + C_S)
-            a_S = C_S/(C_N + C_S)
-            a_E = C_E/(C_E + C_W)
-            a_W = C_W/(C_E + C_W)
+            ! node based restrition
+            ! C_N = self%matCoeffs(2, i_fine, j_fine)
+            ! C_E = self%matCoeffs(3, i_fine, j_fine)
+            ! C_S = self%matCoeffs(4, i_fine, j_fine)
+            ! C_W = self%matCoeffs(5, i_fine, j_fine)
+            ! a_N = C_N/(C_N + C_S)
+            ! a_S = C_S/(C_N + C_S)
+            ! a_E = C_E/(C_E + C_W)
+            ! a_W = C_W/(C_E + C_W)
 
             ! Interpolate residual to coarse grid
             coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
@@ -867,6 +878,13 @@ contains
             fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
             fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
             fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+
+            ! simple binomial filter, actually ok
+            ! coarseGrid(i_coarse, j_coarse) = 0.25d0 * fineGrid(i_fine, j_fine) + &
+            !     0.125d0 * (fineGrid(E_indx, j_fine) + fineGrid(W_indx, j_fine) +  &
+            !     fineGrid(i_fine, N_indx) + fineGrid(i_fine, S_indx)) + &
+            !     0.0625d0 * (fineGrid(E_indx, N_indx) + fineGrid(E_indx, S_indx) + &
+            !     fineGrid(W_indx, N_indx)+ fineGrid(W_indx, S_indx))
         end do
         !$OMP end do
         !$OMP end parallel
@@ -908,8 +926,11 @@ contains
                 w_tot = w_1 + w_2
                 w_1 = w_1 / w_tot
                 w_2 = w_2 / w_tot
+    
                 ! Average fine nodes between coarse nodes horizontally
                 fineGrid(i_fine+1, j_fine) = fineGrid(i_fine+1, j_fine) + coarseGrid(i_coarse+1, j_coarse) * w_1 + coarseGrid(i_coarse, j_coarse) * w_2
+                ! simple interpolation
+                ! fineGrid(i_fine+1, j_fine) = fineGrid(i_fine+1, j_fine) + coarseGrid(i_coarse+1, j_coarse) * 0.5d0 + coarseGrid(i_coarse, j_coarse) * 0.5d0
             end do
         end do
         !$OMP end do nowait
@@ -926,6 +947,8 @@ contains
                 w_2 = w_2 / w_tot
                 ! Average fine nodes between coarse nodes vertical direction
                 fineGrid(i_fine, j_fine+1) = fineGrid(i_fine, j_fine+1) + coarseGrid(i_coarse, j_coarse+1) * w_1 + coarseGrid(i_coarse, j_coarse) * w_2
+                ! Simple interpolation
+                ! fineGrid(i_fine, j_fine+1) = fineGrid(i_fine, j_fine+1) + coarseGrid(i_coarse, j_coarse+1) * 0.5d0 + coarseGrid(i_coarse, j_coarse) * 0.5d0
             end do
         end do
         !$OMP end do nowait
@@ -950,6 +973,10 @@ contains
 
                 fineGrid(i_fine+1, j_fine+1) = fineGrid(i_fine+1, j_fine+1) + coarseGrid(i_coarse, j_coarse) * w_2*w_4 + coarseGrid(i_coarse+1, j_coarse) * w_3 * w_2 &
                     + coarseGrid(i_coarse, j_coarse+1) * w_1 * w_4 + coarseGrid(i_coarse+1, j_coarse+1) * w_1 * w_3
+
+                ! simple interpolation
+                ! fineGrid(i_fine+1, j_fine+1) = fineGrid(i_fine+1, j_fine+1) + coarseGrid(i_coarse, j_coarse) * 0.25d0 + coarseGrid(i_coarse+1, j_coarse) * 0.25d0 &
+                !     + coarseGrid(i_coarse, j_coarse+1) * 0.25d0 + coarseGrid(i_coarse+1, j_coarse+1) * 0.25d0
             end do
         end do
         !$OMP end do

@@ -19,7 +19,7 @@ module mod_MGSolver
     contains
         procedure, public, pass(self) :: makeSmootherStages
         ! procedure, public, pass(self) :: F_V_Cycle
-        ! procedure, public, pass(self) :: F_Cycle
+        procedure, public, pass(self) :: F_Cycle
         procedure, public, pass(self) :: V_Cycle
         procedure, public, pass(self) :: MG_Cycle_Solve
     end type
@@ -104,9 +104,10 @@ contains
 
 
 
-    subroutine MG_Cycle_Solve(self, stepTol, relTol)
+    subroutine MG_Cycle_Solve(self, stepTol, relTol, intSelect)
         ! V cycle for multigrid solver
         class(MGSolver), intent(in out) :: self
+        integer, intent(in) :: intSelect
         real(real64), intent(in) :: stepTol, relTol
         real(real64) :: initRes
         integer(int32) :: i
@@ -126,9 +127,11 @@ contains
         i = 0
         if ((self%stepResidual > stepTol .and. self%R2_current/initRes > relTol)) then
             do i = 1, self%maxIter
-                
-                call self%V_Cycle()
-
+                if (intSelect == 0) then
+                    call self%V_Cycle()
+                else
+                    call self%F_Cycle()
+                end if
                 call self%GS_smoothers(1)%smoothIterations(self%numberPreSmoothOper-1)
                 self%stepResidual = self%GS_smoothers(1)%smoothWithRes()
                 if (self%stepResidual < stepTol) then
@@ -177,60 +180,65 @@ contains
 
     end subroutine V_Cycle
 
-    ! subroutine F_Cycle(self)
-    !     ! first start with full multi-grid grid for good initial guess
-    !     class(MGSolver), intent(in out) :: self
-    !     integer(int32) :: stageInt, j
+    subroutine F_Cycle(self)
+        ! first start with full multi-grid grid for good initial guess
+        class(MGSolver), intent(in out) :: self
+        integer(int32) :: stageInt, j
         
-    !     ! initialize residual to solve on fine grid (b - Ax)
-    !     ! then restrict all the way to coarsest grid
-    !     ! works better if restrict residual after smoothing instead of just rho
-    !     do stageInt = 1, self%smoothNumber-1
-    !         ! Restrict to next smoother
-    !         call self%GS_smoothers(stageInt)%restriction(self%GS_smoothers(stageInt)%residual, self%GS_smoothers(stageInt+1)%sourceTerm)
-    !         ! Reset solution to zero as first error guess
-    !         !$OMP parallel workshare
-    !         self%GS_smoothers(stageInt+1)%solution = 0.0d0
-    !         !$OMP end parallel workshare
-    !         call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper)
-    !         call self%GS_smoothers(stageInt+1)%calcResidual() 
-    !     end do
-    !     ! Final Solver restriction and solution, then prolongation
-    !     call self%GS_smoothers(self%smoothNumber)%restriction(self%GS_smoothers(self%smoothNumber)%residual, self%directSolver%sourceTerm)
-    !     ! First solve on coarsest grid
-    !     call self%directSolver%runPardiso()
+        ! initialize residual to solve on fine grid (b - Ax)
+        ! then restrict all the way to coarsest grid
+        ! works better if restrict residual after smoothing instead of just rho
+        do stageInt = 1, self%smoothNumber-1
+            ! Restrict to next smoother
+            call self%GS_smoothers(stageInt)%restriction(self%GS_smoothers(stageInt)%residual, self%GS_smoothers(stageInt+1)%sourceTerm)
+            ! Reset solution to zero as first error guess
+            !$OMP parallel workshare
+            self%GS_smoothers(stageInt+1)%solution = 0.0d0
+            !$OMP end parallel workshare
+            call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper)
+            call self%GS_smoothers(stageInt+1)%calcResidual() 
+        end do
+        ! Final Solver restriction and solution, then prolongation
+        call self%GS_smoothers(self%smoothNumber)%restriction(self%GS_smoothers(self%smoothNumber)%residual, self%directSolver%sourceTerm)
+        ! First solve on coarsest grid
+        call self%directSolver%runPardiso()
         
-    !     do j = self%smoothNumber, 2, -1
-    !         ! j is each stage between coarsest and finest grid to to inverted V-cycle
-    !         call self%GS_smoothers(self%smoothNumber)%prolongation(self%GS_smoothers(self%smoothNumber)%solution, self%directSolver%solution)
-    !         call self%GS_smoothers(self%smoothNumber)%smoothIterations(self%numberPostSmoothOper)
-    !         do stageInt = self%smoothNumber-1, j, -1
-    !             ! prolongate and smooth up to jth stage
-    !             call self%orthogonalGridProlongation(stageInt, self%GS_smoothers(stageInt+1)%solution, self%GS_smoothers(stageInt+1)%matDimension)
-    !             call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper, .false.)
-    !         end do
-    !         ! when prolongated (with) to j-th stage, calculate residual, restrict to next stage
-    !         call self%GS_smoothers(j)%calcResidual()
-    !         do stageInt = j, self%smoothNumber-1
-    !             ! For each lower stage, restrict and recalculate residual
-    !             call self%orthogonalGridRestriction(stageInt, self%GS_smoothers(stageInt+1)%sourceTerm, self%GS_smoothers(stageInt+1)%matDimension)
-    !             call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper, .true.)  
-    !             call self%GS_smoothers(stageInt+1)%calcResidual()
-    !         end do
-    !         ! Restrict lowest grid
-    !         call self%orthogonalGridRestriction(self%smoothNumber, self%directSolver%sourceTerm, self%directSolver%matDimension)
-    !         ! Solve at lowest grid
-    !         call self%directSolver%runPardiso()
-    !     end do
-    !     ! Now prolongate all the way to finest grid
-    !     call self%orthogonalGridProlongation(self%smoothNumber, self%directSolver%solution, self%directSolver%matDimension)
-    !     do stageInt = self%smoothNumber, 2, -1
-    !         ! Prolongation from each
-    !         call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper, .false.)
-    !         call self%orthogonalGridProlongation(stageInt-1, self%GS_smoothers(stageInt)%solution, self%GS_smoothers(stageInt)%matDimension)
-    !     end do
+        do j = self%smoothNumber, 2, -1
+            ! j is each stage between coarsest and finest grid to to inverted V-cycle
+            call self%GS_smoothers(self%smoothNumber)%prolongation(self%GS_smoothers(self%smoothNumber)%solution, self%directSolver%solution)
+            call self%GS_smoothers(self%smoothNumber)%smoothIterations(self%numberPostSmoothOper)
+            do stageInt = self%smoothNumber-1, j, -1
+                ! prolongate and smooth up to jth stage
+                call self%GS_smoothers(stageInt)%prolongation(self%GS_smoothers(stageInt)%solution, self%GS_smoothers(stageInt+1)%solution)
+                call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper)
+            end do
+            ! when prolongated (with) to j-th stage, calculate residual, restrict to next stage
+            call self%GS_smoothers(j)%calcResidual()
+            do stageInt = j, self%smoothNumber-1
+                ! For each lower stage, restrict and recalculate residual
+                call self%GS_smoothers(stageInt)%restriction(self%GS_smoothers(stageInt)%residual, self%GS_smoothers(stageInt+1)%sourceTerm)
+                ! Reset solution to zero as first error guess
+                !$OMP parallel workshare
+                self%GS_smoothers(stageInt+1)%solution = 0.0d0
+                !$OMP end parallel workshare
+                call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper)
+                call self%GS_smoothers(stageInt+1)%calcResidual() 
+            end do
+            ! Restrict lowest grid
+            call self%GS_smoothers(self%smoothNumber)%restriction(self%GS_smoothers(self%smoothNumber)%residual, self%directSolver%sourceTerm)
+            ! Solve at lowest grid
+            call self%directSolver%runPardiso()
+        end do
+        ! Now prolongate all the way to finest grid
+        call self%GS_smoothers(self%smoothNumber)%prolongation(self%GS_smoothers(self%smoothNumber)%solution, self%directSolver%solution)
+        ! prolongation and smoothing to each additional grid
+        do stageInt = self%smoothNumber, 2, -1
+            ! Prolongation from each
+            call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper)
+            call self%GS_smoothers(stageInt-1)%prolongation(self%GS_smoothers(stageInt-1)%solution, self%GS_smoothers(stageInt)%solution)   
+        end do
 
-    ! end subroutine F_Cycle
+    end subroutine F_Cycle
 
     ! subroutine F_V_Cycle(self, stepTol, relTol)
     !     ! first start with full multi-grid grid for good initial guess, then proceed with V-cycles

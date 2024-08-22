@@ -10,7 +10,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 1001, N_y = 1001, numThreads = 7
+    integer(int32) :: N_x = 1001, N_y = 201, numThreads = 6
     ! type(GSSolver) :: solver
     ! type(pardisoSolver) :: directSolver
     type(MGSolver) :: solver
@@ -26,7 +26,7 @@ program main
 
     
     
-    numberStages = 5
+    numberStages = 6
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 10
     numberPostSmoothOper = 10
@@ -183,7 +183,7 @@ program main
 
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%MG_Cycle_Solve(stepTol, relTol)
+    call solver%MG_Cycle_Solve(stepTol, relTol, 1)
     call system_clock(endTime)
     ! open(41,file='test.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     ! write(41) solver%directSolver%solution
