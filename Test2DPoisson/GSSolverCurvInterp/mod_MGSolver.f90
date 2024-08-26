@@ -63,12 +63,12 @@ contains
         N_y_coarse = self%N_y
         diffX_temp = diffX
         diffY_temp = diffY
+        allocate(boundaryConditionsTemp(N_x_coarse, N_y_coarse))
         print *, 'Assembling new boundaries and generating new GS_smoothers'
         do stageIter = 2, self%smoothNumber
             print *, 'Smoother number:', stageIter
             N_x_coarse = (N_x_coarse+1)/2
             N_y_coarse = (N_y_coarse+1)/2
-            allocate(boundaryConditionsTemp(N_x_coarse, N_y_coarse))
             do i = 1, N_x_coarse-1
                 diffX_temp(i) = diffX_temp(2*i-1) + diffX_temp(2*i)
             end do
@@ -84,8 +84,7 @@ contains
             end do
             self%GS_smoothers(stageIter) = GSSolver(omega)
             call self%GS_smoothers(stageIter)%constructPoissonOrthogonal(N_x_coarse, N_y_coarse, &
-                diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp)
-            deallocate(boundaryConditionsTemp)
+                diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp(1:N_x_coarse, 1:N_y_coarse))
         end do
         
         ! Build direct pardiso solver
@@ -144,7 +143,6 @@ contains
                 !$OMP parallel workshare
                 self%R2_current = SUM(self%GS_smoothers(1)%residual**2)
                 !$OMP end parallel workshare
-                print *, 'MG iter:', i, 'res:', self%R2_current
                 if (self%R2_current/initRes < relTol) then
                     print *, 'Starting residual lowered'
                     exit

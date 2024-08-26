@@ -58,6 +58,7 @@ sol_1 = np.fromfile('finalSol.dat')
 plt.figure()
 plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F'), shading = 'nearest')
 plt.colorbar()
+
 # stage = 6
 #
 # numNodes_x = int((numNodes[0] + (2**(stage-1)-1)) / 2**(stage-1))

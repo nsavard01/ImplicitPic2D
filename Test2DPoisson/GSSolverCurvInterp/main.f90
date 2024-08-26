@@ -11,6 +11,8 @@ program main
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
     integer(int32) :: N_x = 1001, N_y = 201, numThreads = 6
+    ! type(GSSolver) :: solver
+    !type(pardisoSolver) :: directSolver
     type(MGSolver) :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
@@ -24,19 +26,19 @@ program main
 
     
     
-    numberStages = 7
+    numberStages = 6
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 10
     numberPostSmoothOper = 10
-    numberIter = 200
+    numberIter = 500
     omega = 1.5d0
-    relTol = 1.d-12
-    stepTol = 1.d-3
+    relTol = 1.d-8
+    stepTol = 1.d-6
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 1000.0d0
     NESW_phiValues(2) = 0.0d0
@@ -152,12 +154,43 @@ program main
     !         , NESW_wallBoundaries, NESW_phiValues, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
     ! call directSolver%initializePardiso(1, 11, 1, 0) ! use default pardiso initialization values
     ! ! set source Term first stage
-    !$OMP parallel
+    !$OMP parallel private(delX, delY)
     !$OMP do collapse(2)
     do j = 1, N_y
         do i = 1, N_x
             if (boundaryConditions(i,j) /= 1) then
                 solver%GS_smoothers(1)%sourceTerm(i,j) = -rho/eps_0
+                if (i > 1 .and. i < N_x) then
+                    delX = 0.5d0 * (diffX(i) + diffX(i-1))
+                else if (i == 1) then
+                    if (boundaryConditions(i, j) == 2) then
+                        delX = diffX(i)
+                    else
+                        delX = 0.5d0 * (diffX(i) + diffX(N_x-1))
+                    end if
+                else
+                    if (boundaryConditions(i, j) == 2) then
+                        delX = diffX(i-1)
+                    else
+                        delX = 0.5d0 * (diffX(i-1) + diffX(1))
+                    end if
+                end if
+                if (j > 1 .and. j < N_y) then
+                    delY = 0.5d0 * (diffY(j) + diffY(j-1))
+                else if (j == 1) then
+                    if (boundaryConditions(i, j) == 2) then
+                        delY = diffY(j)
+                    else
+                        delY = 0.5d0 * (diffY(j) + diffY(N_y-1))
+                    end if
+                else
+                    if (boundaryConditions(i, j) == 2) then
+                        delY = diffY(j-1)
+                    else
+                        delY = 0.5d0 * (diffY(j-1) + diffY(1))
+                    end if
+                end if
+                solver%GS_smoothers(1)%sourceTerm(i,j) = solver%GS_smoothers(1)%sourceTerm(i,j) * delX * delY
                 ! k = (j-1) * N_x + i
                 ! directSolver%sourceTerm(k) = -rho/eps_0
             end if

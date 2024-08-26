@@ -48,16 +48,17 @@ contains
         self%directSolver = pardisoSolver(N_x_coarse * N_y_coarse)
     end function MGSolver_constructor
 
-    subroutine makeSmootherStages(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega)
+    subroutine makeSmootherStages(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega, evenGridBool)
         class(MGSolver), intent(in out) :: self
         integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x,self%N_y)
         real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1), omega
-        real(real64) :: diffX_temp(self%N_x-1), diffY_temp(self%N_y-1), NESW_phiValTemp(4)
+        logical, intent(in) :: evenGridBool
+        real(real64) :: diffX_temp(self%N_x-1), diffY_temp(self%N_y-1), NESW_phiValTemp(4), delX, delY
         integer :: stageIter, i, j, j_temp, i_temp, N_x_coarse, N_y_coarse
         integer, allocatable :: boundaryConditionsTemp(:, :)
 
         ! Construct first stage GS smoother (finest grid)
-        self%GS_smoothers(1) = GSSolver(omega)
+        self%GS_smoothers(1) = GSSolver(omega, evenGridBool)
         call self%GS_smoothers(1)%constructPoissonOrthogonal(self%N_x, self%N_y, diffX, diffY, NESW_wallBoundaries, boundaryConditions)
         N_x_coarse = self%N_x
         N_y_coarse = self%N_y
@@ -82,13 +83,14 @@ contains
                     boundaryConditionsTemp(i, j) = boundaryConditions(i_temp,j_temp)
                 end do
             end do
-            self%GS_smoothers(stageIter) = GSSolver(omega)
+            self%GS_smoothers(stageIter) = GSSolver(omega, evenGridBool)
             call self%GS_smoothers(stageIter)%constructPoissonOrthogonal(N_x_coarse, N_y_coarse, &
                 diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp)
             deallocate(boundaryConditionsTemp)
         end do
         
         ! Build direct pardiso solver
+        NESW_phiValTemp = 0.0d0
         N_x_coarse = (N_x_coarse+1)/2
         N_y_coarse = (N_y_coarse+1)/2
         do i = 1, N_x_coarse-1
@@ -97,10 +99,17 @@ contains
         do i = 1, N_y_coarse-1
             diffY_temp(i) = diffY_temp(2*i-1) + diffY_temp(2*i)
         end do
-        NESW_phiValTemp = 0.0d0
-        call buildCurvGridOrthogonalPoissonMatrix(N_x_coarse, N_y_coarse, diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1) &
-            , NESW_wallBoundaries, NESW_phiValTemp, self%directSolver%MatValues, self%directSolver%rowIndex, self%directSolver%columnIndex, self%directSolver%sourceTerm)
+        if (evenGridBool) then
+            delX = diffX_temp(1)
+            delY = diffY_temp(1)
+            call buildEvenGridOrthogonalPoissonMatrix(N_x_coarse, N_y_coarse, delX, delY, NESW_wallBoundaries, &
+            NESW_phiValTemp, self%directSolver%MatValues, self%directSolver%rowIndex, self%directSolver%columnIndex, self%directSolver%sourceTerm)
+        else
+            call buildCurvGridOrthogonalPoissonMatrix(N_x_coarse, N_y_coarse, diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1) &
+                , NESW_wallBoundaries, NESW_phiValTemp, self%directSolver%MatValues, self%directSolver%rowIndex, self%directSolver%columnIndex, self%directSolver%sourceTerm)
+        end if
         call self%directSolver%initializePardiso(1, 11, 1, 0) ! use default pardiso initialization values
+        
     end subroutine makeSmootherStages
 
 

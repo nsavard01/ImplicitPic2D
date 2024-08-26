@@ -20,11 +20,11 @@ program main
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
     real(real64), allocatable :: diffX(:), diffY(:)
-    logical :: makeX
+    logical :: makeX, evenGridBool
 
+    evenGridBool = .true.
     
-    
-    numberStages = 7
+    numberStages = 6
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 10
     numberPostSmoothOper = 10
@@ -34,15 +34,15 @@ program main
     stepTol = 1.d-3
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 1000.0d0
     NESW_phiValues(2) = 0.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
-
+    
     upperPhi = NESW_phiValues(1)
     rightPhi = NESW_phiValues(2)
     lowerphi = NESW_phiValues(3)
@@ -57,13 +57,14 @@ program main
     call mkl_set_num_threads(numThreads)
     call omp_set_num_threads(numThreads)
     call checkNodeDivisionMG(N_x, N_y, numberStages)
-    allocate(diffX(N_x-1), diffY(N_y-1))
+    allocate(diffX(N_x-1), diffY(N_y-1))  
     delX = 0.01d0 * Length/real(N_x-1)
     delY = 0.01d0 * Width/real(N_y-1)
     makeX = .false.
-    call createCurvGrid(N_x, Length, diffX, delX)
+    call createCurvGrid(N_x, Length, diffX, delX, evenGridBool)
     makeX = .true.
-    call createCurvGrid(N_y, Width, diffY, delY)
+    call createCurvGrid(N_y, Width, diffY, delY, evenGridBool)
+   
     
 
     allocate(boundaryConditions(N_x, N_y))
@@ -91,11 +92,8 @@ program main
     ! upper left corner
     boundaryConditions(1, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
 
-    ! solver = GSSolver(omega)
-    ! call solver%constructPoissonOrthogonal(N_x, N_y, diffX, diffY, NESW_wallBoundaries, boundaryConditions)
-
     solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
-    call solver%makeSmootherStages(diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega)
+    call solver%makeSmootherStages(diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega, evenGridBool)
     
     ! Set phi values finer grid
     if (upperBound == 1) then
@@ -146,7 +144,6 @@ program main
             solver%GS_smoothers(1)%solution(N_x, N_y) = rightPhi
         end if
     end if
-    
     ! directSolver = pardisoSolver(N_x * N_y)
     ! call buildCurvGridOrthogonalPoissonMatrix(N_x, N_y, diffX, diffY &
     !         , NESW_wallBoundaries, NESW_phiValues, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
@@ -171,28 +168,29 @@ program main
     ! CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
     ! !$OMP end parallel workshare
     
-    ! do stageInt = 1, solver%smoothNumber-1
+    ! do stageInt = 1, solver%GS_smoothers(1)%smoothNumber-1
     !     ! Restrict to next smoother
-    !     call solver%GS_smoothers(stageInt)%restriction(solver%GS_smoothers(stageInt)%sourceTerm, solver%GS_smoothers(stageInt+1)%sourceTerm)
+    !     call solver%GS_smoothers(1)%GS_smoothers(stageInt)%restriction(solver%GS_smoothers(1)%GS_smoothers(stageInt)%sourceTerm, solver%GS_smoothers(1)%GS_smoothers(stageInt+1)%sourceTerm)
     ! end do
-    ! call solver%GS_smoothers(solver%smoothNumber)%restriction(solver%GS_smoothers(solver%smoothNumber)%sourceTerm, solver%directSolver%sourceTerm)
-    ! solver%directSolver%sourceTerm(solver%directSolver%matDimension - (solver%GS_smoothers(solver%smoothNumber)%N_x+1)/2 + 1:solver%directSolver%matDimension) = 1000.0d0
+    ! call solver%GS_smoothers(1)%GS_smoothers(solver%GS_smoothers(1)%smoothNumber)%restriction(solver%GS_smoothers(1)%GS_smoothers(solver%GS_smoothers(1)%smoothNumber)%sourceTerm, solver%GS_smoothers(1)%directSolver%sourceTerm)
+    ! solver%GS_smoothers(1)%directSolver%sourceTerm(solver%GS_smoothers(1)%directSolver%matDimension - (solver%GS_smoothers(1)%GS_smoothers(solver%GS_smoothers(1)%smoothNumber)%N_x+1)/2 + 1:solver%GS_smoothers(1)%directSolver%matDimension) = 1000.0d0
     
 
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%MG_Cycle_Solve(stepTol, relTol, 0)
+    call solver%MG_Cycle_Solve(stepTol, relTol, 1)
     call system_clock(endTime)
     ! open(41,file='test.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    ! write(41) solver%directSolver%solution
+    ! write(41) solver%GS_smoothers(1)%directSolver%solution
     ! close(41)
     ! stop
+    call solver%GS_smoothers(1)%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) solver%GS_smoothers(1)%solution
     close(41)
 
     
-    print *, 'took', solver%numIter, 'MG cycles'
+    print *, 'took', solver%numIter
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
 
   
@@ -269,18 +267,26 @@ contains
 
     end subroutine checkNodeDivisionMG
 
-    subroutine createCurvGrid(N_x, Length, diffX, delX)
+    subroutine createCurvGrid(N_x, Length, diffX, delX, evenGridBool)
         ! Check to make sure N_x and N_y is divisible by however many stages in multigrid we want
         integer, intent(in) :: N_x
         real(real64), intent(in) :: Length, delX
         real(real64), intent(in out) :: diffX(N_x-1)
-        real(real64) :: grid(N_x)
+        logical, intent(in) :: evenGridBool
+        real(real64) :: grid(N_x), tempReal
         grid(1) = 0.0d0
         grid(N_x) = Length
-        do i = 2,N_x-1
-            grid(i) = Length * ((real(i)-1.0d0)/(real(N_x) - 1.0d0) - (1.0d0/(real(N_x) - 1.0d0) - delX/Length) &
-            * SIN(2.0d0 * pi * (i-1) / real(N_x - 1)) / SIN(2.0d0 * pi / real(N_x - 1)) )
-        end do
+        if (evenGridBool) then
+            tempReal = Length/real(N_x-1)
+            do i = 2,N_x-1
+                grid(i) = grid(i-1) + tempReal
+            end do
+        else
+            do i = 2,N_x-1
+                grid(i) = Length * ((real(i)-1.0d0)/(real(N_x) - 1.0d0) - (1.0d0/(real(N_x) - 1.0d0) - delX/Length) &
+                * SIN(2.0d0 * pi * (i-1) / real(N_x - 1)) / SIN(2.0d0 * pi / real(N_x - 1)) )
+            end do
+        end if
         do i = 1, N_x-1
             diffX(i) = grid(i+1) - grid(i)
         end do
