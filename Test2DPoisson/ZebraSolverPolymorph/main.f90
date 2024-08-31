@@ -30,14 +30,14 @@ program main
     relTol = 1.d-12
     stepTol = 1.d-3
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(4) = 1 ! West
 
-    NESW_phiValues(1) = 1000.0d0
+    NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
-    NESW_phiValues(3) = 0.0d0
+    NESW_phiValues(3) = 1000.0d0
     NESW_phiValues(4) = 0.0d0
     
     upperPhi = NESW_phiValues(1)
@@ -157,13 +157,13 @@ program main
     !$OMP end parallel
 
    
-    call solver%smoothIterations(100000)
+    call solver%solveGS(stepTol)
     
 
-    print *, 'Took', k, 'iterations'
+    print *, 'Took', solver%iterNumber, 'iterations'
     call solver%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%residual
+    write(41) solver%solution
     close(41)
     ! ! !$OMP parallel workshare
     ! ! CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
