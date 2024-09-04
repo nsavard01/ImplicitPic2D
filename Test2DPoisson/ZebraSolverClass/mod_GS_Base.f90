@@ -28,7 +28,7 @@ contains
         class(GS_Base), intent(in out) :: self
         integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
         real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1)
-    end subroutine
+    end subroutine constructPoissonOrthogonal
     subroutine solveGS(self, tol)
         ! Solve GS down to some tolerance
         class(GS_Base), intent(in out) :: self

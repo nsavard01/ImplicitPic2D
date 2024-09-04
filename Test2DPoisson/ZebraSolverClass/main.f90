@@ -5,6 +5,8 @@ program main
     use mod_GS_Base
     use mod_ZebraSolverEven
     use mod_ZebraSolverCurv
+    use mod_RedBlackSolverEven
+    use mod_RedBlackSolverCurv
     use omp_lib
     implicit none
 
@@ -19,9 +21,10 @@ program main
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
     real(real64), allocatable :: diffX(:), diffY(:)
-    logical :: makeX, evenGridBool
+    logical :: makeX, evenGridBool, redBlackBool
 
     evenGridBool = .false.
+    redBlackBool = .false.
     
     numberStages = 1
     ! More skewed delX and delY, more smoothing operations needed
@@ -33,9 +36,9 @@ program main
     stepTol = 1.d-3
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(2) = 3 ! East
+    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(4) = 3 ! West
 
     NESW_phiValues(1) = 1000.0d0
     NESW_phiValues(2) = 0.0d0
@@ -90,11 +93,19 @@ program main
 
     ! upper left corner
     boundaryConditions(1, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
-
+    
     if (evenGridBool) then
-        solver = ZebraSolverEven(omega, N_x, N_y)
+        if (redBlackBool) then
+            solver = RedBlackSolverEven(omega, N_x, N_y)
+        else
+            solver = ZebraSolverEven(omega, N_x, N_y)
+        end if
     else
-        solver = ZebraSolverCurv(omega, N_x, N_y)
+        if (RedBlackBool) then
+            solver = RedBlackSolverCurv(omega, N_x, N_y)
+        else
+            solver = ZebraSolverCurv(omega, N_x, N_y)
+        end if
     end if
     call solver%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
     
