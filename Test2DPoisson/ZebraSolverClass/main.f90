@@ -2,17 +2,13 @@
 
 program main
     use iso_fortran_env, only: int32, real64
-    use mod_GS_Base
-    use mod_ZebraSolverEven
-    use mod_ZebraSolverCurv
-    use mod_RedBlackSolverEven
-    use mod_RedBlackSolverCurv
+    use mod_MG_Stage
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
     integer(int32) :: N_x = 101, N_y = 51, numThreads = 6
-    class(GS_Base), allocatable :: solver
+    type(MG_Stage) :: stage_MG
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
     integer, allocatable :: boundaryConditions(:, :)
@@ -24,7 +20,7 @@ program main
     logical :: makeX, evenGridBool, redBlackBool
 
     evenGridBool = .false.
-    redBlackBool = .false.
+    redBlackBool = .true.
     
     numberStages = 1
     ! More skewed delX and delY, more smoothing operations needed
@@ -36,9 +32,9 @@ program main
     stepTol = 1.d-3
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 1000.0d0
     NESW_phiValues(2) = 0.0d0
@@ -94,21 +90,8 @@ program main
     ! upper left corner
     boundaryConditions(1, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
     
-    if (evenGridBool) then
-        if (redBlackBool) then
-            solver = RedBlackSolverEven(omega, N_x, N_y)
-        else
-            solver = ZebraSolverEven(omega, N_x, N_y)
-        end if
-    else
-        if (RedBlackBool) then
-            solver = RedBlackSolverCurv(omega, N_x, N_y)
-        else
-            solver = ZebraSolverCurv(omega, N_x, N_y)
-        end if
-    end if
-    call solver%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
-    
+    stage_MG = MG_Stage(omega, N_x, N_y, diffX, diffY, NESW_wallBoundaries, boundaryConditions, evenGridBool, RedBlackBool)
+    associate( solver => stage_MG%GS_Smoother)
     ! Set phi values finer grid
     if (upperBound == 1) then
         solver%solution(2:N_x-1, N_y) = upperPhi
@@ -186,6 +169,7 @@ program main
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) solver%solution
     close(41)
+    end associate
     ! ! !$OMP parallel workshare
     ! ! CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
     ! ! !$OMP end parallel workshare
