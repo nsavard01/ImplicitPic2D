@@ -16,13 +16,13 @@ program main
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
-    real(real64), allocatable :: diffX(:), diffY(:)
+    real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
     logical :: makeX, evenGridBool, redBlackBool
 
     evenGridBool = .false.
     redBlackBool = .true.
     
-    numberStages = 1
+    numberStages = 2
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 10
     numberPostSmoothOper = 10
@@ -32,9 +32,9 @@ program main
     stepTol = 1.d-3
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(2) = 3 ! East
+    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(4) = 3 ! West
 
     NESW_phiValues(1) = 1000.0d0
     NESW_phiValues(2) = 0.0d0
@@ -165,7 +165,11 @@ program main
 
     print *, 'Took', solver%iterNumber, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    call solver%calcResidual()
+    allocate(test((solver%N_x+1)/2, (solver%N_y+1)/2))
+    call solver%restriction(solver%solution, test)
+    test(1:(solver%N_x+1)/2-1, (solver%N_y+1)/2) = 1000.0d0
+    solver%solution = 0.0d0
+    call solver%prolongation(solver%solution, test)
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) solver%solution
     close(41)

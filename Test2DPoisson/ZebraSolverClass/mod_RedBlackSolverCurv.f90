@@ -29,8 +29,8 @@ module mod_RedBlackSolverCurv
         procedure, public, pass(self) :: smoothIterations => smoothIterations_RedBlackCurv
         procedure, public, pass(self) :: smoothWithRes => smoothWithRes_RedBlackCurv
         procedure, public, pass(self) :: calcResidual => calcResidual_RedBlackCurv
-        ! procedure, public, pass(self) :: restriction
-        ! procedure, public, pass(self) :: prolongation
+        procedure, public, pass(self) :: restriction => restriction_curv
+        procedure, public, pass(self) :: prolongation => prolongation_curv
         ! procedure, public, pass(self) :: matMult
         ! procedure, public, pass(self) :: XAX_Mult
     end type
@@ -271,6 +271,31 @@ contains
                 + self%horzCoeffs(1,i) + self%horzCoeffs(2,i))
             end do
         end do
+
+        ! Get starting/end points in GS smoother rows and cols for overlapping 
+        if (self%startRow == 1) then
+            self%startRowCoarse = 1
+        else
+            self%startRowCoarse = 2
+        end if
+
+        if (self%endRow == self%N_y) then
+            self%endRowCoarse = self%numberRows
+        else
+            self%endRowCoarse = self%numberRows-1
+        end if
+
+        if (self%startCol == 1) then
+            self%startColCoarse = 1
+        else
+            self%startColCoarse = 2
+        end if
+
+        if (self%endCol == self%N_x) then
+            self%endColCoarse = self%numberColumns
+        else
+            self%endColCoarse = self%numberColumns-1
+        end if
 
        
         
@@ -700,368 +725,166 @@ contains
         !$OMP end parallel
     end subroutine calcResidual_RedBlackCurv
 
-    ! subroutine restriction(self, fineGrid, coarseGrid)
-    !     ! Use gauss seidel information to interpolate array fineGrid to coarseGrid
-    !     class(RedBlackSolver), intent(in) :: self
-    !     real(real64), intent(in) :: fineGrid(self%N_x, self%N_y)
-    !     real(real64), intent(out) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
-    !     real(real64) :: a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S
-    !     integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, k
-    !     if (self%evenGridBool) then
-    !         !$OMP parallel private(k, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx)
-    !         !$OMP do collapse(2)
-    !         ! loop over fine grid nodes which overlap with coarse grid nodes
-    !         do j_fine = 3, self%N_y-2, 2
-    !             do i_fine = 3, self%N_x-2, 2
-    !                 ! calculate fine indices around overlapping index
-    !                 i_coarse = (i_fine + 1)/2
-    !                 j_coarse = (j_fine + 1)/2
-    !                 N_indx = j_fine+1
-    !                 E_indx = i_fine+1
-    !                 S_indx = j_fine-1
-    !                 W_indx = i_fine-1
+    subroutine restriction_curv(self, fineGrid, coarseGrid)
+        ! Use gauss seidel information to interpolate array fineGrid to coarseGrid
+        class(RedBlackSolverCurv), intent(in) :: self
+        real(real64), intent(in) :: fineGrid(self%N_x, self%N_y)
+        real(real64), intent(in out) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
+        real(real64) :: a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S
+        integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, k, p
 
-    !                 ! Simple interpolation can be surprisingly good
-    !                 coarseGrid(i_coarse, j_coarse) = 0.25d0 * fineGrid(i_fine, j_fine) + &
-    !                 0.125d0 * (fineGrid(E_indx, j_fine) + fineGrid(W_indx, j_fine) +  &
-    !                 fineGrid(i_fine, N_indx) + fineGrid(i_fine, S_indx)) + &
-    !                 0.0625d0 * (fineGrid(E_indx, N_indx) + fineGrid(E_indx, S_indx) + &
-    !                 fineGrid(W_indx, N_indx)+ fineGrid(W_indx, S_indx))
-    !             end do
-    !         end do
-    !         !$OMP end do nowait
-    !         ! each black bound node is a coarse node
-    !         !$OMP do
-    !         do k = 1, self%numberBlackBoundNodes
-    !             i_fine = self%black_NESW_BoundIndx(1, k)
-    !             j_fine = self%black_NESW_BoundIndx(2, k)
-    !             E_indx = self%black_NESW_BoundIndx(3, k)
-    !             W_indx = self%black_NESW_BoundIndx(4, k)
-    !             N_indx = self%black_NESW_BoundIndx(5, k)
-    !             S_indx = self%black_NESW_BoundIndx(6, k)
-                
-    !             ! calculate fine indices around overlapping index
-    !             i_coarse = (i_fine + 1)/2
-    !             j_coarse = (j_fine + 1)/2
+        !$OMP parallel private(k, p, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, &
+        !$OMP& a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S)
+        !$OMP do collapse(2)
+        ! loop over fine grid nodes which overlap with coarse grid nodes
+        do k = self%startRowCoarse, self%endRowCoarse, 2
+            do p = self%startColCoarse, self%endColCoarse, 2
+                ! calculate fine indices around overlapping index
+                i_fine = self%startCol + p - 1
+                j_fine = self%startRow + k - 1
+                N_indx = self%vertIndx(1,k)
+                E_indx = self%horzIndx(1,p)
+                S_indx = self%vertIndx(2,k)
+                W_indx = self%horzIndx(2,p)
+                i_coarse = (i_fine + 1)/2
+                j_coarse = (j_fine + 1)/2
 
-    !             ! simple binomial filter
-    !             coarseGrid(i_coarse, j_coarse) = 0.25d0 * fineGrid(i_fine, j_fine) + &
-    !                 0.125d0 * (fineGrid(E_indx, j_fine) + fineGrid(W_indx, j_fine) +  &
-    !                 fineGrid(i_fine, N_indx) + fineGrid(i_fine, S_indx)) + &
-    !                 0.0625d0 * (fineGrid(E_indx, N_indx) + fineGrid(E_indx, S_indx) + &
-    !                 fineGrid(W_indx, N_indx)+ fineGrid(W_indx, S_indx))
-    !         end do
-    !         !$OMP end do
-    !         !$OMP end parallel
+                ! ! Transpose of prolongation, seems to work best
+                ! ! interpolation from north point
+                ! C_N = self%matCoeffs(2, i_fine, N_indx)
+                ! C_S = self%matCoeffs(4, i_fine, N_indx)
+                ! a_N = C_S/(C_N + C_S)
 
-    !     else
-    !         !$OMP parallel private(k, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, &
-    !         !$OMP& a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S)
-    !         !$OMP do collapse(2)
-    !         ! loop over fine grid nodes which overlap with coarse grid nodes
-    !         do j_fine = 3, self%N_y-2, 2
-    !             do i_fine = 3, self%N_x-2, 2
-    !                 ! calculate fine indices around overlapping index
-    !                 i_coarse = (i_fine + 1)/2
-    !                 j_coarse = (j_fine + 1)/2
-    !                 N_indx = j_fine+1
-    !                 E_indx = i_fine+1
-    !                 S_indx = j_fine-1
-    !                 W_indx = i_fine-1
+                ! ! interpolation from south point
+                ! C_N = self%matCoeffs(2, i_fine, S_indx)
+                ! C_S = self%matCoeffs(4, i_fine, S_indx)
+                ! a_S = C_N/(C_N + C_S)
 
-    !                 ! Transpose of prolongation, seems to work best
-    !                 ! interpolation from north point
-    !                 C_N = self%matCoeffs(2, i_fine, N_indx)
-    !                 C_S = self%matCoeffs(4, i_fine, N_indx)
-    !                 a_N = C_S/(C_N + C_S)
+                ! ! interpolation from east point
+                ! C_E = self%matCoeffs(3, E_indx, j_fine)
+                ! C_W = self%matCoeffs(5, E_indx, j_fine)
+                ! a_E = C_W/(C_E + C_W)
 
-    !                 ! interpolation from south point
-    !                 C_N = self%matCoeffs(2, i_fine, S_indx)
-    !                 C_S = self%matCoeffs(4, i_fine, S_indx)
-    !                 a_S = C_N/(C_N + C_S)
+                ! ! interpolation from west point
+                ! C_E = self%matCoeffs(3, W_indx, j_fine)
+                ! C_W = self%matCoeffs(5, W_indx, j_fine)
+                ! a_W = C_E/(C_E + C_W)
 
-    !                 ! interpolation from east point
-    !                 C_E = self%matCoeffs(3, E_indx, j_fine)
-    !                 C_W = self%matCoeffs(5, E_indx, j_fine)
-    !                 a_E = C_W/(C_E + C_W)
-
-    !                 ! interpolation from west point
-    !                 C_E = self%matCoeffs(3, W_indx, j_fine)
-    !                 C_W = self%matCoeffs(5, W_indx, j_fine)
-    !                 a_W = C_E/(C_E + C_W)
-
-    !                 ! node based restriction
-    !                 ! C_N = self%matCoeffs(2, i_fine, j_fine)
-    !                 ! C_E = self%matCoeffs(3, i_fine, j_fine)
-    !                 ! C_S = self%matCoeffs(4, i_fine, j_fine)
-    !                 ! C_W = self%matCoeffs(5, i_fine, j_fine)
-    !                 ! a_N = C_N/(C_N + C_S)
-    !                 ! a_S = C_S/(C_N + C_S)
-    !                 ! a_E = C_E/(C_E + C_W)
-    !                 ! a_W = C_W/(C_E + C_W)
+                !node based restriction
+                C_N = self%vertCoeffs(1,k)
+                C_E = self%horzCoeffs(1,p)
+                C_S = self%vertCoeffs(2,k)
+                C_W = self%horzCoeffs(2,p)
+                a_N = C_N/(C_N + C_S)
+                a_S = C_S/(C_N + C_S)
+                a_E = C_E/(C_E + C_W)
+                a_W = C_W/(C_E + C_W)
 
 
-    !                 ! Interpolate residual to coarse grid
-    !                 coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
-    !                 fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
-    !                 fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
-    !                 fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
-    !                 fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+                ! Interpolate residual to coarse grid
+                coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
+                fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
+                fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
+                fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
+                fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
 
-    !                 ! Simple interpolation can be surprisingly good
-    !                 ! coarseGrid(i_coarse, j_coarse) = 0.25d0 * fineGrid(i_fine, j_fine) + &
-    !                 ! 0.125d0 * (fineGrid(E_indx, j_fine) + fineGrid(W_indx, j_fine) +  &
-    !                 ! fineGrid(i_fine, N_indx) + fineGrid(i_fine, S_indx)) + &
-    !                 ! 0.0625d0 * (fineGrid(E_indx, N_indx) + fineGrid(E_indx, S_indx) + &
-    !                 ! fineGrid(W_indx, N_indx)+ fineGrid(W_indx, S_indx))
-    !             end do
-    !         end do
-    !         !$OMP end do nowait
-    !         ! each black bound node is a coarse node
-    !         !$OMP do
-    !         do k = 1, self%numberBlackBoundNodes
-    !             i_fine = self%black_NESW_BoundIndx(1, k)
-    !             j_fine = self%black_NESW_BoundIndx(2, k)
-    !             E_indx = self%black_NESW_BoundIndx(3, k)
-    !             W_indx = self%black_NESW_BoundIndx(4, k)
-    !             N_indx = self%black_NESW_BoundIndx(5, k)
-    !             S_indx = self%black_NESW_BoundIndx(6, k)
-                
-    !             ! calculate fine indices around overlapping index
-    !             i_coarse = (i_fine + 1)/2
-    !             j_coarse = (j_fine + 1)/2
-    !             ! From transpose of prolongation, works fairly well
-    !             if (N_indx == S_indx) then
-    !                 ! neumann boundary
-    !                 if (j_fine == 1) then
-    !                     ! bottom boundary
-    !                     C_N = self%matCoeffs(2, i_fine, N_indx)
-    !                     C_S = self%matCoeffs(4, i_fine, N_indx)
-    !                     a_N = C_S/(C_N + C_S)
-    !                     a_S = a_N
-    !                 else
-    !                     ! top boundary
-    !                     C_N = self%matCoeffs(2, i_fine, S_indx)
-    !                     C_S = self%matCoeffs(4, i_fine, S_indx)
-    !                     a_S = C_N/(C_N + C_S)
-    !                     a_N = a_S
-    !                 end if
-    !             else
-    !                 ! interpolation from north point
-    !                 C_N = self%matCoeffs(2, i_fine, N_indx)
-    !                 C_S = self%matCoeffs(4, i_fine, N_indx)
-    !                 a_N = C_S/(C_N + C_S)
+    end subroutine restriction_curv
 
-    !                 ! interpolation from south point
-    !                 C_N = self%matCoeffs(2, i_fine, S_indx)
-    !                 C_S = self%matCoeffs(4, i_fine, S_indx)
-    !                 a_S = C_N/(C_N + C_S)
-    !             end if
-                
-    !             if (E_indx == W_indx) then
-    !                 ! neumann boundary
-    !                 if (i_fine == 1) then
-    !                     ! left boundary
-    !                     C_E = self%matCoeffs(3, E_indx, j_fine)
-    !                     C_W = self%matCoeffs(5, E_indx, j_fine)
-    !                     a_E = C_W/(C_E + C_W)
-    !                     a_W = a_E
-    !                 else
-    !                     C_E = self%matCoeffs(3, W_indx, j_fine)
-    !                     C_W = self%matCoeffs(5, W_indx, j_fine)
-    !                     a_W = C_E/(C_E + C_W)
-    !                     a_E = a_W
-    !                 end if
-    !             else
-    !                 ! interpolation from east point
-    !                 C_E = self%matCoeffs(3, E_indx, j_fine)
-    !                 C_W = self%matCoeffs(5, E_indx, j_fine)
-    !                 a_E = C_W/(C_E + C_W)
+    subroutine prolongation_curv(self, fineGrid, coarseGrid)
+        ! Prolongate operator from coarse to fine grid using gauss seidel data
+        class(RedBlackSolverCurv), intent(in) :: self
+        real(real64), intent(in out) :: fineGrid(self%N_x, self%N_y)
+        real(real64), intent(in) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
+        real(real64) :: w_1, w_2, w_3, w_4, w_tot
+        integer(int32) :: i_coarse, j_coarse, i_fine, j_fine, N_x_coarse, N_y_coarse, k, p
+        N_x_coarse = (self%N_x+1)/2
+        N_y_coarse = (self%N_y+1)/2
 
-    !                 ! interpolation from west point
-    !                 C_E = self%matCoeffs(3, W_indx, j_fine)
-    !                 C_W = self%matCoeffs(5, W_indx, j_fine)
-    !                 a_W = C_E/(C_E + C_W)
-    !             end if
+        !$OMP parallel private(i_coarse, j_coarse, i_fine, j_fine, w_1, w_2, w_3, w_4, w_tot)
+        ! do each do loop individually because can't think of fewer loops which do several calculations without doing same operation on each
+        !$OMP do collapse(2)
+        ! set similar nodes
+        do k = self%startRowCoarse, self%endRowCoarse, 2
+            do p = self%startColCoarse, self%endColCoarse, 2
+                i_fine = p + self%startCol -1
+                j_fine = k + self%startRow - 1
+                j_coarse = (j_fine+1)/2
+                i_coarse = (i_fine+1)/2
+                ! Add overlapping coarse nodes
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse)
+            end do
+        end do
+        !$OMP end do nowait
+        !$OMP do collapse(2)
+        ! go horizontal each row
+        do k = self%startRowCoarse, self%endRowCoarse, 2
+            do i_coarse = 1, N_x_coarse-1
+                i_fine = 2*i_coarse ! i_fine right of overlapping coarse node
+                j_fine = k + self%startRow-1
+                j_coarse = (j_fine+1)/2
+                p = i_fine + 1 - self%startCol ! p at i_fine
+                w_1 = self%horzCoeffs(1, p) !E
+                w_2 = self%horzCoeffs(2, p) !W
+                w_tot = w_1 + w_2
+                w_1 = w_1 / w_tot
+                w_2 = w_2 / w_tot
+    
+                ! Average fine nodes between coarse nodes horizontally
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse+1, j_coarse) * w_1 + coarseGrid(i_coarse, j_coarse) * w_2
+            end do
+        end do
+        !$OMP end do nowait
+        !$OMP do collapse(2)
+        ! go vertical
+        do j_coarse = 1, N_y_coarse-1
+            do p = self%startColCoarse, self%endColCoarse, 2
+                i_fine = p + self%startCol-1
+                i_coarse = (i_fine + 1)/2
+                j_fine = j_coarse*2 ! j_fine north of overlapping coarse node
+                k = j_fine + 1 - self%startRow
+                w_1 = self%vertCoeffs(1, k) !N
+                w_2 = self%vertCoeffs(2, k) !S
+                w_tot = w_1 + w_2
+                w_1 = w_1 / w_tot
+                w_2 = w_2 / w_tot
+                ! Average fine nodes between coarse nodes vertical direction
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse+1) * w_1 + coarseGrid(i_coarse, j_coarse) * w_2
+            end do
+        end do
+        !$OMP end do nowait
+        !$OMP do collapse(2)
+        ! add offset fine nodes which require 4 point interpolation
+        ! first loop through SW corner coarse nodes
+        do j_coarse = 1, N_y_coarse-1
+            do i_coarse = 1, N_x_coarse-1
+                i_fine = i_coarse*2 ! i_fine east i_coarse
+                j_fine = j_coarse*2 ! j_fine north j_fine
+                p = i_fine + 1 - self%startCol
+                k = j_fine + 1 - self%startRow
+                w_1 = self%vertCoeffs(1, k) !N
+                w_2 = self%vertCoeffs(2, k) !S
+                w_tot = w_1 + w_2
+                w_1 = w_1/w_tot
+                w_2 = w_2/w_tot
 
-    !             ! node based restrition
-    !             ! C_N = self%matCoeffs(2, i_fine, j_fine)
-    !             ! C_E = self%matCoeffs(3, i_fine, j_fine)
-    !             ! C_S = self%matCoeffs(4, i_fine, j_fine)
-    !             ! C_W = self%matCoeffs(5, i_fine, j_fine)
-    !             ! a_N = C_N/(C_N + C_S)
-    !             ! a_S = C_S/(C_N + C_S)
-    !             ! a_E = C_E/(C_E + C_W)
-    !             ! a_W = C_W/(C_E + C_W)
+                w_3 = self%horzCoeffs(1,p) !E
+                w_4 = self%horzCoeffs(2,p) !W
+                w_tot = w_3 + w_4
+                w_3 = w_3/w_tot
+                w_4 = w_4/w_tot
 
-    !             ! Interpolate residual to coarse grid
-    !             coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
-    !             fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
-    !             fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
-    !             fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
-    !             fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse) * w_2*w_4 + coarseGrid(i_coarse+1, j_coarse) * w_3 * w_2 &
+                    + coarseGrid(i_coarse, j_coarse+1) * w_1 * w_4 + coarseGrid(i_coarse+1, j_coarse+1) * w_1 * w_3
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
 
-    !             ! simple binomial filter, actually ok
-    !             ! coarseGrid(i_coarse, j_coarse) = 0.25d0 * fineGrid(i_fine, j_fine) + &
-    !             !     0.125d0 * (fineGrid(E_indx, j_fine) + fineGrid(W_indx, j_fine) +  &
-    !             !     fineGrid(i_fine, N_indx) + fineGrid(i_fine, S_indx)) + &
-    !             !     0.0625d0 * (fineGrid(E_indx, N_indx) + fineGrid(E_indx, S_indx) + &
-    !             !     fineGrid(W_indx, N_indx)+ fineGrid(W_indx, S_indx))
-    !         end do
-    !         !$OMP end do
-    !         !$OMP end parallel
-    !     end if
-
-    ! end subroutine restriction
-
-    ! subroutine prolongation(self, fineGrid, coarseGrid)
-    !     ! Prolongate operator from coarse to fine grid using gauss seidel data
-    !     class(RedBlackSolver), intent(in) :: self
-    !     real(real64), intent(in out) :: fineGrid(self%N_x, self%N_y)
-    !     real(real64), intent(in) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
-    !     real(real64) :: w_1, w_2, w_3, w_4, w_tot
-    !     integer(int32) :: i_coarse, j_coarse, i_fine, j_fine, N_x_coarse, N_y_coarse
-    !     N_x_coarse = (self%N_x+1)/2
-    !     N_y_coarse = (self%N_y+1)/2
-
-    !     if (self%evenGridBool) then
-    !         ! Each fine node which overlaps coarse node is black, take advantage of that by only going through black nodes
-    !         !$OMP parallel private(i_coarse, j_coarse, i_fine, j_fine)
-    !         ! do each do loop individually because can't think of fewer loops which do several calculations without doing same operation on each
-    !         !$OMP do collapse(2)
-    !         ! set similar nodes
-    !         do j_coarse = 1, N_y_coarse
-    !             do i_coarse = 1, N_x_coarse
-    !                 i_fine = i_coarse*2 - 1
-    !                 j_fine = j_coarse*2-1
-    !                 ! Add overlapping coarse nodes
-    !                 fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse)
-    !             end do
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do collapse(2)
-    !         ! go horizontal each row,
-    !         do j_coarse = 1, N_y_coarse
-    !             do i_coarse = 1, N_x_coarse-1
-    !                 i_fine = i_coarse*2 - 1
-    !                 j_fine = j_coarse*2 - 1
-    !                 ! simple interpolation
-    !                 fineGrid(i_fine+1, j_fine) = fineGrid(i_fine+1, j_fine) + coarseGrid(i_coarse+1, j_coarse) * 0.5d0 + coarseGrid(i_coarse, j_coarse) * 0.5d0
-    !             end do
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do collapse(2)
-    !         ! go vertical
-    !         do j_coarse = 1, N_y_coarse-1
-    !             do i_coarse = 1, N_x_coarse
-    !                 i_fine = i_coarse*2 - 1
-    !                 j_fine = j_coarse*2 - 1
-    !                 ! Simple interpolation
-    !                 fineGrid(i_fine, j_fine+1) = fineGrid(i_fine, j_fine+1) + coarseGrid(i_coarse, j_coarse+1) * 0.5d0 + coarseGrid(i_coarse, j_coarse) * 0.5d0
-    !             end do
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do collapse(2)
-    !         ! add offset fine nodes which require 4 point interpolation
-    !         ! first loop through SW corner coarse nodes
-    !         do j_coarse = 1, N_y_coarse-1
-    !             do i_coarse = 1, N_x_coarse-1
-    !                 i_fine = i_coarse*2 - 1
-    !                 j_fine = j_coarse*2 - 1
-
-    !                 ! simple interpolation
-    !                 fineGrid(i_fine+1, j_fine+1) = fineGrid(i_fine+1, j_fine+1) + coarseGrid(i_coarse, j_coarse) * 0.25d0 + coarseGrid(i_coarse+1, j_coarse) * 0.25d0 &
-    !                     + coarseGrid(i_coarse, j_coarse+1) * 0.25d0 + coarseGrid(i_coarse+1, j_coarse+1) * 0.25d0
-    !             end do
-    !         end do
-    !         !$OMP end do
-    !         !$OMP end parallel
-
-    !     else
-    !         ! Each fine node which overlaps coarse node is black, take advantage of that by only going through black nodes
-    !         !$OMP parallel private(i_coarse, j_coarse, i_fine, j_fine, w_1, w_2, w_3, w_4, w_tot)
-    !         ! do each do loop individually because can't think of fewer loops which do several calculations without doing same operation on each
-    !         !$OMP do collapse(2)
-    !         ! set similar nodes
-    !         do j_coarse = 1, N_y_coarse
-    !             do i_coarse = 1, N_x_coarse
-    !                 i_fine = i_coarse*2 - 1
-    !                 j_fine = j_coarse*2-1
-    !                 ! Add overlapping coarse nodes
-    !                 fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse)
-    !             end do
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do collapse(2)
-    !         ! go horizontal each row,
-    !         do j_coarse = 1, N_y_coarse
-    !             do i_coarse = 1, N_x_coarse-1
-    !                 i_fine = i_coarse*2 - 1
-    !                 j_fine = j_coarse*2 - 1
-
-    !                 w_1 = self%matCoeffs(3, i_fine+1, j_fine) !E
-    !                 w_2 = self%matCoeffs(5, i_fine+1, j_fine) !W
-    !                 w_tot = w_1 + w_2
-    !                 w_1 = w_1 / w_tot
-    !                 w_2 = w_2 / w_tot
-        
-    !                 ! Average fine nodes between coarse nodes horizontally
-    !                 fineGrid(i_fine+1, j_fine) = fineGrid(i_fine+1, j_fine) + coarseGrid(i_coarse+1, j_coarse) * w_1 + coarseGrid(i_coarse, j_coarse) * w_2
-    !                 ! simple interpolation
-    !                 ! fineGrid(i_fine+1, j_fine) = fineGrid(i_fine+1, j_fine) + coarseGrid(i_coarse+1, j_coarse) * 0.5d0 + coarseGrid(i_coarse, j_coarse) * 0.5d0
-    !             end do
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do collapse(2)
-    !         ! go vertical
-    !         do j_coarse = 1, N_y_coarse-1
-    !             do i_coarse = 1, N_x_coarse
-    !                 i_fine = i_coarse*2 - 1
-    !                 j_fine = j_coarse*2 - 1
-    !                 w_1 = self%matCoeffs(2, i_fine, j_fine+1) !N
-    !                 w_2 = self%matCoeffs(4, i_fine, j_fine+1) !S
-    !                 w_tot = w_1 + w_2
-    !                 w_1 = w_1 / w_tot
-    !                 w_2 = w_2 / w_tot
-    !                 ! Average fine nodes between coarse nodes vertical direction
-    !                 fineGrid(i_fine, j_fine+1) = fineGrid(i_fine, j_fine+1) + coarseGrid(i_coarse, j_coarse+1) * w_1 + coarseGrid(i_coarse, j_coarse) * w_2
-    !                 ! Simple interpolation
-    !                 ! fineGrid(i_fine, j_fine+1) = fineGrid(i_fine, j_fine+1) + coarseGrid(i_coarse, j_coarse+1) * 0.5d0 + coarseGrid(i_coarse, j_coarse) * 0.5d0
-    !             end do
-    !         end do
-    !         !$OMP end do nowait
-    !         !$OMP do collapse(2)
-    !         ! add offset fine nodes which require 4 point interpolation
-    !         ! first loop through SW corner coarse nodes
-    !         do j_coarse = 1, N_y_coarse-1
-    !             do i_coarse = 1, N_x_coarse-1
-    !                 i_fine = i_coarse*2 - 1
-    !                 j_fine = j_coarse*2 - 1
-    !                 w_1 = self%matCoeffs(2, i_fine+1, j_fine+1) !N
-    !                 w_2 = self%matCoeffs(4, i_fine+1, j_fine+1) !S
-    !                 w_tot = w_1 + w_2
-    !                 w_1 = w_1/w_tot
-    !                 w_2 = w_2/w_tot
-
-    !                 w_3 = self%matCoeffs(3, i_fine+1, j_fine+1) !E
-    !                 w_4 = self%matCoeffs(5, i_fine+1, j_fine+1) !W
-    !                 w_tot = w_3 + w_4
-    !                 w_3 = w_3/w_tot
-    !                 w_4 = w_4/w_tot
-
-    !                 fineGrid(i_fine+1, j_fine+1) = fineGrid(i_fine+1, j_fine+1) + coarseGrid(i_coarse, j_coarse) * w_2*w_4 + coarseGrid(i_coarse+1, j_coarse) * w_3 * w_2 &
-    !                     + coarseGrid(i_coarse, j_coarse+1) * w_1 * w_4 + coarseGrid(i_coarse+1, j_coarse+1) * w_1 * w_3
-
-    !                 ! simple interpolation
-    !                 ! fineGrid(i_fine+1, j_fine+1) = fineGrid(i_fine+1, j_fine+1) + coarseGrid(i_coarse, j_coarse) * 0.25d0 + coarseGrid(i_coarse+1, j_coarse) * 0.25d0 &
-    !                 !     + coarseGrid(i_coarse, j_coarse+1) * 0.25d0 + coarseGrid(i_coarse+1, j_coarse+1) * 0.25d0
-    !             end do
-    !         end do
-    !         !$OMP end do
-    !         !$OMP end parallel
-    !     end if
-
-    ! end subroutine prolongation
+    end subroutine prolongation_curv
 
 
 end module mod_RedBlackSolverCurv

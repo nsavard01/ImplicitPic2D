@@ -260,6 +260,31 @@ contains
             end do
         end do
 
+        ! Get starting/end points in GS smoother rows and cols for overlapping 
+        if (self%startRow == 1) then
+            self%startRowCoarse = 1
+        else
+            self%startRowCoarse = 2
+        end if
+
+        if (self%endRow == self%N_y) then
+            self%endRowCoarse = self%numberRows
+        else
+            self%endRowCoarse = self%numberRows-1
+        end if
+
+        if (self%startCol == 1) then
+            self%startColCoarse = 1
+        else
+            self%startColCoarse = 2
+        end if
+
+        if (self%endCol == self%N_x) then
+            self%endColCoarse = self%numberColumns
+        else
+            self%endColCoarse = self%numberColumns-1
+        end if
+
        
         
     end subroutine constructPoissonOrthogonal_ZebraCurv

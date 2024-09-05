@@ -729,7 +729,7 @@ contains
         ! Use gauss seidel information to interpolate array fineGrid to coarseGrid
         class(GSSolver), intent(in) :: self
         real(real64), intent(in) :: fineGrid(self%N_x, self%N_y)
-        real(real64), intent(out) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
+        real(real64), intent(in out) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
         real(real64) :: a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S
         integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, k
 

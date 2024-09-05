@@ -2,12 +2,12 @@ module mod_MG_Stage
     use iso_fortran_env, only: int32, int64, real64
     use mod_GS_Base
     use mod_ZebraSolverEven
-    use mod_ZebraSolverCurv
     use mod_RedBlackSolverEven
+    use mod_ZebraSolverCurv
     use mod_RedBlackSolverCurv
     implicit none
 
-    ! Stage for each multigrid, contains gauss-seidel smoother
+    ! Stage for each multigrid, contains gauss-seidel smoother for even grid
 
     private
     public :: MG_Stage
@@ -33,7 +33,7 @@ contains
             self%GS_Smoother = ZebraSolverEven(omega, N_x, N_y)
         end if
     else
-        if (RedBlackBool) then
+        if (redBlackBool) then
             self%GS_Smoother = RedBlackSolverCurv(omega, N_x, N_y)
         else
             self%GS_Smoother = ZebraSolverCurv(omega, N_x, N_y)
@@ -41,5 +41,6 @@ contains
     end if
     call self%GS_Smoother%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
     end function MG_Stage_constructor
+
 
 end module mod_MG_Stage
