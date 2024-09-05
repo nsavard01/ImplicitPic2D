@@ -1,6 +1,6 @@
 module mod_ZebraSolverEven
     use iso_fortran_env, only: int32, int64, real64
-    use mod_GS_Base
+    use mod_GS_Base_Even
     use omp_lib
     implicit none
 
@@ -19,17 +19,13 @@ module mod_ZebraSolverEven
     private
     public :: ZebraSolverEven
 
-    type, extends(GS_Base) :: ZebraSolverEven
-        ! store grid quantities
-        real(real64) :: coeffX, coeffY, centerCoeff
+    type, extends(GS_Base_Even) :: ZebraSolverEven
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal => constructPoissonOrthogonal_ZebraEven
         procedure, public, pass(self) :: solveGS => solveGS_ZebraEven
         procedure, public, pass(self) :: smoothIterations => smoothIterations_ZebraEven
         procedure, public, pass(self) :: smoothWithRes => smoothWithRes_ZebraEven
         procedure, public, pass(self) :: calcResidual => calcResidual_ZebraEven
-        procedure, public, pass(self) :: restriction => restriction_even
-        procedure, public, pass(self) :: prolongation => prolongation_even
         ! procedure, public, pass(self) :: matMult
         ! procedure, public, pass(self) :: XAX_Mult
     end type
@@ -730,101 +726,6 @@ contains
         !$OMP end do nowait
         !$OMP end parallel
     end subroutine calcResidual_ZebraEven
-
-    subroutine restriction_even(self, fineGrid, coarseGrid)
-        ! Use gauss seidel information to interpolate array fineGrid to coarseGrid
-        class(ZebraSolverEven), intent(in) :: self
-        real(real64), intent(in) :: fineGrid(self%N_x, self%N_y)
-        real(real64), intent(in out) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
-        integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, k, p
-    
-        !$OMP parallel private(k, p, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx)
-        !$OMP do collapse(2)
-        ! loop over fine grid nodes which overlap with coarse grid nodes
-        do k = self%startRowCoarse, self%endRowCoarse, 2
-            do p = self%startColCoarse, self%endColCoarse, 2
-                ! calculate fine indices around overlapping index
-                j_fine = self%startRow + k - 1
-                j_coarse = (j_fine + 1)/2
-                N_indx = self%vertIndx(1, k)
-                S_indx = self%vertIndx(2, k)
-                i_fine = self%startCol + p - 1
-                i_coarse = (i_fine + 1)/2
-                E_indx = self%horzIndx(1, p)
-                W_indx = self%horzIndx(2, p)
-
-                ! Bilinear interpolation
-                coarseGrid(i_coarse, j_coarse) = 0.25d0 * fineGrid(i_fine, j_fine) + &
-                0.125d0 * (fineGrid(E_indx, j_fine) + fineGrid(W_indx, j_fine) +  &
-                fineGrid(i_fine, N_indx) + fineGrid(i_fine, S_indx)) + &
-                0.0625d0 * (fineGrid(E_indx, N_indx) + fineGrid(E_indx, S_indx) + &
-                fineGrid(W_indx, N_indx)+ fineGrid(W_indx, S_indx))
-            end do
-        end do
-        !$OMP end do
-        !$OMP end parallel
-    end subroutine restriction_even
-
-    subroutine prolongation_even(self, fineGrid, coarseGrid)
-        ! Prolongate operator from coarse to fine grid using gauss seidel data
-        class(ZebraSolverEven), intent(in) :: self
-        real(real64), intent(in out) :: fineGrid(self%N_x, self%N_y)
-        real(real64), intent(in) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
-        integer(int32) :: i_coarse, j_coarse, i_fine, j_fine, N_x_coarse, N_y_coarse
-        N_x_coarse = (self%N_x+1)/2
-        N_y_coarse = (self%N_y+1)/2
-        ! Each fine node which overlaps coarse node is black, take advantage of that by only going through black nodes
-        !$OMP parallel private(i_coarse, j_coarse, i_fine, j_fine)
-        ! do each do loop individually because can't think of fewer loops which do several calculations without doing same operation on each
-        !$OMP do collapse(2)
-        ! set similar nodes
-        do j_coarse = 1, N_y_coarse
-            do i_coarse = 1, N_x_coarse
-                i_fine = i_coarse*2 - 1
-                j_fine = j_coarse*2-1
-                ! Add overlapping coarse nodes
-                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse)
-            end do
-        end do
-        !$OMP end do nowait
-        !$OMP do collapse(2)
-        ! go horizontal each row,
-        do j_coarse = 1, N_y_coarse
-            do i_coarse = 1, N_x_coarse-1
-                i_fine = i_coarse*2 - 1
-                j_fine = j_coarse*2 - 1
-
-                ! simple interpolation
-                fineGrid(i_fine+1, j_fine) = fineGrid(i_fine+1, j_fine) + coarseGrid(i_coarse+1, j_coarse) * 0.5d0 + coarseGrid(i_coarse, j_coarse) * 0.5d0
-            end do
-        end do
-        !$OMP end do nowait
-        !$OMP do collapse(2)
-        ! go vertical
-        do j_coarse = 1, N_y_coarse-1
-            do i_coarse = 1, N_x_coarse
-                i_fine = i_coarse*2 - 1
-                j_fine = j_coarse*2 - 1
-                ! Simple interpolation
-                fineGrid(i_fine, j_fine+1) = fineGrid(i_fine, j_fine+1) + coarseGrid(i_coarse, j_coarse+1) * 0.5d0 + coarseGrid(i_coarse, j_coarse) * 0.5d0
-            end do
-        end do
-        !$OMP end do nowait
-        !$OMP do collapse(2)
-        ! add offset fine nodes which require 4 point interpolation
-        ! first loop through SW corner coarse nodes
-        do j_coarse = 1, N_y_coarse-1
-            do i_coarse = 1, N_x_coarse-1
-                i_fine = i_coarse*2 - 1
-                j_fine = j_coarse*2 - 1
-                ! simple interpolation
-                fineGrid(i_fine+1, j_fine+1) = fineGrid(i_fine+1, j_fine+1) + coarseGrid(i_coarse, j_coarse) * 0.25d0 + coarseGrid(i_coarse+1, j_coarse) * 0.25d0 &
-                    + coarseGrid(i_coarse, j_coarse+1) * 0.25d0 + coarseGrid(i_coarse+1, j_coarse+1) * 0.25d0
-            end do
-        end do
-        !$OMP end do
-        !$OMP end parallel
-    end subroutine prolongation_even
 
 
 end module mod_ZebraSolverEven

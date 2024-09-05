@@ -1,6 +1,6 @@
 module mod_ZebraSolverCurv
     use iso_fortran_env, only: int32, int64, real64
-    use mod_GS_Base
+    use mod_GS_Base_Curv
     use omp_lib
     implicit none
 
@@ -19,9 +19,8 @@ module mod_ZebraSolverCurv
     private
     public :: ZebraSolverCurv
 
-    type, extends(GS_Base) :: ZebraSolverCurv
+    type, extends(GS_Base_Curv) :: ZebraSolverCurv
         ! store grid quantities
-        real(real64), allocatable :: horzCoeffs(:,:), vertCoeffs(:,:), centerCoeffs(:,:) !, rowBoundCoeffs(:,:,:), colBoundCoeffs(:,:, :) ! lower, then upper diagonals
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal => constructPoissonOrthogonal_ZebraCurv
         procedure, public, pass(self) :: solveGS => solveGS_ZebraCurv

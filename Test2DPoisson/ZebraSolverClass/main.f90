@@ -19,8 +19,8 @@ program main
     real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
     logical :: makeX, evenGridBool, redBlackBool
 
-    evenGridBool = .false.
-    redBlackBool = .true.
+    evenGridBool = .true.
+    redBlackBool = .false.
     
     numberStages = 2
     ! More skewed delX and delY, more smoothing operations needed
@@ -32,9 +32,9 @@ program main
     stepTol = 1.d-3
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 1000.0d0
     NESW_phiValues(2) = 0.0d0
