@@ -1,7 +1,7 @@
 module mod_MGSolver
     use iso_fortran_env, only: int32, int64, real64
     use omp_lib
-    use mod_GSSolver
+    use mod_MG_Stage
     use mod_PardisoSolver
     use mod_CSRMAtrix
     implicit none
@@ -12,7 +12,7 @@ module mod_MGSolver
     public :: MGSolver
 
     type :: MGSolver
-        type(GSSolver), allocatable :: GS_smoothers(:)
+        type(MG_Stage), allocatable :: MG_smoothers(:)
         type(pardisoSolver) :: directSolver
         integer :: numberStages, smoothNumber, maxIter, numberPreSmoothOper, numberPostSmoothOper, numIter, N_x, N_y ! number of stages is total, so includes finest and coarsest grid
         real(real64) :: R2_current, stepResidual
@@ -42,24 +42,24 @@ contains
         self%numIter = 0
         self%N_x = N_x
         self%N_y = N_y
-        allocate(self%GS_smoothers(self%smoothNumber))
+        allocate(self%MG_smoothers(self%smoothNumber))
         N_x_coarse = (self%N_x + (2**(self%numberStages-1) - 1))/(2**(self%numberStages-1))
         N_y_coarse = (self%N_y + (2**(self%numberStages-1) - 1))/(2**(self%numberStages-1))
         self%directSolver = pardisoSolver(N_x_coarse * N_y_coarse)
     end function MGSolver_constructor
 
-    subroutine makeSmootherStages(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega, evenGridBool)
+    subroutine makeSmootherStages(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega, evenGridBool, redBlackBool)
         class(MGSolver), intent(in out) :: self
         integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x,self%N_y)
         real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1), omega
-        logical, intent(in) :: evenGridBool
+        logical, intent(in) :: evenGridBool, redBlackBool
         real(real64) :: diffX_temp(self%N_x-1), diffY_temp(self%N_y-1), NESW_phiValTemp(4), delX, delY
         integer :: stageIter, i, j, j_temp, i_temp, N_x_coarse, N_y_coarse
         integer, allocatable :: boundaryConditionsTemp(:, :)
 
         ! Construct first stage GS smoother (finest grid)
-        self%GS_smoothers(1) = GSSolver(omega, evenGridBool)
-        call self%GS_smoothers(1)%constructPoissonOrthogonal(self%N_x, self%N_y, diffX, diffY, NESW_wallBoundaries, boundaryConditions)
+        self%MG_smoothers(1) = MG_Stage(omega, self%N_x, self%N_y, evenGridBool, redBlackBool)
+        call self%MG_smoothers(1)%GS_Smoother%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
         N_x_coarse = self%N_x
         N_y_coarse = self%N_y
         diffX_temp = diffX
@@ -83,9 +83,8 @@ contains
                     boundaryConditionsTemp(i, j) = boundaryConditions(i_temp,j_temp)
                 end do
             end do
-            self%GS_smoothers(stageIter) = GSSolver(omega, evenGridBool)
-            call self%GS_smoothers(stageIter)%constructPoissonOrthogonal(N_x_coarse, N_y_coarse, &
-                diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp)
+            self%MG_smoothers(stageIter) = MG_Stage(omega, N_x_coarse, N_y_coarse, evenGridBool, redBlackBool)
+            call self%MG_smoothers(stageIter)%GS_Smoother%constructPoissonOrthogonal(diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp)
             deallocate(boundaryConditionsTemp)
         end do
         
@@ -122,16 +121,16 @@ contains
         real(real64) :: initRes
         integer(int32) :: i
         
-        call self%GS_smoothers(1)%calcResidual()
+        call self%MG_smoothers(1)%GS_Smoother%calcResidual()
         !$OMP parallel workshare
-        initRes = SUM(self%GS_smoothers(1)%residual**2)
+        initRes = SUM(self%MG_smoothers(1)%GS_Smoother%residual**2)
         !$OMP end parallel workshare
-        call self%GS_smoothers(1)%smoothIterations(self%numberPreSmoothOper-1)
-        self%stepResidual = self%GS_smoothers(1)%smoothWithRes()
+        call self%MG_smoothers(1)%GS_Smoother%smoothIterations(self%numberPreSmoothOper-1)
+        self%stepResidual = self%MG_smoothers(1)%GS_Smoother%smoothWithRes()
         
-        call self%GS_smoothers(1)%calcResidual()
+        call self%MG_smoothers(1)%GS_Smoother%calcResidual()
         !$OMP parallel workshare
-        self%R2_current = SUM(self%GS_smoothers(1)%residual**2)
+        self%R2_current = SUM(self%MG_smoothers(1)%GS_Smoother%residual**2)
         !$OMP end parallel workshare
         
         i = 0
@@ -142,16 +141,16 @@ contains
                 else
                     call self%F_Cycle()
                 end if
-                call self%GS_smoothers(1)%smoothIterations(self%numberPreSmoothOper-1)
-                self%stepResidual = self%GS_smoothers(1)%smoothWithRes()
+                call self%MG_smoothers(1)%GS_Smoother%smoothIterations(self%numberPreSmoothOper-1)
+                self%stepResidual = self%MG_smoothers(1)%GS_Smoother%smoothWithRes()
                 if (self%stepResidual < stepTol) then
                     print *, 'step residual lowered'
                     exit
                 end if
                 ! Final Residual calculation
-                call self%GS_smoothers(1)%calcResidual()
+                call self%MG_smoothers(1)%GS_Smoother%calcResidual()
                 !$OMP parallel workshare
-                self%R2_current = SUM(self%GS_smoothers(1)%residual**2)
+                self%R2_current = SUM(self%MG_smoothers(1)%GS_Smoother%residual**2)
                 !$OMP end parallel workshare
                 print *, 'MG iter:', i, 'res:', self%R2_current
                 if (self%R2_current/initRes < relTol) then
@@ -169,24 +168,30 @@ contains
         integer(int32) :: stageInt
         
         do stageInt = 1, self%smoothNumber-1
+            associate(smoother_fine => self%MG_smoothers(stageInt)%GS_smoother, smoother_coarse => self%MG_smoothers(stageInt+1)%GS_smoother)
             ! Restrict to next smoother
-            call self%GS_smoothers(stageInt)%restriction(self%GS_smoothers(stageInt)%residual, self%GS_smoothers(stageInt+1)%sourceTerm)
+            call smoother_fine%restriction(smoother_fine%residual, smoother_coarse%sourceTerm)
             ! Reset solution to zero as first error guess
             !$OMP parallel workshare
-            self%GS_smoothers(stageInt+1)%solution = 0.0d0
+            smoother_coarse%solution = 0.0d0
             !$OMP end parallel workshare
-            call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper)
-            call self%GS_smoothers(stageInt+1)%calcResidual() 
+            call smoother_coarse%smoothIterations(self%numberPreSmoothOper)
+            call smoother_coarse%calcResidual()
+            end associate 
         end do
         ! Final Solver restriction and solution, then prolongation
-        call self%GS_smoothers(self%smoothNumber)%restriction(self%GS_smoothers(self%smoothNumber)%residual, self%directSolver%sourceTerm)
+        associate(smoother => self%MG_smoothers(self%smoothNumber)%GS_smoother)
+        call smoother%restriction(smoother%residual, self%directSolver%sourceTerm)
         call self%directSolver%runPardiso()
-        call self%GS_smoothers(self%smoothNumber)%prolongation(self%GS_smoothers(self%smoothNumber)%solution, self%directSolver%solution)
+        call smoother%prolongation(smoother%solution, self%directSolver%solution)
+        end associate
         ! prolongation and smoothing to each additional grid
         do stageInt = self%smoothNumber, 2, -1
             ! Prolongation from each
-            call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper)
-            call self%GS_smoothers(stageInt-1)%prolongation(self%GS_smoothers(stageInt-1)%solution, self%GS_smoothers(stageInt)%solution)   
+            associate(smoother_coarse => self%MG_smoothers(stageInt)%GS_smoother, smoother_fine => self%MG_smoothers(stageInt-1)%GS_smoother)
+            call smoother_coarse%smoothIterations(self%numberPostSmoothOper)
+            call smoother_fine%prolongation(smoother_fine%solution, smoother_coarse%solution)
+            end associate
         end do
 
     end subroutine V_Cycle
@@ -200,53 +205,61 @@ contains
         ! then restrict all the way to coarsest grid
         ! works better if restrict residual after smoothing instead of just rho
         do stageInt = 1, self%smoothNumber-1
+            associate(smoother_fine => self%MG_smoothers(stageInt)%GS_smoother, smoother_coarse => self%MG_smoothers(stageInt+1)%GS_smoother)
             ! Restrict to next smoother
-            call self%GS_smoothers(stageInt)%restriction(self%GS_smoothers(stageInt)%residual, self%GS_smoothers(stageInt+1)%sourceTerm)
+            call smoother_fine%restriction(smoother_fine%residual, smoother_coarse%sourceTerm)
             ! Reset solution to zero as first error guess
             !$OMP parallel workshare
-            self%GS_smoothers(stageInt+1)%solution = 0.0d0
+            smoother_coarse%solution = 0.0d0
             !$OMP end parallel workshare
-            call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper)
-            call self%GS_smoothers(stageInt+1)%calcResidual() 
+            call smoother_coarse%smoothIterations(self%numberPreSmoothOper)
+            call smoother_coarse%calcResidual()
+            end associate 
         end do
         ! Final Solver restriction and solution, then prolongation
-        call self%GS_smoothers(self%smoothNumber)%restriction(self%GS_smoothers(self%smoothNumber)%residual, self%directSolver%sourceTerm)
+        call self%MG_smoothers(self%smoothNumber)%GS_smoother%restriction(self%MG_smoothers(self%smoothNumber)%GS_smoother%residual, self%directSolver%sourceTerm)
         ! First solve on coarsest grid
         call self%directSolver%runPardiso()
         
         do j = self%smoothNumber, 2, -1
             ! j is each stage between coarsest and finest grid to to inverted V-cycle
-            call self%GS_smoothers(self%smoothNumber)%prolongation(self%GS_smoothers(self%smoothNumber)%solution, self%directSolver%solution)
-            call self%GS_smoothers(self%smoothNumber)%smoothIterations(self%numberPostSmoothOper)
+            call self%MG_smoothers(self%smoothNumber)%GS_smoother%prolongation(self%MG_smoothers(self%smoothNumber)%GS_smoother%solution, self%directSolver%solution)
+            call self%MG_smoothers(self%smoothNumber)%GS_smoother%smoothIterations(self%numberPostSmoothOper)
             do stageInt = self%smoothNumber-1, j, -1
+                associate(smoother_fine => self%MG_smoothers(stageInt)%GS_smoother, smoother_coarse => self%MG_smoothers(stageInt+1)%GS_smoother)
                 ! prolongate and smooth up to jth stage
-                call self%GS_smoothers(stageInt)%prolongation(self%GS_smoothers(stageInt)%solution, self%GS_smoothers(stageInt+1)%solution)
-                call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper)
+                call smoother_fine%prolongation(smoother_fine%solution, smoother_coarse%solution)
+                call smoother_fine%smoothIterations(self%numberPostSmoothOper)
+                end associate
             end do
             ! when prolongated (with) to j-th stage, calculate residual, restrict to next stage
-            call self%GS_smoothers(j)%calcResidual()
+            call self%MG_smoothers(j)%GS_smoother%calcResidual()
             do stageInt = j, self%smoothNumber-1
+                associate(smoother_fine => self%MG_smoothers(stageInt)%GS_smoother, smoother_coarse => self%MG_smoothers(stageInt+1)%GS_smoother)
                 ! For each lower stage, restrict and recalculate residual
-                call self%GS_smoothers(stageInt)%restriction(self%GS_smoothers(stageInt)%residual, self%GS_smoothers(stageInt+1)%sourceTerm)
+                call smoother_fine%restriction(smoother_fine%residual, smoother_coarse%sourceTerm)
                 ! Reset solution to zero as first error guess
                 !$OMP parallel workshare
-                self%GS_smoothers(stageInt+1)%solution = 0.0d0
+                smoother_coarse%solution = 0.0d0
                 !$OMP end parallel workshare
-                call self%GS_smoothers(stageInt+1)%smoothIterations(self%numberPreSmoothOper)
-                call self%GS_smoothers(stageInt+1)%calcResidual() 
+                call smoother_coarse%smoothIterations(self%numberPreSmoothOper)
+                call smoother_coarse%calcResidual() 
+                end associate
             end do
             ! Restrict lowest grid
-            call self%GS_smoothers(self%smoothNumber)%restriction(self%GS_smoothers(self%smoothNumber)%residual, self%directSolver%sourceTerm)
+            call self%MG_smoothers(self%smoothNumber)%GS_smoother%restriction(self%MG_smoothers(self%smoothNumber)%GS_smoother%residual, self%directSolver%sourceTerm)
             ! Solve at lowest grid
             call self%directSolver%runPardiso()
         end do
         ! Now prolongate all the way to finest grid
-        call self%GS_smoothers(self%smoothNumber)%prolongation(self%GS_smoothers(self%smoothNumber)%solution, self%directSolver%solution)
+        call self%MG_smoothers(self%smoothNumber)%GS_smoother%prolongation(self%MG_smoothers(self%smoothNumber)%GS_smoother%solution, self%directSolver%solution)
         ! prolongation and smoothing to each additional grid
         do stageInt = self%smoothNumber, 2, -1
             ! Prolongation from each
-            call self%GS_smoothers(stageInt)%smoothIterations(self%numberPostSmoothOper)
-            call self%GS_smoothers(stageInt-1)%prolongation(self%GS_smoothers(stageInt-1)%solution, self%GS_smoothers(stageInt)%solution)   
+            associate(smoother_coarse => self%MG_smoothers(stageInt)%GS_smoother, smoother_fine => self%MG_smoothers(stageInt-1)%GS_smoother)
+            call smoother_coarse%smoothIterations(self%numberPostSmoothOper)
+            call smoother_fine%prolongation(smoother_fine%solution, smoother_coarse%solution) 
+            end associate  
         end do
 
     end subroutine F_Cycle

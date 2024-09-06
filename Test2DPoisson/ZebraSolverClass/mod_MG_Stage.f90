@@ -21,10 +21,10 @@ module mod_MG_Stage
     end interface MG_Stage
 
 contains 
-    type(MG_Stage) function MG_Stage_constructor(omega, N_x, N_y, diffX, diffY, NESW_wallBoundaries, boundaryConditions, evenGridBool, redBlackBool) result(self)
+    type(MG_Stage) function MG_Stage_constructor(omega, N_x, N_y, evenGridBool, redBlackBool) result(self)
     ! Construct object, set initial variables
-    real(real64), intent(in) :: omega, diffX(N_x-1), diffY(N_y-1)
-    integer(int32), intent(in) :: N_x, N_y, NESW_wallBoundaries(4), boundaryConditions(N_x, N_y)
+    real(real64), intent(in) :: omega
+    integer(int32), intent(in) :: N_x, N_y
     logical, intent(in) :: evenGridBool, redBlackBool
     if (evenGridBool) then
         if (redBlackBool) then
@@ -39,7 +39,6 @@ contains
             self%GS_Smoother = ZebraSolverCurv(omega, N_x, N_y)
         end if
     end if
-    call self%GS_Smoother%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
     end function MG_Stage_constructor
 
 

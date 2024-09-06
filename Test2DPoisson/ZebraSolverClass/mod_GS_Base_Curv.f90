@@ -41,7 +41,7 @@ subroutine restriction_curv(self, fineGrid, coarseGrid)
             i_coarse = (i_fine + 1)/2
             j_coarse = (j_fine + 1)/2
 
-            ! Transpose of prolongation, seems to work best
+            ! Transpose of prolongation, seems to work best for red black
             if (E_indx /= W_indx) then
                 ! interpolation from east point
                 C_E = self%horzCoeffs(1, E_indx + 1 - self%startCol)
@@ -91,7 +91,7 @@ subroutine restriction_curv(self, fineGrid, coarseGrid)
             end if
 
 
-            !node based restriction
+            !node based restriction, works best for zebra
             ! C_N = self%vertCoeffs(1,k)
             ! C_E = self%horzCoeffs(1,p)
             ! C_S = self%vertCoeffs(2,k)

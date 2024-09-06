@@ -2,13 +2,13 @@
 
 program main
     use iso_fortran_env, only: int32, real64
-    use mod_MG_Stage
+    use mod_MGSolver
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 101, N_y = 51, numThreads = 6
-    type(MG_Stage) :: stage_MG
+    integer(int32) :: N_x = 101, N_y = 21, numThreads = 6
+    type(MGSolver) :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
     integer, allocatable :: boundaryConditions(:, :)
@@ -19,15 +19,15 @@ program main
     real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
     logical :: makeX, evenGridBool, redBlackBool
 
-    evenGridBool = .true.
+    evenGridBool = .false.
     redBlackBool = .false.
     
     numberStages = 2
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 10
-    numberPostSmoothOper = 10
+    numberPreSmoothOper = 16
+    numberPostSmoothOper = 16
     numberIter = 200
-    omega = 1.5d0
+    omega = 1.0d0
     relTol = 1.d-12
     stepTol = 1.d-3
     rho = e_const * 1d15
@@ -90,55 +90,56 @@ program main
     ! upper left corner
     boundaryConditions(1, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
     
-    stage_MG = MG_Stage(omega, N_x, N_y, diffX, diffY, NESW_wallBoundaries, boundaryConditions, evenGridBool, RedBlackBool)
-    associate( solver => stage_MG%GS_Smoother)
+    solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    call solver%makeSmootherStages(diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega, evenGridBool, redBlackBool)
+    associate( stageOne => solver%MG_smoothers(1)%GS_smoother)
     ! Set phi values finer grid
     if (upperBound == 1) then
-        solver%solution(2:N_x-1, N_y) = upperPhi
+        stageOne%solution(2:N_x-1, N_y) = upperPhi
     end if
     if (rightBound == 1) then
-        solver%solution(N_x, 2:N_y-1) = rightPhi
+        stageOne%solution(N_x, 2:N_y-1) = rightPhi
     end if
     if (lowerBound == 1) then 
-        solver%solution(2:N_x-1, 1) = lowerPhi
+        stageOne%solution(2:N_x-1, 1) = lowerPhi
     end if
     if (leftBound == 1) then 
-        solver%solution(1, 2:N_y-1) = leftPhi
+        stageOne%solution(1, 2:N_y-1) = leftPhi
     end if
     if (boundaryConditions(1,1) == 1) then
         if (lowerBound == leftBound) then
-            solver%solution(1,1) = MIN(leftPhi, lowerPhi)
+            stageOne%solution(1,1) = MIN(leftPhi, lowerPhi)
         else if (lowerBound == 1) then
-            solver%solution(1,1) = lowerPhi
+            stageOne%solution(1,1) = lowerPhi
         else 
-            solver%solution(1,1) = leftPhi
+            stageOne%solution(1,1) = leftPhi
         end if
     end if
     if (boundaryConditions(N_x,1) == 1) then
         if (lowerBound == rightBound) then
-            solver%solution(N_x,1) = MIN(rightPhi, lowerPhi)
+            stageOne%solution(N_x,1) = MIN(rightPhi, lowerPhi)
         else if (lowerBound == 1) then
-            solver%solution(N_x,1) = lowerPhi
+            stageOne%solution(N_x,1) = lowerPhi
         else
-            solver%solution(N_x,1) = rightPhi
+            stageOne%solution(N_x,1) = rightPhi
         end if
     end if
     if (boundaryConditions(1, N_y) == 1) then
         if (upperBound == leftBound) then
-            solver%solution(1, N_y) = MIN(leftPhi, upperPhi)
+            stageOne%solution(1, N_y) = MIN(leftPhi, upperPhi)
         else if (upperBound == 1) then
-            solver%solution(1, N_y) = upperPhi
+            stageOne%solution(1, N_y) = upperPhi
         else
-            solver%solution(1, N_y) = leftPhi
+            stageOne%solution(1, N_y) = leftPhi
         end if
     end if
     if (boundaryConditions(N_x, N_y) == 1) then
         if (upperBound == rightBound) then
-            solver%solution(N_x, N_y) = MIN(rightPhi, upperPhi)
+            stageOne%solution(N_x, N_y) = MIN(rightPhi, upperPhi)
         else if (upperBound == 1) then
-            solver%solution(N_x, N_y) = upperPhi
+            stageOne%solution(N_x, N_y) = upperPhi
         else
-            solver%solution(N_x, N_y) = rightPhi
+            stageOne%solution(N_x, N_y) = rightPhi
         end if
     end if
     
@@ -147,7 +148,7 @@ program main
     do j = 1, N_y
         do i = 1, N_x
             if (boundaryConditions(i,j) /= 1) then
-                solver%sourceTerm(i,j) = -rho/eps_0
+                stageOne%sourceTerm(i,j) = -rho/eps_0
                 ! k = (j-1) * N_x + i
                 ! directSolver%sourceTerm(k) = -rho/eps_0
             end if
@@ -160,18 +161,14 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%solveGS(stepTol)
+    call stageOne%solveGS(stepTol)
     call system_clock(endTime)
 
-    print *, 'Took', solver%iterNumber, 'iterations'
+    print *, 'Took', stageOne%iterNumber, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    allocate(test((solver%N_x+1)/2, (solver%N_y+1)/2))
-    call solver%restriction(solver%solution, test)
-    test(1:(solver%N_x+1)/2-1, (solver%N_y+1)/2) = 1000.0d0
-    solver%solution = 0.0d0
-    call solver%prolongation(solver%solution, test)
+    
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%solution
+    write(41) stageOne%solution
     close(41)
     end associate
     ! ! !$OMP parallel workshare

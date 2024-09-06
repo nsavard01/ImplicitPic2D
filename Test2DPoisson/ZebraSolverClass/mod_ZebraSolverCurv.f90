@@ -483,7 +483,7 @@ contains
 
             ! horizontal sweeps left to right
             !$OMP do
-            ! Sweep odd numbers
+            ! Sweep odd numbers forward
             do k = 1, self%numberRows, 2
                 j = self%startRow + k - 1
                 N_indx = self%vertIndx(1, k)
@@ -504,14 +504,14 @@ contains
             end do
             !$OMP end do
             !$OMP do
-            ! sweep even numbers
+            ! sweep even numbers backwards
             do k = 2, self%numberRows, 2
                 j = self%startRow + k - 1
                 N_indx = self%vertIndx(1, k)
                 S_indx = self%vertIndx(2, k)
                 C_N = self%vertCoeffs(1, k)
                 C_S = self%vertCoeffs(2, k)
-                do p = 1, self%numberColumns
+                do p = self%numberColumns, 1, -1
                     i = self%startCol + p - 1
                     E_indx = self%horzIndx(1, p)
                     W_indx = self%horzIndx(2, p)
@@ -527,7 +527,7 @@ contains
 
             ! vertical sweeps bottom to top
             !$OMP do
-            ! Sweep odd numbers
+            ! Sweep odd numbers upwards
             do p = 1, self%numberColumns, 2
                 i = self%startCol + p - 1
                 E_indx = self%horzIndx(1, p)
@@ -548,14 +548,14 @@ contains
             end do
             !$OMP end do
             !$OMP do
-            ! sweep even numbers
+            ! sweep even numbers downwards
             do p = 2, self%numberColumns, 2
                 i = self%startCol + p - 1
                 E_indx = self%horzIndx(1, p)
                 W_indx = self%horzIndx(2, p)
                 C_E = self%horzCoeffs(1, p)
                 C_W = self%horzCoeffs(2, p)
-                do k = 1, self%numberRows
+                do k = self%numberRows, 1, -1
                     j = self%startRow + k - 1
                     N_indx = self%vertIndx(1, k)
                     S_indx = self%vertIndx(2, k)
@@ -571,7 +571,7 @@ contains
 
             ! horizontal sweeps right to left
             !$OMP do
-            ! Sweep odd numbers
+            ! Sweep odd numbers backwards
             do k = 1, self%numberRows, 2
                 j = self%startRow + k - 1
                 N_indx = self%vertIndx(1, k)
@@ -592,14 +592,14 @@ contains
             end do
             !$OMP end do
             !$OMP do
-            ! sweep even numbers
+            ! sweep even numbers forward
             do k = 2, self%numberRows, 2
                 j = self%startRow + k - 1
                 N_indx = self%vertIndx(1, k)
                 S_indx = self%vertIndx(2, k)
                 C_N = self%vertCoeffs(1, k)
                 C_S = self%vertCoeffs(2, k)
-                do p = self%numberColumns, 1, -1
+                do p = 1, self%numberColumns
                     i = self%startCol + p - 1
                     E_indx = self%horzIndx(1, p)
                     W_indx = self%horzIndx(2, p)
@@ -615,7 +615,7 @@ contains
 
             ! vertical sweeps top to bottom
             !$OMP do
-            ! Sweep odd numbers
+            ! Sweep odd numbers downwards
             do p = 1, self%numberColumns, 2
                 i = self%startCol + p - 1
                 E_indx = self%horzIndx(1, p)
@@ -636,14 +636,14 @@ contains
             end do
             !$OMP end do
             !$OMP do
-            ! sweep even numbers
+            ! sweep even numbers upwards
             do p = 2, self%numberColumns, 2
                 i = self%startCol + p - 1
                 E_indx = self%horzIndx(1, p)
                 W_indx = self%horzIndx(2, p)
                 C_E = self%horzCoeffs(1, p)
                 C_W = self%horzCoeffs(2, p)
-                do k = self%numberRows, 1, -1
+                do k = 1, self%numberRows
                     j = self%startRow + k - 1
                     N_indx = self%vertIndx(1, k)
                     S_indx = self%vertIndx(2, k)
@@ -671,8 +671,8 @@ contains
         !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, C_E, C_N, C_S, C_W, C_O, oldSol) reduction(+:Res)
 
         ! horizontal sweeps left to right
-        !$OMP do
-        ! Sweep odd numbers
+            !$OMP do
+            ! Sweep odd numbers forward
         do k = 1, self%numberRows, 2
             j = self%startRow + k - 1
             N_indx = self%vertIndx(1, k)
@@ -693,14 +693,14 @@ contains
         end do
         !$OMP end do
         !$OMP do
-        ! sweep even numbers
+        ! sweep even numbers backwards
         do k = 2, self%numberRows, 2
             j = self%startRow + k - 1
             N_indx = self%vertIndx(1, k)
             S_indx = self%vertIndx(2, k)
             C_N = self%vertCoeffs(1, k)
             C_S = self%vertCoeffs(2, k)
-            do p = 1, self%numberColumns
+            do p = self%numberColumns, 1, -1
                 i = self%startCol + p - 1
                 E_indx = self%horzIndx(1, p)
                 W_indx = self%horzIndx(2, p)
@@ -716,7 +716,7 @@ contains
 
         ! vertical sweeps bottom to top
         !$OMP do
-        ! Sweep odd numbers
+        ! Sweep odd numbers upwards
         do p = 1, self%numberColumns, 2
             i = self%startCol + p - 1
             E_indx = self%horzIndx(1, p)
@@ -737,14 +737,14 @@ contains
         end do
         !$OMP end do
         !$OMP do
-        ! sweep even numbers
+        ! sweep even numbers downwards
         do p = 2, self%numberColumns, 2
             i = self%startCol + p - 1
             E_indx = self%horzIndx(1, p)
             W_indx = self%horzIndx(2, p)
             C_E = self%horzCoeffs(1, p)
             C_W = self%horzCoeffs(2, p)
-            do k = 1, self%numberRows
+            do k = self%numberRows, 1, -1
                 j = self%startRow + k - 1
                 N_indx = self%vertIndx(1, k)
                 S_indx = self%vertIndx(2, k)
@@ -760,7 +760,7 @@ contains
 
         ! horizontal sweeps right to left
         !$OMP do
-        ! Sweep odd numbers
+        ! Sweep odd numbers backwards
         do k = 1, self%numberRows, 2
             j = self%startRow + k - 1
             N_indx = self%vertIndx(1, k)
@@ -781,14 +781,14 @@ contains
         end do
         !$OMP end do
         !$OMP do
-        ! sweep even numbers
+        ! sweep even numbers forward
         do k = 2, self%numberRows, 2
             j = self%startRow + k - 1
             N_indx = self%vertIndx(1, k)
             S_indx = self%vertIndx(2, k)
             C_N = self%vertCoeffs(1, k)
             C_S = self%vertCoeffs(2, k)
-            do p = self%numberColumns, 1, -1
+            do p = 1, self%numberColumns
                 i = self%startCol + p - 1
                 E_indx = self%horzIndx(1, p)
                 W_indx = self%horzIndx(2, p)
@@ -804,7 +804,7 @@ contains
 
         ! vertical sweeps top to bottom
         !$OMP do
-        ! Sweep odd numbers
+        ! Sweep odd numbers downwards
         do p = 1, self%numberColumns, 2
             i = self%startCol + p - 1
             E_indx = self%horzIndx(1, p)
@@ -826,14 +826,14 @@ contains
         end do
         !$OMP end do
         !$OMP do
-        ! sweep even numbers
+        ! sweep even numbers upwards
         do p = 2, self%numberColumns, 2
             i = self%startCol + p - 1
             E_indx = self%horzIndx(1, p)
             W_indx = self%horzIndx(2, p)
             C_E = self%horzCoeffs(1, p)
             C_W = self%horzCoeffs(2, p)
-            do k = self%numberRows, 1, -1
+            do k = 1, self%numberRows
                 j = self%startRow + k - 1
                 N_indx = self%vertIndx(1, k)
                 S_indx = self%vertIndx(2, k)
