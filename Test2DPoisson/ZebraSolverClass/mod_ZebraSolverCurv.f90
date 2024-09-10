@@ -21,6 +21,7 @@ module mod_ZebraSolverCurv
 
     type, extends(GS_Base_Curv) :: ZebraSolverCurv
         ! store grid quantities
+        integer(int32) :: leftBound, rightBound, lowerBound, upperBound
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal => constructPoissonOrthogonal_ZebraCurv
         procedure, public, pass(self) :: solveGS => solveGS_ZebraCurv
@@ -114,7 +115,16 @@ contains
         if (leftBound == 1) self%startCol = 2
         if (rightBound == 1) self%endCol = self%N_x-1
         self%numberColumns = self%endCol - self%startCol + 1  
-        
+        self%upperBound = upperBound
+        self%lowerBound = lowerBound
+        self%rightBound = rightBound
+        self%leftBound = leftBound
+        if (self%numberColumns == self%N_x) then
+            self%leftBound = 4
+        end if
+        if (self%numberRows == self%N_y) then
+            self%lowerBound = 4
+        end if
 
         allocate(self%horzIndx(2,self%numberColumns), self%vertIndx(2,self%numberRows))
         
@@ -473,13 +483,15 @@ contains
         ! Solve GS down to some tolerance
         class(ZebraSolverCurv), intent(in out) :: self
         integer(int32), intent(in) :: iterNum
-        real(real64) :: oldSol, C_N, C_E, C_O, C_W, C_S, omega_inv
-        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p, iter
+        real(real64) :: omega_inv, C_N, C_E, C_S, C_W
+        real(real64) :: cp_x(self%N_x-1), dp_x(self%N_x-1), cp_y(self%N_y-1), dp_y(self%N_y), sourceX(self%N_x), sourceY(self%N_y), m
+        integer :: k,p, iter, E_indx, W_indx, N_indx, S_indx, i, j
         omega_inv = 1.0d0 - self%omega
-        ! p indexs in horizontal maps to i, k in vertical maps to j
-       
+        
+
         do iter = 1, iterNum
-            !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, C_E, C_N, C_S, C_W, C_O, oldSol)
+            !$OMP parallel private(k, p, i, j, E_indx, N_indx, S_indx, W_indx, &
+            !$OMP& C_N, C_S, C_E, C_W, cp_y, cp_x, dp_y, dp_x, sourceX, sourceY, m)
 
             ! horizontal sweeps left to right
             !$OMP do
@@ -490,40 +502,108 @@ contains
                 S_indx = self%vertIndx(2, k)
                 C_N = self%vertCoeffs(1, k)
                 C_S = self%vertCoeffs(2, k)
-                do p = 1, self%numberColumns
-                    i = self%startCol + p - 1
-                    E_indx = self%horzIndx(1, p)
-                    W_indx = self%horzIndx(2, p)
-                    C_E = self%horzCoeffs(1, p)
-                    C_W = self%horzCoeffs(2, p)
-                    C_O = self%centerCoeffs(p,k)
-                    oldSol = self%solution(i,j)
-                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                        self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+                ! initialize c-prime and d-prime
+                select case (self%leftBound)
+                case (1)
+                    cp_x(1) = 0.0d0
+                    sourceX(1) = self%solution(1,j)
+                    dp_x(1) = sourceX(1)
+                case (2)
+                    C_E = 2.0d0 * self%horzCoeffs(1,1)
+                    cp_x(1) = C_E * self%centerCoeffs(1,k)
+                    sourceX(1) = self%sourceTerm(1, j) - C_N * self%solution(1, N_indx) - C_S * self%solution(1, S_indx)
+                    dp_x(1) = (sourceX(1)) * self%centerCoeffs(1,k)
+                case (3,4)
+                    cp_x(1) = 0.0d0
+                    C_E = self%horzCoeffs(1,1)
+                    C_W = self%horzCoeffs(2,1)
+                    E_indx = self%horzIndx(1,1)
+                    W_indx = self%horzIndx(2,1)
+                    sourceX(1) = (self%sourceTerm(1,j) - self%solution(1, N_indx) * C_N - self%solution(1, S_indx) * C_S - &
+                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * self%centerCoeffs(1,k)* self%omega + omega_inv * self%solution(1,j)
+                    dp_x(1) = sourceX(1)
+                end select
+                ! solve for vectors c-prime and d-prime
+                do i = 2,self%N_x-1
+                    C_W = self%horzCoeffs(2, i+1-self%startCol)
+                    C_E = self%horzCoeffs(1, i+1-self%startCol)
+                    m = 1.0d0/self%centerCoeffs(i+1-self%startCol, k) - cp_x(i-1) * C_W
+                    cp_x(i) = C_E / m
+                    sourceX(i) = self%sourceTerm(i,j) - C_N * self%solution(i, N_indx) - C_S * self%solution(i, S_indx)
+                    dp_x(i) = (sourceX(i) - dp_x(i-1) * C_W) / m
                 end do
+                select case(self%rightBound)
+                case (1)
+                    sourceX(self%N_x) = self%solution(self%N_x, j)
+                case (2)
+                    sourceX(self%N_x) = self%sourceTerm(self%N_x,j) - C_N * self%solution(self%N_x, N_indx) - C_S * self%solution(self%N_x, S_indx)
+                    C_W = 2.0d0 * self%horzCoeffs(2, self%numberColumns)
+                    sourceX(self%N_x) = (sourceX(self%N_x) - dp_x(self%N_x-1) * C_W)/&
+                        (1.0/self%centerCoeffs(self%numberColumns, k) - cp_x(self%N_x-1)  * C_W)
+                case (3)
+                    sourceX(self%N_x) = sourceX(1)
+                end select
+                do i = self%N_x-1, 1, -1
+                    sourceX(i) = dp_x(i)-cp_x(i)*sourceX(i+1)
+                end do
+                self%solution(:,j) = sourceX *self%omega + omega_inv * self%solution(:,j)
             end do
             !$OMP end do
+            ! Sweep horizontal even rows
             !$OMP do
-            ! sweep even numbers backwards
             do k = 2, self%numberRows, 2
                 j = self%startRow + k - 1
                 N_indx = self%vertIndx(1, k)
                 S_indx = self%vertIndx(2, k)
                 C_N = self%vertCoeffs(1, k)
                 C_S = self%vertCoeffs(2, k)
-                do p = self%numberColumns, 1, -1
-                    i = self%startCol + p - 1
-                    E_indx = self%horzIndx(1, p)
-                    W_indx = self%horzIndx(2, p)
-                    C_E = self%horzCoeffs(1, p)
-                    C_W = self%horzCoeffs(2, p)
-                    C_O = self%centerCoeffs(p,k)
-                    oldSol = self%solution(i,j)
-                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                        self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+                select case (self%leftBound)
+                case (1)
+                    cp_x(1) = 0.0d0
+                    sourceX(1) = self%solution(1,j)
+                    dp_x(1) = sourceX(1)
+                case (2)
+                    C_E = 2.0d0 * self%horzCoeffs(1,1)
+                    cp_x(1) = C_E * self%centerCoeffs(1,k)
+                    sourceX(1) = self%sourceTerm(1, j) - C_N * self%solution(1, N_indx) - C_S * self%solution(1, S_indx)
+                    dp_x(1) = (sourceX(1)) * self%centerCoeffs(1,k)
+                case (3,4)
+                    cp_x(1) = 0.0d0
+                    C_E = self%horzCoeffs(1,1)
+                    C_W = self%horzCoeffs(2,1)
+                    E_indx = self%horzIndx(1,1)
+                    W_indx = self%horzIndx(2,1)
+                    sourceX(1) = (self%sourceTerm(1,j) - self%solution(1, N_indx) * C_N - self%solution(1, S_indx) * C_S - &
+                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * self%centerCoeffs(1,k)* self%omega + omega_inv * self%solution(1,j)
+                    dp_x(1) = sourceX(1)
+                end select
+                ! solve for vectors c-prime and d-prime
+                do i = 2,self%N_x-1
+                    C_W = self%horzCoeffs(2, i+1-self%startCol)
+                    C_E = self%horzCoeffs(1, i+1-self%startCol)
+                    m = 1.0d0/self%centerCoeffs(i+1-self%startCol, k) - cp_x(i-1) * C_W
+                    cp_x(i) = C_E / m
+                    sourceX(i) = self%sourceTerm(i,j) - C_N * self%solution(i, N_indx) - C_S * self%solution(i, S_indx)
+                    dp_x(i) = (sourceX(i) - dp_x(i-1) * C_W) / m
                 end do
+                select case(self%rightBound)
+                case (1)
+                    sourceX(self%N_x) = self%solution(self%N_x, j)
+                case (2)
+                    sourceX(self%N_x) = self%sourceTerm(self%N_x,j) - C_N * self%solution(self%N_x, N_indx) - C_S * self%solution(self%N_x, S_indx)
+                    C_W = 2.0d0 * self%horzCoeffs(2, self%numberColumns)
+                    sourceX(self%N_x) = (sourceX(self%N_x) - dp_x(self%N_x-1) * C_W)/&
+                        (1.0/self%centerCoeffs(self%numberColumns, k) - cp_x(self%N_x-1)  * C_W)
+                case (3)
+                    sourceX(self%N_x) = sourceX(1)
+                end select
+                do i = self%N_x-1, 1, -1
+                    sourceX(i) = dp_x(i)-cp_x(i)*sourceX(i+1)
+                end do
+                self%solution(:,j) = sourceX *self%omega + omega_inv * self%solution(:,j)
             end do
             !$OMP end do
+            
 
             ! vertical sweeps bottom to top
             !$OMP do
@@ -534,126 +614,104 @@ contains
                 W_indx = self%horzIndx(2, p)
                 C_E = self%horzCoeffs(1, p)
                 C_W = self%horzCoeffs(2, p)
-                do k = 1, self%numberRows
-                    j = self%startRow + k - 1
-                    N_indx = self%vertIndx(1, k)
-                    S_indx = self%vertIndx(2, k)
-                    C_N = self%vertCoeffs(1, k)
-                    C_S = self%vertCoeffs(2, k)
-                    C_O = self%centerCoeffs(p, k)
-                    oldSol = self%solution(i,j)
-                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                        self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+                select case (self%lowerBound)
+                case (1)
+                    cp_y(1) = 0.0d0
+                    sourceY(1) = self%solution(i,1)
+                    dp_y(1) = sourceY(1)
+                case (2)
+                    C_N = 2.0d0 * self%vertCoeffs(1,1)
+                    cp_y(1) = C_N * self%centerCoeffs(p,1)
+                    sourceY(1) = self%sourceTerm(i, 1) - C_E * self%solution(E_indx, 1) - C_W * self%solution(W_indx, 1)
+                    dp_y(1) = (sourceY(1)) * self%centerCoeffs(p,1)
+                case (3,4)
+                    cp_y(1) = 0.0d0
+                    C_N = self%vertCoeffs(1,1)
+                    C_S = self%vertCoeffs(2,1)
+                    N_indx = self%vertIndx(1,1)
+                    S_indx = self%vertIndx(2,1)
+                    sourceY(1) = (self%sourceTerm(i,1) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
+                    self%solution(E_indx, 1) * C_E - self%solution(W_indx, 1) * C_W) * self%centerCoeffs(p,1)* self%omega + omega_inv * self%solution(i,1)
+                    dp_y(1) = sourceY(1)
+                end select
+                ! solve for vectors c-prime and d-prime
+                do j = 2,self%N_y-1
+                    C_S = self%vertCoeffs(2, j+1-self%startRow)
+                    C_N = self%vertCoeffs(1, j+1-self%startRow)
+                    m = 1.0d0/self%centerCoeffs(p, j+1-self%startRow) - cp_y(j-1) * C_S
+                    cp_y(j) = C_N / m
+                    sourceY(j) = self%sourceTerm(i, j) - C_E * self%solution(E_indx, j) - C_W * self%solution(W_indx, j)
+                    dp_y(j) = (sourceY(j) - dp_y(j-1) * C_S) / m
                 end do
+                select case(self%upperBound)
+                case (1)
+                    sourceY(self%N_y) = self%solution(i, self%N_y)
+                case (2)
+                    sourceY(self%N_y) = self%sourceTerm(i, self%N_y) - C_E * self%solution(E_indx, self%N_y) - C_W * self%solution(W_indx, self%N_y)
+                    C_S = 2.0d0 * self%vertCoeffs(2, self%numberRows)
+                    sourceY(self%N_y) = (sourceY(self%N_y) - dp_y(self%N_y-1) * C_S)/&
+                        (1.0/self%centerCoeffs(p, self%numberRows) - cp_y(self%N_y-1)  * C_S)
+                case (3)
+                    sourceY(self%N_y) = sourceY(1)
+                end select
+                do j = self%N_y-1, 1, -1
+                    sourceY(j) = dp_y(j)-cp_y(j)*sourceY(j+1)
+                end do
+                self%solution(i,:) = sourceY *self%omega + omega_inv * self%solution(i,:)
             end do
             !$OMP end do
             !$OMP do
-            ! sweep even numbers downwards
+            ! sweep even numbered columns
             do p = 2, self%numberColumns, 2
                 i = self%startCol + p - 1
                 E_indx = self%horzIndx(1, p)
                 W_indx = self%horzIndx(2, p)
                 C_E = self%horzCoeffs(1, p)
                 C_W = self%horzCoeffs(2, p)
-                do k = self%numberRows, 1, -1
-                    j = self%startRow + k - 1
-                    N_indx = self%vertIndx(1, k)
-                    S_indx = self%vertIndx(2, k)
-                    C_N = self%vertCoeffs(1, k)
-                    C_S = self%vertCoeffs(2, k)
-                    C_O = self%centerCoeffs(p, k)
-                    oldSol = self%solution(i,j)
-                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                        self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+                select case (self%lowerBound)
+                case (1)
+                    cp_y(1) = 0.0d0
+                    sourceY(1) = self%solution(i,1)
+                    dp_y(1) = sourceY(1)
+                case (2)
+                    C_N = 2.0d0 * self%vertCoeffs(1,1)
+                    cp_y(1) = C_N * self%centerCoeffs(p,1)
+                    sourceY(1) = self%sourceTerm(i, 1) - C_E * self%solution(E_indx, 1) - C_W * self%solution(W_indx, 1)
+                    dp_y(1) = (sourceY(1)) * self%centerCoeffs(p,1)
+                case (3,4)
+                    cp_y(1) = 0.0d0
+                    C_N = self%vertCoeffs(1,1)
+                    C_S = self%vertCoeffs(2,1)
+                    N_indx = self%vertIndx(1,1)
+                    S_indx = self%vertIndx(2,1)
+                    sourceY(1) = (self%sourceTerm(i,1) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
+                    self%solution(E_indx, 1) * C_E - self%solution(W_indx, 1) * C_W) * self%centerCoeffs(p,1)* self%omega + omega_inv * self%solution(i,1)
+                    dp_y(1) = sourceY(1)
+                end select
+                ! solve for vectors c-prime and d-prime
+                do j = 2,self%N_y-1
+                    C_S = self%vertCoeffs(2, j+1-self%startRow)
+                    C_N = self%vertCoeffs(1, j+1-self%startRow)
+                    m = 1.0d0/self%centerCoeffs(p, j+1-self%startRow) - cp_y(j-1) * C_S
+                    cp_y(j) = C_N / m
+                    sourceY(j) = self%sourceTerm(i, j) - C_E * self%solution(E_indx, j) - C_W * self%solution(W_indx, j)
+                    dp_y(j) = (sourceY(j) - dp_y(j-1) * C_S) / m
                 end do
-            end do
-            !$OMP end do
-
-            ! horizontal sweeps right to left
-            !$OMP do
-            ! Sweep odd numbers backwards
-            do k = 1, self%numberRows, 2
-                j = self%startRow + k - 1
-                N_indx = self%vertIndx(1, k)
-                S_indx = self%vertIndx(2, k)
-                C_N = self%vertCoeffs(1, k)
-                C_S = self%vertCoeffs(2, k)
-                do p = self%numberColumns, 1, -1
-                    i = self%startCol + p - 1
-                    E_indx = self%horzIndx(1, p)
-                    W_indx = self%horzIndx(2, p)
-                    C_E = self%horzCoeffs(1, p)
-                    C_W = self%horzCoeffs(2, p)
-                    C_O = self%centerCoeffs(p, k)
-                    oldSol = self%solution(i,j)
-                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                        self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+                select case(self%upperBound)
+                case (1)
+                    sourceY(self%N_y) = self%solution(i, self%N_y)
+                case (2)
+                    sourceY(self%N_y) = self%sourceTerm(i, self%N_y) - C_E * self%solution(E_indx, self%N_y) - C_W * self%solution(W_indx, self%N_y)
+                    C_S = 2.0d0 * self%vertCoeffs(2, self%numberRows)
+                    sourceY(self%N_y) = (sourceY(self%N_y) - dp_y(self%N_y-1) * C_S)/&
+                        (1.0/self%centerCoeffs(p, self%numberRows) - cp_y(self%N_y-1)  * C_S)
+                case (3)
+                    sourceY(self%N_y) = sourceY(1)
+                end select
+                do j = self%N_y-1, 1, -1
+                    sourceY(j) = dp_y(j)-cp_y(j)*sourceY(j+1)
                 end do
-            end do
-            !$OMP end do
-            !$OMP do
-            ! sweep even numbers forward
-            do k = 2, self%numberRows, 2
-                j = self%startRow + k - 1
-                N_indx = self%vertIndx(1, k)
-                S_indx = self%vertIndx(2, k)
-                C_N = self%vertCoeffs(1, k)
-                C_S = self%vertCoeffs(2, k)
-                do p = 1, self%numberColumns
-                    i = self%startCol + p - 1
-                    E_indx = self%horzIndx(1, p)
-                    W_indx = self%horzIndx(2, p)
-                    C_E = self%horzCoeffs(1, p)
-                    C_W = self%horzCoeffs(2, p)
-                    C_O = self%centerCoeffs(p, k)
-                    oldSol = self%solution(i,j)
-                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                        self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-                end do
-            end do
-            !$OMP end do
-
-            ! vertical sweeps top to bottom
-            !$OMP do
-            ! Sweep odd numbers downwards
-            do p = 1, self%numberColumns, 2
-                i = self%startCol + p - 1
-                E_indx = self%horzIndx(1, p)
-                W_indx = self%horzIndx(2, p)
-                C_E = self%horzCoeffs(1, p)
-                C_W = self%horzCoeffs(2, p)
-                do k = self%numberRows, 1, -1
-                    j = self%startRow + k - 1
-                    N_indx = self%vertIndx(1, k)
-                    S_indx = self%vertIndx(2, k)
-                    C_N = self%vertCoeffs(1, k)
-                    C_S = self%vertCoeffs(2, k)
-                    C_O = self%centerCoeffs(p, k)
-                    oldSol = self%solution(i,j)
-                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                        self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-                end do
-            end do
-            !$OMP end do
-            !$OMP do
-            ! sweep even numbers upwards
-            do p = 2, self%numberColumns, 2
-                i = self%startCol + p - 1
-                E_indx = self%horzIndx(1, p)
-                W_indx = self%horzIndx(2, p)
-                C_E = self%horzCoeffs(1, p)
-                C_W = self%horzCoeffs(2, p)
-                do k = 1, self%numberRows
-                    j = self%startRow + k - 1
-                    N_indx = self%vertIndx(1, k)
-                    S_indx = self%vertIndx(2, k)
-                    C_N = self%vertCoeffs(1, k)
-                    C_S = self%vertCoeffs(2, k)
-                    C_O = self%centerCoeffs(p, k)
-                    oldSol = self%solution(i,j)
-                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                        self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-                end do
+                self%solution(i,:) = sourceY *self%omega + omega_inv * self%solution(i,:)
             end do
             !$OMP end do
             !$OMP end parallel
@@ -663,56 +721,125 @@ contains
     function smoothWithRes_ZebraCurv(self) result(Res)
         ! Solve GS down to some tolerance
         class(ZebraSolverCurv), intent(in out) :: self
-        real(real64) :: oldSol, C_N, C_E, C_O, C_W, C_S, Res, omega_inv
-        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
+        real(real64) :: omega_inv, C_N, C_E, C_S, C_W, Res
+        real(real64) :: cp_x(self%N_x-1), dp_x(self%N_x-1), cp_y(self%N_y-1), dp_y(self%N_y), sourceX(self%N_x), sourceY(self%N_y), m
+        integer :: k,p, iter, E_indx, W_indx, N_indx, S_indx, i, j
         omega_inv = 1.0d0 - self%omega
         Res = 0.0d0
        
-        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, C_E, C_N, C_S, C_W, C_O, oldSol) reduction(+:Res)
+        !$OMP parallel private(k, p, i, j, E_indx, N_indx, S_indx, W_indx, &
+        !$OMP& C_N, C_S, C_E, C_W, cp_y, cp_x, dp_y, dp_x, sourceX, sourceY, m) reduction(+:Res)
 
         ! horizontal sweeps left to right
-            !$OMP do
-            ! Sweep odd numbers forward
+        !$OMP do
+        ! Sweep odd numbers forward
         do k = 1, self%numberRows, 2
             j = self%startRow + k - 1
             N_indx = self%vertIndx(1, k)
             S_indx = self%vertIndx(2, k)
             C_N = self%vertCoeffs(1, k)
             C_S = self%vertCoeffs(2, k)
-            do p = 1, self%numberColumns
-                i = self%startCol + p - 1
-                E_indx = self%horzIndx(1, p)
-                W_indx = self%horzIndx(2, p)
-                C_E = self%horzCoeffs(1, p)
-                C_W = self%horzCoeffs(2, p)
-                C_O = self%centerCoeffs(p,k)
-                oldSol = self%solution(i,j)
-                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+            ! initialize c-prime and d-prime
+            select case (self%leftBound)
+            case (1)
+                cp_x(1) = 0.0d0
+                sourceX(1) = self%solution(1,j)
+                dp_x(1) = sourceX(1)
+            case (2)
+                C_E = 2.0d0 * self%horzCoeffs(1,1)
+                cp_x(1) = C_E * self%centerCoeffs(1,k)
+                sourceX(1) = self%sourceTerm(1, j) - C_N * self%solution(1, N_indx) - C_S * self%solution(1, S_indx)
+                dp_x(1) = (sourceX(1)) * self%centerCoeffs(1,k)
+            case (3,4)
+                cp_x(1) = 0.0d0
+                C_E = self%horzCoeffs(1,1)
+                C_W = self%horzCoeffs(2,1)
+                E_indx = self%horzIndx(1,1)
+                W_indx = self%horzIndx(2,1)
+                sourceX(1) = (self%sourceTerm(1,j) - self%solution(1, N_indx) * C_N - self%solution(1, S_indx) * C_S - &
+                self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * self%centerCoeffs(1,k)* self%omega + omega_inv * self%solution(1,j)
+                dp_x(1) = sourceX(1)
+            end select
+            ! solve for vectors c-prime and d-prime
+            do i = 2,self%N_x-1
+                C_W = self%horzCoeffs(2, i+1-self%startCol)
+                C_E = self%horzCoeffs(1, i+1-self%startCol)
+                m = 1.0d0/self%centerCoeffs(i+1-self%startCol, k) - cp_x(i-1) * C_W
+                cp_x(i) = C_E / m
+                sourceX(i) = self%sourceTerm(i,j) - C_N * self%solution(i, N_indx) - C_S * self%solution(i, S_indx)
+                dp_x(i) = (sourceX(i) - dp_x(i-1) * C_W) / m
             end do
+            select case(self%rightBound)
+            case (1)
+                sourceX(self%N_x) = self%solution(self%N_x, j)
+            case (2)
+                sourceX(self%N_x) = self%sourceTerm(self%N_x,j) - C_N * self%solution(self%N_x, N_indx) - C_S * self%solution(self%N_x, S_indx)
+                C_W = 2.0d0 * self%horzCoeffs(2, self%numberColumns)
+                sourceX(self%N_x) = (sourceX(self%N_x) - dp_x(self%N_x-1) * C_W)/&
+                    (1.0/self%centerCoeffs(self%numberColumns, k) - cp_x(self%N_x-1)  * C_W)
+            case (3)
+                sourceX(self%N_x) = sourceX(1)
+            end select
+            do i = self%N_x-1, 1, -1
+                sourceX(i) = dp_x(i)-cp_x(i)*sourceX(i+1)
+            end do
+            self%solution(:,j) = sourceX *self%omega + omega_inv * self%solution(:,j)
         end do
         !$OMP end do
         !$OMP do
-        ! sweep even numbers backwards
         do k = 2, self%numberRows, 2
             j = self%startRow + k - 1
             N_indx = self%vertIndx(1, k)
             S_indx = self%vertIndx(2, k)
             C_N = self%vertCoeffs(1, k)
             C_S = self%vertCoeffs(2, k)
-            do p = self%numberColumns, 1, -1
-                i = self%startCol + p - 1
-                E_indx = self%horzIndx(1, p)
-                W_indx = self%horzIndx(2, p)
-                C_E = self%horzCoeffs(1, p)
-                C_W = self%horzCoeffs(2, p)
-                C_O = self%centerCoeffs(p,k)
-                oldSol = self%solution(i,j)
-                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+            select case (self%leftBound)
+            case (1)
+                cp_x(1) = 0.0d0
+                sourceX(1) = self%solution(1,j)
+                dp_x(1) = sourceX(1)
+            case (2)
+                C_E = 2.0d0 * self%horzCoeffs(1,1)
+                cp_x(1) = C_E * self%centerCoeffs(1,k)
+                sourceX(1) = self%sourceTerm(1, j) - C_N * self%solution(1, N_indx) - C_S * self%solution(1, S_indx)
+                dp_x(1) = (sourceX(1)) * self%centerCoeffs(1,k)
+            case (3,4)
+                cp_x(1) = 0.0d0
+                C_E = self%horzCoeffs(1,1)
+                C_W = self%horzCoeffs(2,1)
+                E_indx = self%horzIndx(1,1)
+                W_indx = self%horzIndx(2,1)
+                sourceX(1) = (self%sourceTerm(1,j) - self%solution(1, N_indx) * C_N - self%solution(1, S_indx) * C_S - &
+                self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * self%centerCoeffs(1,k)* self%omega + omega_inv * self%solution(1,j)
+                dp_x(1) = sourceX(1)
+            end select
+            ! solve for vectors c-prime and d-prime
+            do i = 2,self%N_x-1
+                C_W = self%horzCoeffs(2, i+1-self%startCol)
+                C_E = self%horzCoeffs(1, i+1-self%startCol)
+                m = 1.0d0/self%centerCoeffs(i+1-self%startCol, k) - cp_x(i-1) * C_W
+                cp_x(i) = C_E / m
+                sourceX(i) = self%sourceTerm(i,j) - C_N * self%solution(i, N_indx) - C_S * self%solution(i, S_indx)
+                dp_x(i) = (sourceX(i) - dp_x(i-1) * C_W) / m
             end do
+            select case(self%rightBound)
+            case (1)
+                sourceX(self%N_x) = self%solution(self%N_x, j)
+            case (2)
+                sourceX(self%N_x) = self%sourceTerm(self%N_x,j) - C_N * self%solution(self%N_x, N_indx) - C_S * self%solution(self%N_x, S_indx)
+                C_W = 2.0d0 * self%horzCoeffs(2, self%numberColumns)
+                sourceX(self%N_x) = (sourceX(self%N_x) - dp_x(self%N_x-1) * C_W)/&
+                    (1.0/self%centerCoeffs(self%numberColumns, k) - cp_x(self%N_x-1)  * C_W)
+            case (3)
+                sourceX(self%N_x) = sourceX(1)
+            end select
+            do i = self%N_x-1, 1, -1
+                sourceX(i) = dp_x(i)-cp_x(i)*sourceX(i+1)
+            end do
+            self%solution(:,j) = sourceX *self%omega + omega_inv * self%solution(:,j)
         end do
         !$OMP end do
+        
 
         ! vertical sweeps bottom to top
         !$OMP do
@@ -723,17 +850,52 @@ contains
             W_indx = self%horzIndx(2, p)
             C_E = self%horzCoeffs(1, p)
             C_W = self%horzCoeffs(2, p)
-            do k = 1, self%numberRows
-                j = self%startRow + k - 1
-                N_indx = self%vertIndx(1, k)
-                S_indx = self%vertIndx(2, k)
-                C_N = self%vertCoeffs(1, k)
-                C_S = self%vertCoeffs(2, k)
-                C_O = self%centerCoeffs(p, k)
-                oldSol = self%solution(i,j)
-                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+            select case (self%lowerBound)
+            case (1)
+                cp_y(1) = 0.0d0
+                sourceY(1) = self%solution(i,1)
+                dp_y(1) = sourceY(1)
+            case (2)
+                C_N = 2.0d0 * self%vertCoeffs(1,1)
+                cp_y(1) = C_N * self%centerCoeffs(p,1)
+                sourceY(1) = self%sourceTerm(i, 1) - C_E * self%solution(E_indx, 1) - C_W * self%solution(W_indx, 1)
+                dp_y(1) = (sourceY(1)) * self%centerCoeffs(p,1)
+            case (3,4)
+                cp_y(1) = 0.0d0
+                C_N = self%vertCoeffs(1,1)
+                C_S = self%vertCoeffs(2,1)
+                N_indx = self%vertIndx(1,1)
+                S_indx = self%vertIndx(2,1)
+                sourceY(1) = (self%sourceTerm(i,1) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
+                self%solution(E_indx, 1) * C_E - self%solution(W_indx, 1) * C_W) * self%centerCoeffs(p,1)* self%omega + omega_inv * self%solution(i,1)
+                dp_y(1) = sourceY(1)
+            end select
+            ! solve for vectors c-prime and d-prime
+            do j = 2,self%N_y-1
+                C_S = self%vertCoeffs(2, j+1-self%startRow)
+                C_N = self%vertCoeffs(1, j+1-self%startRow)
+                m = 1.0d0/self%centerCoeffs(p, j+1-self%startRow) - cp_y(j-1) * C_S
+                cp_y(j) = C_N / m
+                sourceY(j) = self%sourceTerm(i, j) - C_E * self%solution(E_indx, j) - C_W * self%solution(W_indx, j)
+                dp_y(j) = (sourceY(j) - dp_y(j-1) * C_S) / m
             end do
+            select case(self%upperBound)
+            case (1)
+                sourceY(self%N_y) = self%solution(i, self%N_y)
+            case (2)
+                sourceY(self%N_y) = self%sourceTerm(i, self%N_y) - C_E * self%solution(E_indx, self%N_y) - C_W * self%solution(W_indx, self%N_y)
+                C_S = 2.0d0 * self%vertCoeffs(2, self%numberRows)
+                sourceY(self%N_y) = (sourceY(self%N_y) - dp_y(self%N_y-1) * C_S)/&
+                    (1.0/self%centerCoeffs(p, self%numberRows) - cp_y(self%N_y-1)  * C_S)
+            case (3)
+                sourceY(self%N_y) = sourceY(1)
+            end select
+            do j = self%N_y-1, 1, -1
+                sourceY(j) = dp_y(j)-cp_y(j)*sourceY(j+1)
+            end do
+            sourceY = sourceY *self%omega + omega_inv * self%solution(i,:)
+            Res = Res + SUM((sourceY(self%startRow:self%endRow) - self%solution(i, self%startRow:self%endRow))**2)
+            self%solution(i,:) = sourceY
         end do
         !$OMP end do
         !$OMP do
@@ -744,107 +906,52 @@ contains
             W_indx = self%horzIndx(2, p)
             C_E = self%horzCoeffs(1, p)
             C_W = self%horzCoeffs(2, p)
-            do k = self%numberRows, 1, -1
-                j = self%startRow + k - 1
-                N_indx = self%vertIndx(1, k)
-                S_indx = self%vertIndx(2, k)
-                C_N = self%vertCoeffs(1, k)
-                C_S = self%vertCoeffs(2, k)
-                C_O = self%centerCoeffs(p, k)
-                oldSol = self%solution(i,j)
-                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+            select case (self%lowerBound)
+            case (1)
+                cp_y(1) = 0.0d0
+                sourceY(1) = self%solution(i,1)
+                dp_y(1) = sourceY(1)
+            case (2)
+                C_N = 2.0d0 * self%vertCoeffs(1,1)
+                cp_y(1) = C_N * self%centerCoeffs(p,1)
+                sourceY(1) = self%sourceTerm(i, 1) - C_E * self%solution(E_indx, 1) - C_W * self%solution(W_indx, 1)
+                dp_y(1) = (sourceY(1)) * self%centerCoeffs(p,1)
+            case (3,4)
+                cp_y(1) = 0.0d0
+                C_N = self%vertCoeffs(1,1)
+                C_S = self%vertCoeffs(2,1)
+                N_indx = self%vertIndx(1,1)
+                S_indx = self%vertIndx(2,1)
+                sourceY(1) = (self%sourceTerm(i,1) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
+                self%solution(E_indx, 1) * C_E - self%solution(W_indx, 1) * C_W) * self%centerCoeffs(p,1)* self%omega + omega_inv * self%solution(i,1)
+                dp_y(1) = sourceY(1)
+            end select
+            ! solve for vectors c-prime and d-prime
+            do j = 2,self%N_y-1
+                C_S = self%vertCoeffs(2, j+1-self%startRow)
+                C_N = self%vertCoeffs(1, j+1-self%startRow)
+                m = 1.0d0/self%centerCoeffs(p, j+1-self%startRow) - cp_y(j-1) * C_S
+                cp_y(j) = C_N / m
+                sourceY(j) = self%sourceTerm(i, j) - C_E * self%solution(E_indx, j) - C_W * self%solution(W_indx, j)
+                dp_y(j) = (sourceY(j) - dp_y(j-1) * C_S) / m
             end do
-        end do
-        !$OMP end do
-
-        ! horizontal sweeps right to left
-        !$OMP do
-        ! Sweep odd numbers backwards
-        do k = 1, self%numberRows, 2
-            j = self%startRow + k - 1
-            N_indx = self%vertIndx(1, k)
-            S_indx = self%vertIndx(2, k)
-            C_N = self%vertCoeffs(1, k)
-            C_S = self%vertCoeffs(2, k)
-            do p = self%numberColumns, 1, -1
-                i = self%startCol + p - 1
-                E_indx = self%horzIndx(1, p)
-                W_indx = self%horzIndx(2, p)
-                C_E = self%horzCoeffs(1, p)
-                C_W = self%horzCoeffs(2, p)
-                C_O = self%centerCoeffs(p, k)
-                oldSol = self%solution(i,j)
-                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
+            select case(self%upperBound)
+            case (1)
+                sourceY(self%N_y) = self%solution(i, self%N_y)
+            case (2)
+                sourceY(self%N_y) = self%sourceTerm(i, self%N_y) - C_E * self%solution(E_indx, self%N_y) - C_W * self%solution(W_indx, self%N_y)
+                C_S = 2.0d0 * self%vertCoeffs(2, self%numberRows)
+                sourceY(self%N_y) = (sourceY(self%N_y) - dp_y(self%N_y-1) * C_S)/&
+                    (1.0/self%centerCoeffs(p, self%numberRows) - cp_y(self%N_y-1)  * C_S)
+            case (3)
+                sourceY(self%N_y) = sourceY(1)
+            end select
+            do j = self%N_y-1, 1, -1
+                sourceY(j) = dp_y(j)-cp_y(j)*sourceY(j+1)
             end do
-        end do
-        !$OMP end do
-        !$OMP do
-        ! sweep even numbers forward
-        do k = 2, self%numberRows, 2
-            j = self%startRow + k - 1
-            N_indx = self%vertIndx(1, k)
-            S_indx = self%vertIndx(2, k)
-            C_N = self%vertCoeffs(1, k)
-            C_S = self%vertCoeffs(2, k)
-            do p = 1, self%numberColumns
-                i = self%startCol + p - 1
-                E_indx = self%horzIndx(1, p)
-                W_indx = self%horzIndx(2, p)
-                C_E = self%horzCoeffs(1, p)
-                C_W = self%horzCoeffs(2, p)
-                C_O = self%centerCoeffs(p, k)
-                oldSol = self%solution(i,j)
-                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-            end do
-        end do
-        !$OMP end do
-
-        ! vertical sweeps top to bottom
-        !$OMP do
-        ! Sweep odd numbers downwards
-        do p = 1, self%numberColumns, 2
-            i = self%startCol + p - 1
-            E_indx = self%horzIndx(1, p)
-            W_indx = self%horzIndx(2, p)
-            C_E = self%horzCoeffs(1, p)
-            C_W = self%horzCoeffs(2, p)
-            do k = self%numberRows, 1, -1
-                j = self%startRow + k - 1
-                N_indx = self%vertIndx(1, k)
-                S_indx = self%vertIndx(2, k)
-                C_N = self%vertCoeffs(1, k)
-                C_S = self%vertCoeffs(2, k)
-                C_O = self%centerCoeffs(p, k)
-                oldSol = self%solution(i,j)
-                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-                Res = Res + (self%solution(i,j) - oldSol)**2
-            end do
-        end do
-        !$OMP end do
-        !$OMP do
-        ! sweep even numbers upwards
-        do p = 2, self%numberColumns, 2
-            i = self%startCol + p - 1
-            E_indx = self%horzIndx(1, p)
-            W_indx = self%horzIndx(2, p)
-            C_E = self%horzCoeffs(1, p)
-            C_W = self%horzCoeffs(2, p)
-            do k = 1, self%numberRows
-                j = self%startRow + k - 1
-                N_indx = self%vertIndx(1, k)
-                S_indx = self%vertIndx(2, k)
-                C_N = self%vertCoeffs(1, k)
-                C_S = self%vertCoeffs(2, k)
-                C_O = self%centerCoeffs(p, k)
-                oldSol = self%solution(i,j)
-                self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-                    self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-                Res = Res + (self%solution(i,j) - oldSol)**2
-            end do
+            sourceY = sourceY*self%omega + omega_inv * self%solution(i,:)
+            Res = Res + SUM((sourceY(self%startRow:self%endRow) - self%solution(i, self%startRow:self%endRow))**2)
+            self%solution(i,:) = sourceY
         end do
         !$OMP end do
         !$OMP end parallel
@@ -1246,6 +1353,53 @@ contains
     !     end if
 
     ! end subroutine prolongation
+    subroutine solve_tridiag(n, diagLower, diagUpper, diag, b, x)
+        ! General tridiagonal solver
+        integer(int32), intent(in) :: n
+        real(real64), intent(in out) :: x(n)
+        real(real64), intent(in) :: diagLower(n-1), diagUpper(n-1), diag(n), b(n)
+        integer(int32) :: i !n size dependent on how many points are inside (not boundary), so how many in rhs equation
+        real(real64) :: m, cp(n-1),dp(n)
+
+    ! initialize c-prime and d-prime
+        cp(1) = diagUpper(1)/diag(1)
+        dp(1) = b(1)/diag(1)
+    ! solve for vectors c-prime and d-prime
+        do i = 2,n-1
+            m = diag(i)-cp(i-1)*diagLower(i-1)
+            cp(i) = diagUpper(i)/m
+            dp(i) = (b(i)-dp(i-1)*diagLower(i-1))/m
+        end do
+        dp(n) = (b(n)-dp(n-1)*diagLower(n-1))/(diag(n)-cp(n-1)*diagLower(n-1))
+        x(n) = dp(n)
+        do i = n-1, 1, -1
+            x(i) = dp(i)-cp(i)*x(i+1)
+        end do
+    end subroutine solve_tridiag
+
+    subroutine solve_tridiag_replaceSource(n, diagLower, diagUpper, diag, b)
+        ! General tridiagonal solver which replaces source term b with solution
+        integer(int32), intent(in) :: n
+        real(real64), intent(in out) :: b(n)
+        real(real64), intent(in) :: diagLower(n-1), diagUpper(n-1), diag(n)
+        integer(int32) :: i !n size dependent on how many points are inside (not boundary), so how many in rhs equation
+        real(real64) :: m, cp(n-1),dp(n)
+
+    ! initialize c-prime and d-prime
+        cp(1) = diagUpper(1)/diag(1)
+        dp(1) = b(1)/diag(1)
+    ! solve for vectors c-prime and d-prime
+        do i = 2,n-1
+            m = diag(i)-cp(i-1)*diagLower(i-1)
+            cp(i) = diagUpper(i)/m
+            dp(i) = (b(i)-dp(i-1)*diagLower(i-1))/m
+        end do
+        dp(n) = (b(n)-dp(n-1)*diagLower(n-1))/(diag(n)-cp(n-1)*diagLower(n-1))
+        b(n) = dp(n)
+        do i = n-1, 1, -1
+            b(i) = dp(i)-cp(i)*b(i+1)
+        end do
+    end subroutine solve_tridiag_replaceSource
 
 
 end module mod_ZebraSolverCurv

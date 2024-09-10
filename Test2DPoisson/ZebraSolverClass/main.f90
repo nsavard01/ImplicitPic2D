@@ -7,7 +7,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 101, N_y = 21, numThreads = 6
+    integer(int32) :: N_x = 21, N_y = 101, numThreads = 6
     type(MGSolver) :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
@@ -24,10 +24,10 @@ program main
     
     numberStages = 2
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 16
-    numberPostSmoothOper = 16
+    numberPreSmoothOper = 10
+    numberPostSmoothOper = 10
     numberIter = 200
-    omega = 1.0d0
+    omega = 1.5d0
     relTol = 1.d-12
     stepTol = 1.d-3
     rho = e_const * 1d15
@@ -166,9 +166,9 @@ program main
 
     print *, 'Took', stageOne%iterNumber, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    
+    call stageOne%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) stageOne%solution
+    write(41) stageOne%residual
     close(41)
     end associate
     ! ! !$OMP parallel workshare
@@ -305,28 +305,5 @@ contains
 
     end subroutine createCurvGrid    
 
-    subroutine solve_tridiag(n, diagLower, diagUpper, diag, b, x)
-        ! General tridiagonal solver
-        integer(int32), intent(in) :: n
-        real(real64), intent(in out) :: x(n)
-        real(real64), intent(in) :: diagLower(n-1), diagUpper(n-1), diag(n), b(n)
-        integer(int32) :: i !n size dependent on how many points are inside (not boundary), so how many in rhs equation
-        real(real64) :: m, cp(n-1),dp(n)
-
-    ! initialize c-prime and d-prime
-        cp(1) = diagUpper(1)/diag(1)
-        dp(1) = b(1)/diag(1)
-    ! solve for vectors c-prime and d-prime
-        do i = 2,n-1
-            m = diag(i)-cp(i-1)*diagLower(i-1)
-            cp(i) = diagUpper(i)/m
-            dp(i) = (b(i)-dp(i-1)*diagLower(i-1))/m
-        end do
-        dp(n) = (b(n)-dp(n-1)*diagLower(n-1))/(diag(n)-cp(n-1)*diagLower(n-1))
-        x(n) = dp(n)
-        do i = n-1, 1, -1
-            x(i) = dp(i)-cp(i)*x(i+1)
-        end do
-    end subroutine solve_tridiag
 
 end program main
