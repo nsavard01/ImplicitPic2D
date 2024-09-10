@@ -1,8 +1,6 @@
 module mod_PreCondCGSolver
     use iso_fortran_env, only: int32, int64, real64
     use omp_lib
-    use mod_PardisoSolver
-    use mod_GSSolver
     use mod_MGSolver
     implicit none
 

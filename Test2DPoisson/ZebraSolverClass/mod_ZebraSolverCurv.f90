@@ -66,8 +66,8 @@ contains
         integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
         real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1)
         integer :: upperBound, lowerBound, rightBound, leftBound
-        integer :: i, j, k, numberBound, N_indx, S_indx, E_indx, W_indx, i_2, j_2
-        real(real64) :: delX_E, delX_W, delY_N, delY_S, tempReal, C_N, C_S, C_E, C_W, C_O
+        integer :: i, j, k, numberBound
+        real(real64) :: delX_E, delX_W, delY_N, delY_S
 
         upperBound = NESW_wallBoundaries(1)
         rightBound = NESW_wallBoundaries(2)
@@ -465,7 +465,6 @@ contains
         class(ZebraSolverCurv), intent(in out) :: self
         real(real64), intent(in) :: tol
         real(real64) :: Res
-        integer(int32) :: i
         Res = 1.0
         self%iterNumber = 0
         do while (Res > tol)
@@ -724,7 +723,7 @@ contains
         class(ZebraSolverCurv), intent(in out) :: self
         real(real64) :: omega_inv, C_N, C_E, C_S, C_W, Res
         real(real64) :: cp_x(self%N_x-1), dp_x(self%N_x-1), cp_y(self%N_y-1), dp_y(self%N_y-1), sourceX(self%N_x), sourceY(self%N_y), m
-        integer :: k,p, iter, E_indx, W_indx, N_indx, S_indx, i, j
+        integer :: k,p, E_indx, W_indx, N_indx, S_indx, i, j
         omega_inv = 1.0d0 - self%omega
         Res = 0.0d0
        
@@ -966,7 +965,7 @@ contains
         ! Solve GS down to some tolerance
         class(ZebraSolverCurv), intent(in out) :: self
         real(real64) :: C_N, C_E, C_O, C_W, C_S
-        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p, iter
+        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
 
         !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
         !$OMP&  W_indx, C_O, C_N, C_E, C_S, C_W)

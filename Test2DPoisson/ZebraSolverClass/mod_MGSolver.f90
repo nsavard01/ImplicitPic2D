@@ -33,7 +33,7 @@ contains
     type(MGSolver) function MGSolver_constructor(N_x, N_y, numberStages, maxIter, numberPreSmoothOper, numberPostSmoothOper) result(self)
         ! Construct object, set initial variables
         integer(int32), intent(in) :: N_x, N_y, numberStages, maxIter, numberPreSmoothOper, numberPostSmoothOper
-        integer :: i, N_y_coarse, N_x_coarse
+        integer :: N_y_coarse, N_x_coarse
         self%numberStages = numberStages
         self%smoothNumber = numberStages-1 ! number smoothing GS stages (excluse coarsest grid)
         self%maxIter = maxIter

@@ -22,6 +22,25 @@ module mod_pardisoSolver
         module procedure :: pardisoSolver_constructor
     end interface pardisoSolver
 
+    interface
+        subroutine pardiso(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, error)
+            integer(kind=8), intent(in out) :: pt(64)
+            integer, intent(in) :: maxfct, mnum, mtype, phase, n, nrhs, perm
+            integer, intent(in out) :: iparm(64), msglvl, error
+            integer, intent(in) :: ia(n+1), ja(*)
+            real(kind=8), intent(in out) :: a(*), b(n), x(n)
+
+        end subroutine pardiso
+
+        subroutine pardisoinit(pt, mtype, iparm)
+            integer(kind=8), intent(in out) :: pt(64)
+            integer, intent(in) :: mtype
+            integer, intent(in out) :: iparm(64)
+
+        end subroutine pardisoinit
+
+    end interface
+
 contains
 
     type(pardisoSolver) function pardisoSolver_constructor(matDimension) result(self)

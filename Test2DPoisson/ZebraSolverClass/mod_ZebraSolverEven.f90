@@ -622,7 +622,7 @@ contains
     function smoothWithRes_ZebraEven(self) result(Res)
         ! Solve GS down to some tolerance
         class(ZebraSolverEven), intent(in out) :: self
-        real(real64) :: oldSol, Res, omega_inv, inv_centerCoeff
+        real(real64) :: Res, omega_inv, inv_centerCoeff
         real(real64) :: cp_x(self%N_x-1), dp_x(self%N_x-1), cp_y(self%N_y-1), dp_y(self%N_y-1), sourceX(self%N_x), sourceY(self%N_y), m
         integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
         omega_inv = 1.0d0 - self%omega
