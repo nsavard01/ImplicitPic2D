@@ -7,7 +7,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 201, N_y = 1001, numThreads = 6
+    integer(int32) :: N_x = 1001, N_y = 201, numThreads = 6
     type(MGSolver) :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
@@ -19,21 +19,21 @@ program main
     real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
     logical :: makeX, evenGridBool, redBlackBool
 
-    evenGridBool = .false.
-    redBlackBool = .true.
+    evenGridBool = .true.
+    redBlackBool = .false.
     
     numberStages = 6
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 10
-    numberPostSmoothOper = 10
+    numberPreSmoothOper = 5
+    numberPostSmoothOper = 5
     numberIter = 200
-    omega = 1.5d0
+    omega = 1.0d0
     relTol = 1.d-12
     stepTol = 1.d-3
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 2 ! East
-    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 1000.0d0
