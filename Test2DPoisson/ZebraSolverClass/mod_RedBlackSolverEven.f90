@@ -27,7 +27,6 @@ module mod_RedBlackSolverEven
         procedure, public, pass(self) :: solveGS => solveGS_RedBlackEven
         procedure, public, pass(self) :: smoothIterations => smoothIterations_RedBlackEven
         procedure, public, pass(self) :: smoothWithRes => smoothWithRes_RedBlackEven
-        procedure, public, pass(self) :: calcResidual => calcResidual_RedBlackEven
         ! procedure, public, pass(self) :: matMult
         ! procedure, public, pass(self) :: XAX_Mult
     end type
@@ -577,34 +576,6 @@ contains
         Res = SQRT(Res/ (self%numberColumns * self%numberRows))
 
     end function smoothWithRes_RedBlackEven
-
-
-    subroutine calcResidual_RedBlackEven(self)
-        ! Solve GS down to some tolerance
-        class(RedBlackSolverEven), intent(in out) :: self
-        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
-
-      
-        !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
-        !$OMP&  W_indx)
-        ! loop through inner nodes
-        !$OMP do collapse(2)
-        do k = 1, self%numberRows
-            do p = 1, self%numberColumns
-                i = self%startCol + p - 1
-                j = self%startRow + k - 1
-                N_indx = self%vertIndx(1,k)
-                E_indx = self%horzIndx(1,p)
-                S_indx = self%vertIndx(2,k)
-                W_indx = self%horzIndx(2,p)
-                self%residual(i, j) = self%sourceTerm(i,j) - (self%solution(i,N_indx) + self%solution(i,S_indx)) * self%coeffY &
-                    - (self%solution(E_indx, j) + self%solution(W_indx, j)) * self%coeffX - self%solution(i,j)/self%centerCoeff
-            end do
-        end do
-        !$OMP end do
-        !$OMP end parallel
-    end subroutine calcResidual_RedBlackEven
-
 
 
 end module mod_RedBlackSolverEven

@@ -10,12 +10,42 @@ module mod_GS_Base_Curv
     contains
         procedure, public, pass(self) :: restriction => restriction_curv
         procedure, public, pass(self) :: prolongation => prolongation_curv
-        ! procedure, public, pass(self) :: matMult
+        procedure, public, pass(self) :: calcResidual => calcResidual_curv
         ! procedure, public, pass(self) :: XAX_Mult
     end type
 
 contains
 
+subroutine calcResidual_curv(self)
+    ! Solve GS down to some tolerance
+    class(GS_Base_Curv), intent(in out) :: self
+    real(real64) :: C_N, C_E, C_O, C_W, C_S
+    integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
+
+    !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
+    !$OMP&  W_indx, C_O, C_N, C_E, C_S, C_W)
+    ! loop through inner nodes
+    !$OMP do collapse(2)
+    do k = 1, self%numberRows
+        do p = 1, self%numberColumns
+            i = self%startCol + p - 1
+            j = self%startRow + k - 1
+            N_indx = self%vertIndx(1,k)
+            E_indx = self%horzIndx(1,p)
+            S_indx = self%vertIndx(2,k)
+            W_indx = self%horzIndx(2,p)
+            C_O = self%centerCoeffs(p,k)
+            C_N = self%vertCoeffs(1,k)
+            C_E = self%horzCoeffs(1,p)
+            C_S = self%vertCoeffs(2,k)
+            C_W = self%horzCoeffs(2,p)
+            self%residual(i, j) = self%sourceTerm(i,j) - self%solution(i,N_indx)*C_N - self%solution(i,S_indx) * C_S &
+                - self%solution(E_indx, j) *C_E - self%solution(W_indx, j) * C_W - self%solution(i,j)/C_O
+        end do
+    end do
+    !$OMP end do nowait
+    !$OMP end parallel
+end subroutine calcResidual_curv
 
 subroutine restriction_curv(self, fineGrid, coarseGrid)
     ! Use gauss seidel information to interpolate array fineGrid to coarseGrid

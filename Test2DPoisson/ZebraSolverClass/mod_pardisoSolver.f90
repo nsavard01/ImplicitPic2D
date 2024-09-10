@@ -23,6 +23,7 @@ module mod_pardisoSolver
     end interface pardisoSolver
 
     interface
+        ! Subroutines from mkl library that will be used
         subroutine pardiso(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, error)
             integer(kind=8), intent(in out) :: pt(64)
             integer, intent(in) :: maxfct, mnum, mtype, phase, n, nrhs, perm
