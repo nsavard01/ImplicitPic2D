@@ -7,7 +7,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 21, N_y = 101, numThreads = 6
+    integer(int32) :: N_x = 201, N_y = 1001, numThreads = 6
     type(MGSolver) :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
@@ -20,9 +20,9 @@ program main
     logical :: makeX, evenGridBool, redBlackBool
 
     evenGridBool = .false.
-    redBlackBool = .false.
+    redBlackBool = .true.
     
-    numberStages = 2
+    numberStages = 6
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 10
     numberPostSmoothOper = 10
@@ -32,8 +32,8 @@ program main
     stepTol = 1.d-3
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 1000.0d0
@@ -161,14 +161,14 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call stageOne%solveGS(stepTol)
+    call solver%MG_Cycle_Solve(stepTol, relTol, 1)
     call system_clock(endTime)
 
-    print *, 'Took', stageOne%iterNumber, 'iterations'
+    print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    call stageOne%calcResidual()
+
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) stageOne%residual
+    write(41) stageOne%solution
     close(41)
     end associate
     ! ! !$OMP parallel workshare
