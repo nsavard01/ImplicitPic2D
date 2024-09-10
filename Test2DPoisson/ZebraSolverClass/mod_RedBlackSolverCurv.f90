@@ -24,7 +24,6 @@ module mod_RedBlackSolverCurv
         integer(int32) :: startRedRow, startBlackRow
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal => constructPoissonOrthogonal_RedBlackCurv
-        procedure, public, pass(self) :: solveGS => solveGS_RedBlackCurv
         procedure, public, pass(self) :: smoothIterations => smoothIterations_RedBlackCurv
         procedure, public, pass(self) :: smoothWithRes => smoothWithRes_RedBlackCurv
         ! procedure, public, pass(self) :: matMult
@@ -458,24 +457,6 @@ contains
     !     !$OMP end parallel
          
     ! end function XAX_Mult
-
-    subroutine solveGS_RedBlackCurv(self, tol)
-        ! Solve GS down to some tolerance
-        class(RedBlackSolverCurv), intent(in out) :: self
-        real(real64), intent(in) :: tol
-        real(real64) :: Res
-        Res = 1.0
-        self%iterNumber = 0
-        do while (Res > tol)
-            ! single iterations slightly faster
-            call self%smoothIterations(100)
-            Res = self%smoothWithRes()
-            self%iterNumber = self%iterNumber + 101
-        end do
-
-
-
-    end subroutine solveGS_RedBlackCurv
 
     subroutine smoothIterations_RedBlackCurv(self, iterNum)
         ! Solve GS down to some tolerance

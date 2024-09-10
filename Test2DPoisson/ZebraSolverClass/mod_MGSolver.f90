@@ -21,7 +21,7 @@ module mod_MGSolver
         ! procedure, public, pass(self) :: F_V_Cycle
         procedure, public, pass(self) :: F_Cycle
         procedure, public, pass(self) :: V_Cycle
-        procedure, public, pass(self) :: MG_Cycle_Solve
+        procedure, public, pass(self) :: solve
     end type
 
     interface MGSolver
@@ -113,7 +113,7 @@ contains
 
 
 
-    subroutine MG_Cycle_Solve(self, stepTol, relTol, intSelect)
+    subroutine solve(self, stepTol, relTol, intSelect)
         ! V cycle for multigrid solver
         class(MGSolver), intent(in out) :: self
         integer, intent(in) :: intSelect
@@ -160,7 +160,7 @@ contains
             end do
         end if
         self%numIter = i-1
-    end subroutine MG_Cycle_Solve
+    end subroutine solve
 
     subroutine V_Cycle(self)
         ! V cycle for multigrid solver

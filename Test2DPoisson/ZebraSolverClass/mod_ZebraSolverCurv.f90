@@ -24,7 +24,6 @@ module mod_ZebraSolverCurv
         integer(int32) :: leftBound, rightBound, lowerBound, upperBound
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal => constructPoissonOrthogonal_ZebraCurv
-        procedure, public, pass(self) :: solveGS => solveGS_ZebraCurv
         procedure, public, pass(self) :: smoothIterations => smoothIterations_ZebraCurv
         procedure, public, pass(self) :: smoothWithRes => smoothWithRes_ZebraCurv
         ! procedure, public, pass(self) :: restriction
@@ -459,23 +458,6 @@ contains
          
     ! end function XAX_Mult
 
-    subroutine solveGS_ZebraCurv(self, tol)
-        ! Solve GS down to some tolerance
-        class(ZebraSolverCurv), intent(in out) :: self
-        real(real64), intent(in) :: tol
-        real(real64) :: Res
-        Res = 1.0
-        self%iterNumber = 0
-        do while (Res > tol)
-            ! single iterations slightly faster
-            call self%smoothIterations(100)
-            Res = self%smoothWithRes()
-            self%iterNumber = self%iterNumber + 101
-        end do
-
-
-
-    end subroutine solveGS_ZebraCurv
 
     subroutine smoothIterations_ZebraCurv(self, iterNum)
         ! Solve GS down to some tolerance

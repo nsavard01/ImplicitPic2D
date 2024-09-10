@@ -12,10 +12,38 @@ module mod_GS_Base_Even
         procedure, public, pass(self) :: prolongation => prolongation_even
         procedure, public, pass(self) :: calcResidual => calcResidual_even
         ! procedure, public, pass(self) :: matMult
-        ! procedure, public, pass(self) :: XAX_Mult
+        procedure, public, pass(self) :: XAX_Mult => XAX_Mult_even
     end type
 
 contains
+
+    function XAX_Mult_even(self, x) result(res)
+        ! Use gauss-seidel to calculate x^T * A * x
+        class(GS_Base_Even), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y)
+        integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i, j, p
+        real(real64) :: res, inv_centerCoeff
+        inv_centerCoeff = 1.0d0/self%centerCoeff
+        res = 0.0d0
+        !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
+        !$OMP&  W_indx) reduction(+:res)
+        ! loop through inner nodes
+        !$OMP do collapse(2)
+        do k = 1, self%numberRows
+            do p = 1, self%numberColumns
+                i = self%startCol + p - 1
+                j = self%startRow + k - 1
+                N_indx = self%vertIndx(1,k)
+                E_indx = self%horzIndx(1,p)
+                S_indx = self%vertIndx(2,k)
+                W_indx = self%horzIndx(2,p)
+                res = res + x(i,j) * (self%coeffY * (x(i,N_indx) + x(i,S_indx)) + &
+                    self%coeffX * (x(E_indx, j) + x(W_indx, j)) + x(i,j)*inv_centerCoeff)
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel 
+    end function XAX_Mult_even
 
 subroutine calcResidual_even(self)
     ! Solve GS down to some tolerance

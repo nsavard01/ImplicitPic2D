@@ -11,10 +11,42 @@ module mod_GS_Base_Curv
         procedure, public, pass(self) :: restriction => restriction_curv
         procedure, public, pass(self) :: prolongation => prolongation_curv
         procedure, public, pass(self) :: calcResidual => calcResidual_curv
-        ! procedure, public, pass(self) :: XAX_Mult
+        procedure, public, pass(self) :: XAX_Mult => XAX_Mult_curv
     end type
 
 contains
+
+function XAX_Mult_curv(self, x) result(res)
+    ! Solve GS down to some tolerance
+    class(GS_Base_Curv), intent(in out) :: self
+    real(real64), intent(in) :: x(self%N_x, self%N_y)
+    real(real64) :: res, C_N, C_E, C_O, C_W, C_S
+    integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
+    res = 0.0d0
+    !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
+    !$OMP&  W_indx, C_O, C_N, C_E, C_S, C_W)
+    ! loop through inner nodes
+    !$OMP do collapse(2)
+    do k = 1, self%numberRows
+        do p = 1, self%numberColumns
+            i = self%startCol + p - 1
+            j = self%startRow + k - 1
+            N_indx = self%vertIndx(1,k)
+            E_indx = self%horzIndx(1,p)
+            S_indx = self%vertIndx(2,k)
+            W_indx = self%horzIndx(2,p)
+            C_O = self%centerCoeffs(p,k)
+            C_N = self%vertCoeffs(1,k)
+            C_E = self%horzCoeffs(1,p)
+            C_S = self%vertCoeffs(2,k)
+            C_W = self%horzCoeffs(2,p)
+            res = res + x(i,j) * (C_N * x(i,N_indx) + C_S * x(i,S_indx) + &
+                    C_E * x(E_indx, j) + C_W * x(W_indx, j) + x(i,j)/C_O)
+        end do
+    end do
+    !$OMP end do
+    !$OMP end parallel
+end function XAX_Mult_curv
 
 subroutine calcResidual_curv(self)
     ! Solve GS down to some tolerance

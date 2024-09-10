@@ -2,13 +2,14 @@
 
 program main
     use iso_fortran_env, only: int32, real64
+    use mod_PreCondCGSolver
     use mod_MGSolver
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 201, N_y = 1001, numThreads = 6
-    type(MGSolver) :: solver
+    integer(int32) :: N_x = 1001, N_y = 101, numThreads = 6
+    class(MGSolver), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
     integer, allocatable :: boundaryConditions(:, :)
@@ -17,23 +18,24 @@ program main
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
     real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
-    logical :: makeX, evenGridBool, redBlackBool
+    logical :: makeX, evenGridBool, redBlackBool, PCG_bool
 
-    evenGridBool = .true.
+    evenGridBool = .false.
     redBlackBool = .false.
+    PCG_bool = .false.
     
-    numberStages = 6
+    numberStages = 5
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 5
-    numberPostSmoothOper = 5
+    numberPreSmoothOper = 4
+    numberPostSmoothOper = 4
     numberIter = 200
     omega = 1.0d0
     relTol = 1.d-12
-    stepTol = 1.d-3
+    stepTol = 1.d-6
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 1000.0d0
@@ -90,7 +92,11 @@ program main
     ! upper left corner
     boundaryConditions(1, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
     
-    solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    if (PCG_bool) then
+        solver = PreCondCGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    else
+        solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    end if
     call solver%makeSmootherStages(diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega, evenGridBool, redBlackBool)
     associate( stageOne => solver%MG_smoothers(1)%GS_smoother)
     ! Set phi values finer grid
@@ -142,7 +148,7 @@ program main
             stageOne%solution(N_x, N_y) = rightPhi
         end if
     end if
-    
+
     !$OMP parallel
     !$OMP do collapse(2)
     do j = 1, N_y
@@ -161,7 +167,7 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%MG_Cycle_Solve(stepTol, relTol, 1)
+    call solver%solve(stepTol, relTol, 1)
     call system_clock(endTime)
 
     print *, 'Took', solver%numIter, 'iterations'

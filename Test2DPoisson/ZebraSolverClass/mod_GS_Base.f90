@@ -19,7 +19,7 @@ module mod_GS_Base
         procedure, public, pass(self) :: restriction
         procedure, public, pass(self) :: prolongation
         ! procedure, public, pass(self) :: matMult
-        ! procedure, public, pass(self) :: XAX_Mult
+        procedure, public, pass(self) :: XAX_Mult
     end type
 
 contains
@@ -34,6 +34,16 @@ contains
         ! Solve GS down to some tolerance
         class(GS_Base), intent(in out) :: self
         real(real64), intent(in) :: tol
+        real(real64) :: Res
+        Res = 1.0
+        self%iterNumber = 0
+        do while (Res > tol)
+            ! single iterations slightly faster
+            call self%smoothIterations(100)
+            Res = self%smoothWithRes()
+            self%iterNumber = self%iterNumber + 101
+        end do
+
     end subroutine solveGS
 
     subroutine smoothIterations(self, iterNum)
@@ -68,6 +78,15 @@ contains
         real(real64), intent(in out) :: fineGrid(self%N_x, self%N_y)
         real(real64), intent(in) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
     end subroutine prolongation
+
+    function XAX_Mult(self, x) result(res)
+        ! Use gauss-seidel to calculate x^T * A * x
+        class(GS_Base), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y)
+        real(real64) :: res
+        res = 0.0d0
+
+    end function XAX_Mult
 
 
 end module mod_GS_Base

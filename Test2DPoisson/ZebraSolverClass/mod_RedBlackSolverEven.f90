@@ -24,7 +24,6 @@ module mod_RedBlackSolverEven
         integer(int32) :: startRedRow, startBlackRow
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal => constructPoissonOrthogonal_RedBlackEven
-        procedure, public, pass(self) :: solveGS => solveGS_RedBlackEven
         procedure, public, pass(self) :: smoothIterations => smoothIterations_RedBlackEven
         procedure, public, pass(self) :: smoothWithRes => smoothWithRes_RedBlackEven
         ! procedure, public, pass(self) :: matMult
@@ -308,104 +307,6 @@ contains
     !     !$OMP end parallel
          
     ! end subroutine matMult
-
-    ! function XAX_Mult(self, x) result(res)
-    !     ! Use gauss-seidel to calculate x^T * A * x
-    !     class(RedBlackSolver), intent(in out) :: self
-    !     real(real64), intent(in) :: x(self%N_x, self%N_y)
-    !     integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i, j
-    !     real(real64) :: res, C_N, C_E, C_O, C_W, C_S
-    !     res = 0.0d0
-    !     !$OMP parallel private(i, j, N_indx, E_indx, S_indx, W_indx, C_N, C_E, C_O, C_W, C_S)
-    !     !$OMP do
-    !     do k = 1, self%numberBlackInnerNodes
-    !         i = self%black_InnerIndx(1, k)
-    !         j = self%black_InnerIndx(2, k)
-    !         N_indx = j + 1
-    !         E_indx = i+1
-    !         S_indx = j-1
-    !         W_indx = i-1
-    !         C_O = self%matCoeffsInnerBlack(1, k)
-    !         C_N = self%matCoeffsInnerBlack(2, k)
-    !         C_E = self%matCoeffsInnerBlack(3, k)
-    !         C_S = self%matCoeffsInnerBlack(4, k)
-    !         C_W = self%matCoeffsInnerBlack(5, k)
-    !         res = res + x(i,j)*(x(i,N_indx)*C_N + x(i,S_indx) * C_S &
-    !             + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O)
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberBlackBoundNodes
-    !         i = self%black_NESW_BoundIndx(1, k)
-    !         j = self%black_NESW_BoundIndx(2, k)
-    !         E_indx = self%black_NESW_BoundIndx(3, k)
-    !         W_indx = self%black_NESW_BoundIndx(4, k)
-    !         N_indx = self%black_NESW_BoundIndx(5, k)
-    !         S_indx = self%black_NESW_BoundIndx(6, k)
-    !         C_O = self%matCoeffsBoundBlack(1, k)
-    !         C_N = self%matCoeffsBoundBlack(2, k)
-    !         C_E = self%matCoeffsBoundBlack(3, k)
-    !         C_S = self%matCoeffsBoundBlack(4, k)
-    !         C_W = self%matCoeffsBoundBlack(5, k)
-    !         res = res + x(i,j)*(x(i,N_indx)*C_N + x(i,S_indx) * C_S &
-    !             + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O)
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedInnerNodes
-    !         i = self%red_InnerIndx(1, k)
-    !         j = self%red_InnerIndx(2, k)
-    !         N_indx = j + 1
-    !         E_indx = i+1
-    !         S_indx = j-1
-    !         W_indx = i-1
-    !         C_O = self%matCoeffsInnerRed(1, k)
-    !         C_N = self%matCoeffsInnerRed(2, k)
-    !         C_E = self%matCoeffsInnerRed(3, k)
-    !         C_S = self%matCoeffsInnerRed(4, k)
-    !         C_W = self%matCoeffsInnerRed(5, k)
-    !         res = res + x(i,j)*(x(i,N_indx)*C_N + x(i,S_indx) * C_S &
-    !             + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O)
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do
-    !     do k = 1, self%numberRedBoundNodes
-    !         i = self%red_NESW_BoundIndx(1, k)
-    !         j = self%red_NESW_BoundIndx(2, k)
-    !         E_indx = self%red_NESW_BoundIndx(3, k)
-    !         W_indx = self%red_NESW_BoundIndx(4, k)
-    !         N_indx = self%red_NESW_BoundIndx(5, k)
-    !         S_indx = self%red_NESW_BoundIndx(6, k)
-    !         C_O = self%matCoeffsBoundRed(1, k)
-    !         C_N = self%matCoeffsBoundRed(2, k)
-    !         C_E = self%matCoeffsBoundRed(3, k)
-    !         C_S = self%matCoeffsBoundRed(4, k)
-    !         C_W = self%matCoeffsBoundRed(5, k)
-    !         res = res + x(i,j)*(x(i,N_indx)*C_N + x(i,S_indx) * C_S &
-    !             + x(E_indx, j) *C_E + x(W_indx, j) * C_W + x(i,j)/C_O)
-    !     end do
-    !     !$OMP end do
-    !     !$OMP end parallel
-         
-    ! end function XAX_Mult
-
-    subroutine solveGS_RedBlackEven(self, tol)
-        ! Solve GS down to some tolerance
-        class(RedBlackSolverEven), intent(in out) :: self
-        real(real64), intent(in) :: tol
-        real(real64) :: Res
-        Res = 1.0
-        self%iterNumber = 0
-        do while (Res > tol)
-            ! single iterations slightly faster
-            call self%smoothIterations(100)
-            Res = self%smoothWithRes()
-            self%iterNumber = self%iterNumber + 101
-        end do
-
-
-
-    end subroutine solveGS_RedBlackEven
 
     subroutine smoothIterations_RedBlackEven(self, iterNum)
         ! Solve GS down to some tolerance
