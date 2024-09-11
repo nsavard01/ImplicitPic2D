@@ -109,7 +109,7 @@ contains
 
         do i = 1, self%maxIter
             ! Calculate denominator of alpha = D^T * A  * D
-            alpha = stageOne%XAX_Mult(self%D_Vector)
+            alpha = stageOne%YAX_Mult(self%D_Vector, self%D_Vector)
             alpha = resProduct_old/alpha
 
             !$OMP parallel
@@ -216,7 +216,7 @@ contains
         self%R2_current = R2_init
         do i = 1, self%maxIter
             ! Calculate denominator of alpha = D^T * A  * D
-            alpha = stageOne%XAX_Mult(self%D_Vector)
+            alpha = stageOne%YAX_Mult(self%D_Vector, self%D_Vector)
             alpha = self%R2_current/alpha
 
             !$OMP parallel

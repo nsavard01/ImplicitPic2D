@@ -18,8 +18,8 @@ module mod_GS_Base
         procedure, public, pass(self) :: calcResidual
         procedure, public, pass(self) :: restriction
         procedure, public, pass(self) :: prolongation
-        ! procedure, public, pass(self) :: matMult
-        procedure, public, pass(self) :: XAX_Mult
+        procedure, public, pass(self) :: AX_Mult
+        procedure, public, pass(self) :: YAX_Mult
     end type
 
 contains
@@ -30,6 +30,7 @@ contains
         integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
         real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1)
     end subroutine constructPoissonOrthogonal
+    
     subroutine solveGS(self, tol)
         ! Solve GS down to some tolerance
         class(GS_Base), intent(in out) :: self
@@ -79,14 +80,22 @@ contains
         real(real64), intent(in) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
     end subroutine prolongation
 
-    function XAX_Mult(self, x) result(res)
-        ! Use gauss-seidel to calculate x^T * A * x
+    function YAX_Mult(self, x, y) result(res)
+        ! Use gauss-seidel to calculate y^T * A * x
         class(GS_Base), intent(in out) :: self
-        real(real64), intent(in) :: x(self%N_x, self%N_y)
+        real(real64), intent(in) :: x(self%N_x, self%N_y), y(self%N_x, self%N_y)
         real(real64) :: res
         res = 0.0d0
 
-    end function XAX_Mult
+    end function YAX_Mult
+
+    subroutine AX_Mult(self, x, y)
+        ! Calculate y = A * x
+        class(GS_Base), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y)
+        real(real64), intent(in out) :: y(self%N_x, self%N_y)
+
+    end subroutine AX_Mult
 
 
 end module mod_GS_Base

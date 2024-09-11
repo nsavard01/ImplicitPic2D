@@ -3,12 +3,13 @@
 program main
     use iso_fortran_env, only: int32, real64
     use mod_PreCondCGSolver
+    use mod_PreCondBiCGSTABSolver
     use mod_MGSolver
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 101, N_y = 51, numThreads = 6
+    integer(int32) :: N_x = 51, N_y = 51, numThreads = 6
     class(MGSolver), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
@@ -20,6 +21,9 @@ program main
     real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
     logical :: makeX, evenGridBool, redBlackBool, PCG_bool
 
+    call mkl_set_num_threads(numThreads)
+    call omp_set_num_threads(numThreads)
+    
     evenGridBool = .false.
     redBlackBool = .false.
     PCG_bool = .true.
@@ -28,7 +32,7 @@ program main
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 4
     numberPostSmoothOper = 4
-    numberIter = 10000
+    numberIter = 50000
     omega = 1.0d0
     relTol = 1.d-12
     stepTol = 1.d-6
@@ -54,8 +58,7 @@ program main
     leftBound = NESW_wallBoundaries(4)
     
     
-    call mkl_set_num_threads(numThreads)
-    call omp_set_num_threads(numThreads)
+    
     call checkNodeDivisionMG(N_x, N_y, numberStages)
     allocate(diffX(N_x-1), diffY(N_y-1))  
     delX = 0.01d0 * Length/real(N_x-1)
@@ -93,7 +96,7 @@ program main
     boundaryConditions(1, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
     
     if (PCG_bool) then
-        solver = PreCondCGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+        solver = BiCGSTAB_Solver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
     else
         solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
     end if
@@ -168,8 +171,8 @@ program main
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
     select type (solver)
-    type is (PreCondCGSolver)
-        call solver%solve_CG(stepTol, relTol)
+    type is (BiCGSTAB_Solver)
+        call solver%solve_BiCGSTAB(stepTol, relTol)
     end select
     call system_clock(endTime)
 
