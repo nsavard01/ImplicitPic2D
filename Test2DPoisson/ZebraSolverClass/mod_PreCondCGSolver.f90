@@ -14,6 +14,7 @@ module mod_PreCondCGSolver
         real(real64), allocatable :: D_Vector(:,:), solution(:,:), residual(:,:)
     contains
         procedure, public, pass(self) :: solve => solve_PCG
+        procedure, public, pass(self) :: solve_CG
     end type
 
     interface PreCondCGSolver
@@ -129,7 +130,7 @@ contains
             !$OMP end workshare
             !$OMP end parallel
 
-            
+            print *, self%R2_current
             if (self%R2_current/R2_init < relTol) then
                 ! exit for reaching relative tolerance
                 exit
@@ -182,6 +183,82 @@ contains
         end associate
         self%numIter = i-1
     end subroutine solve_PCG
+
+    subroutine solve_CG(self, stepTol, relTol)
+        ! Solve MG preconditioned CG with F-cycles (seems to work best for different sized cells in x,y)
+        class(PreCondCGSolver), intent(in out) :: self
+        real(real64), intent(in) :: stepTol, relTol
+        real(real64) :: R2_init, resProduct_old, resProduct_new, alpha, beta
+        integer(int32) :: i
+        print *, 'entering CG'
+        associate(stageOne => self%MG_smoothers(1)%GS_Smoother)
+        
+        ! Since an extended type of MG_solver, should store solution always in stageOne solution
+        ! Calculate initial residual (CG and first smoother solution should already be the same!), store into CG residual
+        call stageOne%calcResidual()
+        !$OMP parallel workshare
+        self%residual = stageOne%residual
+        !$OMP end parallel workshare
+        
+        !$OMP parallel
+        !$OMP workshare
+        ! D_vector initialization
+        self%D_Vector = stageOne%residual
+        !$OMP end workshare
+        !$OMP end parallel
+        
+        !$OMP parallel
+        !$OMP workshare
+        ! Find initial residual
+        R2_init = SUM(stageOne%residual**2)
+        !$OMP end workshare
+        !$OMP end parallel
+        self%R2_current = R2_init
+        do i = 1, self%maxIter
+            ! Calculate denominator of alpha = D^T * A  * D
+            alpha = stageOne%XAX_Mult(self%D_Vector)
+            alpha = self%R2_current/alpha
+
+            !$OMP parallel
+            !$OMP workshare
+            ! Update solution
+            stageOne%solution = stageOne%solution + alpha * self%D_Vector
+            !$OMP end workshare
+            !$OMP end parallel
+            self%stepResidual = abs(alpha) * sqrt(SUM(self%D_Vector**2)/self%N_x/self%N_y)
+            if (self%stepResidual < stepTol) then
+                print *, 'reached step tol'
+                exit
+            end if
+
+            call stageOne%calcResidual()
+            !$OMP parallel
+            !$OMP workshare
+            resProduct_new = SUM(stageOne%residual**2)
+            !$OMP end workshare
+            !$OMP end parallel
+
+            if (resProduct_new/R2_init < relTol) then
+                ! exit for reaching relative tolerance
+                print *, 'reached rel tolerance'
+                exit
+            end if
+
+            ! Solve for beta
+            beta = resProduct_new/self%R2_current
+
+            !$OMP parallel workshare
+            ! Update D_vector
+            self%D_Vector = stageOne%residual + beta * self%D_Vector
+            !$OMP end parallel workshare
+
+            ! set old resProduct to new
+            self%R2_current = resProduct_new
+
+        end do
+        end associate
+        self%numIter = i-1
+    end subroutine solve_CG
 
     
 

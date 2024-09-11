@@ -8,7 +8,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 1001, N_y = 101, numThreads = 6
+    integer(int32) :: N_x = 101, N_y = 51, numThreads = 6
     class(MGSolver), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
@@ -22,24 +22,24 @@ program main
 
     evenGridBool = .false.
     redBlackBool = .false.
-    PCG_bool = .false.
+    PCG_bool = .true.
     
-    numberStages = 5
+    numberStages = 2
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 4
     numberPostSmoothOper = 4
-    numberIter = 200
+    numberIter = 10000
     omega = 1.0d0
     relTol = 1.d-12
     stepTol = 1.d-6
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 2 ! East
-    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 2 ! West
 
-    NESW_phiValues(1) = 1000.0d0
-    NESW_phiValues(2) = 0.0d0
+    NESW_phiValues(1) = 0.0d0
+    NESW_phiValues(2) = 1000.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
     
@@ -167,7 +167,10 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%solve(stepTol, relTol, 1)
+    select type (solver)
+    type is (PreCondCGSolver)
+        call solver%solve_CG(stepTol, relTol)
+    end select
     call system_clock(endTime)
 
     print *, 'Took', solver%numIter, 'iterations'
