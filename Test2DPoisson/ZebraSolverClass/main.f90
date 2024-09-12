@@ -9,7 +9,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 51, N_y = 51, numThreads = 6
+    integer(int32) :: N_x = 1001, N_y = 101, numThreads = 6
     class(MGSolver), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
@@ -19,16 +19,17 @@ program main
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
     real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
-    logical :: makeX, evenGridBool, redBlackBool, PCG_bool
+    logical :: makeX, evenGridBool, redBlackBool, PCG_bool, Krylov_bool
 
     call mkl_set_num_threads(numThreads)
     call omp_set_num_threads(numThreads)
     
     evenGridBool = .false.
     redBlackBool = .false.
-    PCG_bool = .true.
+    PCG_bool = .false.
+    Krylov_bool = .true.
     
-    numberStages = 2
+    numberStages = 6
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 4
     numberPostSmoothOper = 4
@@ -38,12 +39,12 @@ program main
     stepTol = 1.d-6
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(2) = 3 ! East
+    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(4) = 3 ! West
 
-    NESW_phiValues(1) = 0.0d0
-    NESW_phiValues(2) = 1000.0d0
+    NESW_phiValues(1) = 1000.0d0
+    NESW_phiValues(2) = 0.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
     
@@ -95,8 +96,12 @@ program main
     ! upper left corner
     boundaryConditions(1, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
     
-    if (PCG_bool) then
-        solver = BiCGSTAB_Solver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    if (Krylov_bool) then
+        if (PCG_bool) then
+            solver = PreCondCGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+        else
+            solver = BiCGSTAB_Solver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+        end if
     else
         solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
     end if
@@ -170,10 +175,7 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    select type (solver)
-    type is (BiCGSTAB_Solver)
-        call solver%solve_BiCGSTAB(stepTol, relTol)
-    end select
+    call solver%solve(stepTol, relTol, 1)
     call system_clock(endTime)
 
     print *, 'Took', solver%numIter, 'iterations'
