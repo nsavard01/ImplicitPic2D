@@ -1,8 +1,4 @@
-*.o
-*.mod
-*.dat
-tmp*
-*.a
-*.pdf
-*.png
-.fuse*
+*
+!*/
+!*.f90
+!*.py
