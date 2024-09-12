@@ -1,5 +1,3 @@
-
-
 program main
     use iso_fortran_env, only: int32, real64
     use mod_PreCondCGSolver
@@ -9,7 +7,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 1001, N_y = 101, numThreads = 32
+    integer(int32) :: N_x = 10001, N_y = 2001, numThreads = 32
     class(MGSolver), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
@@ -27,9 +25,9 @@ program main
     evenGridBool = .false.
     redBlackBool = .false.
     PCG_bool = .false.
-    Krylov_bool = .true.
+    Krylov_bool = .false.
     
-    numberStages = 6
+    numberStages = 7
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 4
     numberPostSmoothOper = 4
@@ -39,9 +37,9 @@ program main
     stepTol = 1.d-6
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 1000.0d0
     NESW_phiValues(2) = 0.0d0
@@ -171,7 +169,7 @@ program main
     !$OMP end do
     !$OMP end parallel
 
-   
+    call execute_command_line("rm -r finalSol.dat")
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
@@ -180,7 +178,7 @@ program main
 
     print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-
+    
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) stageOne%solution
     close(41)
@@ -276,7 +274,7 @@ contains
         do i = 1, numberStages
             print *, i, ':', (N_y + (2**(i-1) - 1))/(2**(i-1))
         end do
-
+        call execute_command_line("rm -r NumNodes.dat")
         open(41,file='NumNodes.dat', form='UNFORMATTED', access = 'stream', status = 'new')
         write(41) N_x, N_y
         close(41)
@@ -308,10 +306,12 @@ contains
         end do
 
         if (.not. makeX) then
+            call execute_command_line("rm -r gridX.dat")
             open(41,file='gridX.dat', form='UNFORMATTED', access = 'stream', status = 'new')
             write(41) grid
             close(41)
         else
+            call execute_command_line("rm -r gridY.dat")
             open(41,file='gridY.dat', form='UNFORMATTED', access = 'stream', status = 'new')
             write(41) grid
             close(41)
