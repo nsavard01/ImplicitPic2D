@@ -3,14 +3,18 @@ program main
     use mod_PreCondCGSolver
     use mod_PreCondBiCGSTABSolver
     use mod_MGSolver
+    use mod_domain_base
+    use mod_domain_uniform
+    use mod_domain_curv
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 10001, N_y = 2001, numThreads = 32
+    integer(int32) :: N_x = 11, N_y = 11, numThreads = 32
     class(MGSolver), allocatable :: solver
+    class(domain_base), allocatable :: world
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
-    integer :: upperBound, lowerBound, rightBound, leftBound, stageInt
+    integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y
     integer, allocatable :: boundaryConditions(:, :)
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi
     real(real64) :: NESW_phiValues(4), rho, omega
@@ -26,8 +30,12 @@ program main
     redBlackBool = .false.
     PCG_bool = .false.
     Krylov_bool = .false.
+    curv_grid_type_x = 0
+    curv_grid_type_y = 0
     
-    numberStages = 7
+    numberStages = 2
+    call checkNodeDivisionMG(N_x, N_y, numberStages)
+
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 4
     numberPostSmoothOper = 4
@@ -57,8 +65,6 @@ program main
     leftBound = NESW_wallBoundaries(4)
     
     
-    
-    call checkNodeDivisionMG(N_x, N_y, numberStages)
     allocate(diffX(N_x-1), diffY(N_y-1))  
     delX = 0.01d0 * Length/real(N_x-1)
     delY = 0.01d0 * Width/real(N_y-1)
@@ -66,8 +72,21 @@ program main
     call createCurvGrid(N_x, Length, diffX, delX, evenGridBool)
     makeX = .true.
     call createCurvGrid(N_y, Width, diffY, delY, evenGridBool)
-   
-    
+    if (evenGridBool) then
+        world = domain_uniform(N_x, N_y, NESW_wallBoundaries, Length, Width)
+    else
+        world = domain_curv(N_x, N_y, NESW_wallBoundaries, Length, &
+        Width, curv_grid_type_x, curv_grid_type_y, delX, delY)
+    end if
+
+    print *, diffY
+    select type (world)
+    type is (domain_uniform)
+        print *, world%del_y
+    type is (domain_curv)
+        print *, world%del_y
+    end select
+    stop
 
     allocate(boundaryConditions(N_x, N_y))
 

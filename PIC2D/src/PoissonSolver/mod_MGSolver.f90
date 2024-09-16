@@ -4,6 +4,7 @@ module mod_MGSolver
     use mod_MG_Stage
     use mod_PardisoSolver
     use mod_CSRMAtrix
+    use mod_domain_base
     implicit none
 
     ! Stage for each multigrid, will define restriction and prolongation operations
