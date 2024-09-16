@@ -8,6 +8,7 @@ module mod_GS_Base_Curv
         ! store grid quantities
         real(real64), allocatable :: horzCoeffs(:,:), vertCoeffs(:,:), centerCoeffs(:,:) !, rowBoundCoeffs(:,:,:), colBoundCoeffs(:,:, :) ! lower, then upper diagonals
     contains
+        procedure, public, pass(self) :: constructPoissonOrthogonal
         procedure, public, pass(self) :: restriction => restriction_curv
         procedure, public, pass(self) :: prolongation => prolongation_curv
         procedure, public, pass(self) :: calcResidual => calcResidual_curv
@@ -16,6 +17,13 @@ module mod_GS_Base_Curv
     end type
 
 contains
+
+subroutine constructPoissonOrthogonal(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions)
+    ! Construct orthogonal grid solver
+    class(GS_Base_Curv), intent(in out) :: self
+    integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
+    real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1)
+end subroutine constructPoissonOrthogonal
 
 subroutine AX_Mult_curv(self, x, y)
     ! Solve GS down to some tolerance

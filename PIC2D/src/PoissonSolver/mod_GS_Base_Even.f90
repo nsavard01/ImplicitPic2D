@@ -8,6 +8,7 @@ module mod_GS_Base_Even
         ! store grid quantities
         real(real64) :: coeffX, coeffY, centerCoeff
     contains
+        procedure, public, pass(self) :: constructPoissonOrthogonal
         procedure, public, pass(self) :: restriction => restriction_even
         procedure, public, pass(self) :: prolongation => prolongation_even
         procedure, public, pass(self) :: calcResidual => calcResidual_even
@@ -16,6 +17,13 @@ module mod_GS_Base_Even
     end type
 
 contains
+
+    subroutine constructPoissonOrthogonal(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions)
+        ! Construct orthogonal grid solver
+        class(GS_Base_Even), intent(in out) :: self
+        integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
+        real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1)
+    end subroutine constructPoissonOrthogonal
 
     subroutine AX_Mult_even(self, x, y)
         ! Use gauss-seidel to calculate x^T * A * x

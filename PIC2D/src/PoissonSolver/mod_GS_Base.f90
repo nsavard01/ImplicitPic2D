@@ -11,7 +11,6 @@ module mod_GS_Base
         integer(int32) :: startRowCoarse, endRowCoarse, startColCoarse, endColCoarse
         real(real64) :: omega
     contains
-        procedure, public, pass(self) :: constructPoissonOrthogonal
         procedure, public, pass(self) :: solveGS
         procedure, public, pass(self) :: smoothIterations
         procedure, public, pass(self) :: smoothWithRes
@@ -23,13 +22,6 @@ module mod_GS_Base
     end type
 
 contains
-
-    subroutine constructPoissonOrthogonal(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions)
-        ! Construct orthogonal grid solver
-        class(GS_Base), intent(in out) :: self
-        integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
-        real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1)
-    end subroutine constructPoissonOrthogonal
     
     subroutine solveGS(self, tol)
         ! Solve GS down to some tolerance

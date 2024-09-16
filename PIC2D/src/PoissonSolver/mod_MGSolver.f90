@@ -5,6 +5,8 @@ module mod_MGSolver
     use mod_PardisoSolver
     use mod_CSRMAtrix
     use mod_domain_base
+    use mod_GS_Base_Curv
+    use mod_GS_Base_Even
     implicit none
 
     ! Stage for each multigrid, will define restriction and prolongation operations
@@ -60,7 +62,14 @@ contains
 
         ! Construct first stage GS smoother (finest grid)
         self%MG_smoothers(1) = MG_Stage(omega, self%N_x, self%N_y, evenGridBool, redBlackBool)
-        call self%MG_smoothers(1)%GS_Smoother%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
+        associate (stageOne => self%MG_smoothers(1)%GS_Smoother)
+        select type (stageOne)
+        class is (GS_Base_Curv)
+            call stageOne%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
+        class is (GS_Base_Even)
+            call stageOne%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
+        end select
+        end associate
         N_x_coarse = self%N_x
         N_y_coarse = self%N_y
         diffX_temp = diffX
@@ -85,7 +94,14 @@ contains
                 end do
             end do
             self%MG_smoothers(stageIter) = MG_Stage(omega, N_x_coarse, N_y_coarse, evenGridBool, redBlackBool)
-            call self%MG_smoothers(stageIter)%GS_Smoother%constructPoissonOrthogonal(diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp)
+            associate(stage => self%MG_smoothers(stageIter)%GS_Smoother)
+            select type (stage)
+            class is (GS_Base_Even)
+                call stage%constructPoissonOrthogonal(diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp)
+            class is (GS_Base_Curv)
+                call stage%constructPoissonOrthogonal(diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp)
+            end select
+            end associate
             deallocate(boundaryConditionsTemp)
         end do
         
