@@ -18,11 +18,11 @@ module mod_GS_Base_Even
 
 contains
 
-    subroutine constructPoissonOrthogonal(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions)
+    subroutine constructPoissonOrthogonal(self, del_x, del_y, NESW_wallBoundaries, boundaryConditions)
         ! Construct orthogonal grid solver
         class(GS_Base_Even), intent(in out) :: self
         integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
-        real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1)
+        real(real64), intent(in) :: del_x, del_y
     end subroutine constructPoissonOrthogonal
 
     subroutine AX_Mult_even(self, x, y)

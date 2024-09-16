@@ -10,30 +10,28 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 1001, N_y = 1001, numThreads = 32
+    integer(int32) :: N_x = 1001, N_y = 201, numThreads = 32
     class(MGSolver), allocatable :: solver
     class(domain_base), allocatable :: world
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y
-    integer, allocatable :: boundaryConditions(:, :)
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
-    real(real64), allocatable :: diffX(:), diffY(:), test(:,:)
-    logical :: makeX, evenGridBool, redBlackBool, PCG_bool, Krylov_bool
+    logical :: evenGridBool, redBlackBool, PCG_bool, Krylov_bool
 
     call mkl_set_num_threads(numThreads)
     call omp_set_num_threads(numThreads)
     
-    evenGridBool = .false.
-    redBlackBool = .false.
+    evenGridBool = .true.
+    redBlackBool = .true.
     PCG_bool = .false.
     Krylov_bool = .false.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 2
+    numberStages = 6
     call checkNodeDivisionMG(N_x, N_y, numberStages)
 
     ! More skewed delX and delY, more smoothing operations needed
@@ -49,8 +47,8 @@ program main
     NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 2 ! West
 
-    NESW_phiValues(1) = 1000.0d0
-    NESW_phiValues(2) = 0.0d0
+    NESW_phiValues(1) = 0.0d0
+    NESW_phiValues(2) = 1000.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
     
@@ -64,46 +62,14 @@ program main
     lowerBound = NESW_wallBoundaries(3)
     leftBound = NESW_wallBoundaries(4)
     
-    
-    allocate(diffX(N_x-1), diffY(N_y-1))  
     delX = 0.01d0 * Length/real(N_x-1)
     delY = 0.01d0 * Width/real(N_y-1)
-    makeX = .false.
-    call createCurvGrid(N_x, Length, diffX, delX, evenGridBool)
-    makeX = .true.
-    call createCurvGrid(N_y, Width, diffY, delY, evenGridBool)
     if (evenGridBool) then
         world = domain_uniform(N_x, N_y, NESW_wallBoundaries, Length, Width)
     else
         world = domain_curv(N_x, N_y, NESW_wallBoundaries, Length, &
         Width, curv_grid_type_x, curv_grid_type_y, delX, delY)
     end if
-
-
-    allocate(boundaryConditions(N_x, N_y))
-
-    !$OMP parallel
-        !$OMP workshare
-    boundaryConditions = 0
-    !$OMP end workshare
-    !$OMP end parallel
-    boundaryConditions(2:N_x-1, N_y) = NESW_wallBoundaries(1)
-    boundaryConditions(N_x, 2:N_y-1) = NESW_wallBoundaries(2)
-    boundaryConditions(2:N_x-1, 1) = NESW_wallBoundaries(3)
-    boundaryConditions(1, 2:N_y-1) = NESW_wallBoundaries(4)
-
-
-    ! Upper right corner
-    boundaryConditions(N_x, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(2))
-
-    ! lower right corner
-    boundaryConditions(N_x, 1) = MIN(NESW_wallBoundaries(3), NESW_wallBoundaries(2))
-
-    ! lower left corner
-    boundaryConditions(1, 1) = MIN(NESW_wallBoundaries(3), NESW_wallBoundaries(4))
-
-    ! upper left corner
-    boundaryConditions(1, N_y) = MIN(NESW_wallBoundaries(1), NESW_wallBoundaries(4))
     
     if (Krylov_bool) then
         if (PCG_bool) then
@@ -114,7 +80,12 @@ program main
     else
         solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
     end if
-    call solver%makeSmootherStages(diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega, evenGridBool, redBlackBool)
+    select type (world)
+    type is (domain_uniform)
+        call solver%makeSmootherStages_even(world%del_x, world%del_y, world%NESW_wall_boundaries, world%boundary_conditions, omega, redBlackBool)
+    type is (domain_curv)
+        call solver%makeSmootherStages_curv(world%del_x, world%del_y, world%NESW_wall_boundaries, world%boundary_conditions, omega, redBlackBool)
+    end select
     associate( stageOne => solver%MG_smoothers(1)%GS_smoother)
     ! Set phi values finer grid
     if (upperBound == 1) then
@@ -129,7 +100,7 @@ program main
     if (leftBound == 1) then 
         stageOne%solution(1, 2:N_y-1) = leftPhi
     end if
-    if (boundaryConditions(1,1) == 1) then
+    if (world%boundary_conditions(1,1) == 1) then
         if (lowerBound == leftBound) then
             stageOne%solution(1,1) = MIN(leftPhi, lowerPhi)
         else if (lowerBound == 1) then
@@ -138,7 +109,7 @@ program main
             stageOne%solution(1,1) = leftPhi
         end if
     end if
-    if (boundaryConditions(N_x,1) == 1) then
+    if (world%boundary_conditions(N_x,1) == 1) then
         if (lowerBound == rightBound) then
             stageOne%solution(N_x,1) = MIN(rightPhi, lowerPhi)
         else if (lowerBound == 1) then
@@ -147,7 +118,7 @@ program main
             stageOne%solution(N_x,1) = rightPhi
         end if
     end if
-    if (boundaryConditions(1, N_y) == 1) then
+    if (world%boundary_conditions(1, N_y) == 1) then
         if (upperBound == leftBound) then
             stageOne%solution(1, N_y) = MIN(leftPhi, upperPhi)
         else if (upperBound == 1) then
@@ -156,7 +127,7 @@ program main
             stageOne%solution(1, N_y) = leftPhi
         end if
     end if
-    if (boundaryConditions(N_x, N_y) == 1) then
+    if (world%boundary_conditions(N_x, N_y) == 1) then
         if (upperBound == rightBound) then
             stageOne%solution(N_x, N_y) = MIN(rightPhi, upperPhi)
         else if (upperBound == 1) then
@@ -170,7 +141,7 @@ program main
     !$OMP do collapse(2)
     do j = 1, N_y
         do i = 1, N_x
-            if (boundaryConditions(i,j) /= 1) then
+            if (world%boundary_conditions(i,j) /= 1) then
                 stageOne%sourceTerm(i,j) = -rho/eps_0
                 ! k = (j-1) * N_x + i
                 ! directSolver%sourceTerm(k) = -rho/eps_0
@@ -292,43 +263,43 @@ contains
 
     end subroutine checkNodeDivisionMG
 
-    subroutine createCurvGrid(N_x, Length, diffX, delX, evenGridBool)
-        ! Check to make sure N_x and N_y is divisible by however many stages in multigrid we want
-        integer, intent(in) :: N_x
-        real(real64), intent(in) :: Length, delX
-        real(real64), intent(in out) :: diffX(N_x-1)
-        logical, intent(in) :: evenGridBool
-        real(real64) :: grid(N_x), tempReal
-        grid(1) = 0.0d0
-        grid(N_x) = Length
-        if (evenGridBool) then
-            tempReal = Length/real(N_x-1)
-            do i = 2,N_x-1
-                grid(i) = grid(i-1) + tempReal
-            end do
-        else
-            do i = 2,N_x-1
-                grid(i) = Length * ((real(i)-1.0d0)/(real(N_x) - 1.0d0) - (1.0d0/(real(N_x) - 1.0d0) - delX/Length) &
-                * SIN(2.0d0 * pi * (i-1) / real(N_x - 1)) / SIN(2.0d0 * pi / real(N_x - 1)) )
-            end do
-        end if
-        do i = 1, N_x-1
-            diffX(i) = grid(i+1) - grid(i)
-        end do
+    ! subroutine createCurvGrid(N_x, Length, diffX, delX, evenGridBool)
+    !     ! Check to make sure N_x and N_y is divisible by however many stages in multigrid we want
+    !     integer, intent(in) :: N_x
+    !     real(real64), intent(in) :: Length, delX
+    !     real(real64), intent(in out) :: diffX(N_x-1)
+    !     logical, intent(in) :: evenGridBool
+    !     real(real64) :: grid(N_x), tempReal
+    !     grid(1) = 0.0d0
+    !     grid(N_x) = Length
+    !     if (evenGridBool) then
+    !         tempReal = Length/real(N_x-1)
+    !         do i = 2,N_x-1
+    !             grid(i) = grid(i-1) + tempReal
+    !         end do
+    !     else
+    !         do i = 2,N_x-1
+    !             grid(i) = Length * ((real(i)-1.0d0)/(real(N_x) - 1.0d0) - (1.0d0/(real(N_x) - 1.0d0) - delX/Length) &
+    !             * SIN(2.0d0 * pi * (i-1) / real(N_x - 1)) / SIN(2.0d0 * pi / real(N_x - 1)) )
+    !         end do
+    !     end if
+    !     do i = 1, N_x-1
+    !         diffX(i) = grid(i+1) - grid(i)
+    !     end do
 
-        if (.not. makeX) then
-            call execute_command_line("rm -r gridX.dat")
-            open(41,file='gridX.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-            write(41) grid
-            close(41)
-        else
-            call execute_command_line("rm -r gridY.dat")
-            open(41,file='gridY.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-            write(41) grid
-            close(41)
-        end if
+    !     if (.not. makeX) then
+    !         call execute_command_line("rm -r gridX.dat")
+    !         open(41,file='gridX.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    !         write(41) grid
+    !         close(41)
+    !     else
+    !         call execute_command_line("rm -r gridY.dat")
+    !         open(41,file='gridY.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    !         write(41) grid
+    !         close(41)
+    !     end if
 
-    end subroutine createCurvGrid    
+    ! end subroutine createCurvGrid    
 
 
 end program main

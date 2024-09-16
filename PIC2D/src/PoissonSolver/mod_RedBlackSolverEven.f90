@@ -54,11 +54,11 @@ contains
         allocate(self%sourceTerm(self%N_x, self%N_y), self%solution(self%N_x, self%N_y), self%residual(self%N_x, self%N_y))
     end function RedBlackSolverEven_constructor
 
-    subroutine constructPoissonOrthogonal_RedBlackEven(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions)
+    subroutine constructPoissonOrthogonal_RedBlackEven(self, del_x, del_y, NESW_wallBoundaries, boundaryConditions)
         ! Construct orthogonal grid solver
         class(RedBlackSolverEven), intent(in out) :: self
         integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
-        real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1)
+        real(real64), intent(in) :: del_x, del_y
         integer :: upperBound, lowerBound, rightBound, leftBound
         integer :: i, j, k, numberBound
 
@@ -123,8 +123,8 @@ contains
 
         allocate(self%horzIndx(2,self%numberColumns), self%vertIndx(2,self%numberRows))
 
-        self%coeffX = 1.0d0 / (diffX(1)**2)
-        self%coeffY = 1.0d0 / (diffY(1)**2)
+        self%coeffX = 1.0d0 / (del_x**2)
+        self%coeffY = 1.0d0 / (del_y**2)
         self%centerCoeff = -1.0d0 / (2.0d0 * self%coeffX + 2.0d0 * self%coeffY)
 
         if (self%startCol == 1) then
