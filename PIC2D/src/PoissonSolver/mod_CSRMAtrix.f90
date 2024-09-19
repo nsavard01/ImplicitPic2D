@@ -20,6 +20,7 @@ contains
         integer(int32), allocatable, intent(in out) :: columnIndex(:)
         integer(int32) :: matDimension, numberMatValues, i, j, k, matValIdx, boundaryConditions(N_x*N_y), upperBound, lowerBound, rightBound, leftBound, errorInt
         real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, delX, delY
+        
         matDimension = N_x * N_y
 
         upperBound = NESW_wallBoundaries(1)
