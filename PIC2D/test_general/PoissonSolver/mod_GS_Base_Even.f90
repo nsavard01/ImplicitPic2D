@@ -295,7 +295,7 @@ contains
                     (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX -  self%solution(i,1)/self%centerCoeff
                 self%solution(i, self%N_y) = self%solution(i,1)
             end if
-
+            
             ! Upper row
             if (self%world%boundary_conditions(i_finest, self%world%N_y) == 2) then
                 self%residual(i,self%N_y) = self%sourceTerm(i,self%N_y) - 2.0d0 * self%solution(i, self%N_y-1) * self%coeffY - &

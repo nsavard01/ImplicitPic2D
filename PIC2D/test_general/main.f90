@@ -21,7 +21,7 @@ program main
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
-    logical :: evenGridBool, redBlackBool, PCG_bool, Krylov_bool
+    logical :: evenGridBool, redBlackBool, PCG_bool, Krylov_bool, center_box_bool
 
     call execute_command_line("rm -r *.dat")
     call mkl_set_num_threads(numThreads)
@@ -31,6 +31,7 @@ program main
     redBlackBool = .true.
     PCG_bool = .false.
     Krylov_bool = .false.
+    center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
@@ -41,14 +42,14 @@ program main
     numberPreSmoothOper = 4
     numberPostSmoothOper = 4
     numberIter = 50000
-    omega = 1.0d0
+    omega = 1.5d0
     relTol = 1.d-12
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 2 ! North
-    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(2) = 3 ! East
     NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 1 ! West
+    NESW_wallBoundaries(4) = 3 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -94,11 +95,13 @@ program main
     ! upper left corner
     world%boundary_conditions(1, world%N_y) = MIN(upperBound, leftBound)
 
-    !$OMP parallel
-    !$OMP workshare
-    world%boundary_conditions(inner_box_first_x:inner_box_last_x, inner_box_first_y:inner_box_last_y) = 1
-    !$OMP end workshare
-    !$OMP end parallel
+    if (center_box_bool) then
+        !$OMP parallel
+        !$OMP workshare
+        world%boundary_conditions(inner_box_first_x:inner_box_last_x, inner_box_first_y:inner_box_last_y) = 1
+        !$OMP end workshare
+        !$OMP end parallel
+    end if
 
 
     select type (world)
@@ -127,17 +130,19 @@ program main
     if (lowerBound == 1 .and. lowerPhi == 0) directSolver%solution(1:world%N_x) = lowerPhi
     if (leftBound == 1 .and. leftPhi == 0) directSolver%solution(1:mat_dimension - world%N_x + 1:world%N_x) = leftPhi
 
-    !$OMP parallel private(k)
-    !$OMP do collapse(2)
-    do j = inner_box_first_y, inner_box_last_y
-        do i = inner_box_first_x, inner_box_last_x
-            k = (j-1) * world%N_x + i 
-            directSolver%solution(k) = innerPhi
-            solver%solution(i,j) = innerPhi
+    if (center_box_bool) then
+        !$OMP parallel private(k)
+        !$OMP do collapse(2)
+        do j = inner_box_first_y, inner_box_last_y
+            do i = inner_box_first_x, inner_box_last_x
+                k = (j-1) * world%N_x + i 
+                directSolver%solution(k) = innerPhi
+                solver%solution(i,j) = innerPhi
+            end do
         end do
-    end do
-    !$OMP end do
-    !$OMP end parallel
+        !$OMP end do
+        !$OMP end parallel
+    end if
     ! if (Krylov_bool) then
     !     if (PCG_bool) then
     !         solver = PreCondCGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
@@ -226,14 +231,15 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%smoothIterations(10000)
+    call solver%solveGS(stepTol)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
+    print *, 'Took', solver%iterNumber, 'iterations'
     call solver%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%residual
+    write(41) solver%solution
     close(41)
     ! end associate
     ! ! !$OMP parallel workshare
