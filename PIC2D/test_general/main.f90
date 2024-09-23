@@ -5,13 +5,15 @@ program main
     use mod_domain_base
     use mod_domain_uniform
     use mod_domain_curv
+    use mod_RedBlackSolverEven
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
     integer(int32) :: N_x = 201, N_y = 201, numThreads = 32
     type(pardisoSolver) :: directSolver
-    class(domain_base), allocatable :: world
+    class(domain_base), allocatable, target :: world
+    type(RedBlackSolverEven) :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
     integer :: inner_box_last_y = 125, inner_box_first_y = 75, inner_box_first_x = 75, inner_box_last_x = 125
@@ -43,7 +45,7 @@ program main
     relTol = 1.d-12
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(1) = 2 ! North
     NESW_wallBoundaries(2) = 1 ! East
     NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 1 ! West
@@ -103,7 +105,7 @@ program main
     type is (domain_uniform)
         call buildEvenGridOrthogonalPoissonMatrix(world%N_x, world%N_y, world%del_x, world%del_y, &
         world%boundary_conditions, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
-        print *, world%del_x * (inner_box_last_x - inner_box_first_x)
+        solver = RedBlackSolverEven(omega, world, world%N_x, world%N_y)
     end select
     call directSolver%initializePardiso(1, 11, 1, 0)
 
@@ -131,6 +133,7 @@ program main
         do i = inner_box_first_x, inner_box_last_x
             k = (j-1) * world%N_x + i 
             directSolver%solution(k) = innerPhi
+            solver%solution(i,j) = innerPhi
         end do
     end do
     !$OMP end do
@@ -209,6 +212,7 @@ program main
             k = (j-1) * N_x + i
             if (world%boundary_conditions(i,j) /= 1) then
                 ! stageOne%sourceTerm(i,j) = -rho/eps_0
+                solver%sourceTerm(i,j) = -rho/eps_0
                 directSolver%sourceTerm(k) = -rho/eps_0
             else
                 directSolver%sourceTerm(k) = directSolver%solution(k)
@@ -222,14 +226,14 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call directSolver%runPardiso()
+    call solver%smoothIterations(10000)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    
+    call solver%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) directSolver%solution
+    write(41) solver%residual
     close(41)
     ! end associate
     ! ! !$OMP parallel workshare
