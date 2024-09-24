@@ -7,7 +7,6 @@ module mod_GS_Base
         ! store grid quantities
         real(real64), allocatable :: sourceTerm(:,:), solution(:,:), residual(:,:)
         integer(int32), allocatable :: number_row_sections(:), start_inner_indx_x(:,:), end_inner_indx_x(:,:)
-        ! integer(int32), allocatable :: number_column_sections(:), start_inner_indx_y(:), end_inner_indx_y(:)
         integer(int32) :: number_inner_rows, number_solve_nodes, max_number_row_sections, iterNumber, N_x, N_y, start_row_indx, end_row_indx
         integer :: x_indx_step, y_indx_step
         real(real64) :: omega

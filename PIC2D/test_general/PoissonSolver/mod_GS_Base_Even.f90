@@ -106,7 +106,7 @@ contains
             j_fine = j_coarse * self%y_indx_step - (self%y_indx_step-1)
             k = 0
             found_first_indx = .false.
-            do i_fine = 1, self%world%N_x, self%y_indx_step
+            do i_fine = 1, self%world%N_x, self%x_indx_step
                 if (.not. found_first_indx) then
                     if (self%world%boundary_conditions(i_fine, j_fine) == 0) then
                         found_first_indx = .true.
@@ -295,7 +295,7 @@ contains
                     (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX -  self%solution(i,1)/self%centerCoeff
                 self%solution(i, self%N_y) = self%solution(i,1)
             end if
-            
+
             ! Upper row
             if (self%world%boundary_conditions(i_finest, self%world%N_y) == 2) then
                 self%residual(i,self%N_y) = self%sourceTerm(i,self%N_y) - 2.0d0 * self%solution(i, self%N_y-1) * self%coeffY - &

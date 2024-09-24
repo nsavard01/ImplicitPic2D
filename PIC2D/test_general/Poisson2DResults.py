@@ -55,7 +55,6 @@ grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 Length = gridX[-1] - gridX[0]
 Width = gridY[-1] - gridY[0]
 
-
 plt.figure()
 plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F'), shading = 'nearest')
 plt.colorbar()

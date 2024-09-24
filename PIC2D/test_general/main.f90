@@ -5,18 +5,20 @@ program main
     use mod_domain_base
     use mod_domain_uniform
     use mod_domain_curv
+    use mod_GS_Base_Even
     use mod_RedBlackSolverEven
+    use mod_ZebraSolverEven
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 201, N_y = 201, numThreads = 32
+    integer(int32) :: N_x = 401, N_y = 201, numThreads = 32
     type(pardisoSolver) :: directSolver
     class(domain_base), allocatable, target :: world
-    type(RedBlackSolverEven) :: solver
+    class(GS_Base_Even), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
-    integer :: inner_box_last_y = 125, inner_box_first_y = 75, inner_box_first_x = 75, inner_box_last_x = 125
+    integer :: inner_box_last_y = 125, inner_box_first_y = 75, inner_box_first_x = 150, inner_box_last_x = 250
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
@@ -26,6 +28,7 @@ program main
     call execute_command_line("rm -r *.dat")
     call mkl_set_num_threads(numThreads)
     call omp_set_num_threads(numThreads)
+    call omp_set_max_active_levels(numThreads)
     
     evenGridBool = .true.
     redBlackBool = .true.
@@ -46,16 +49,17 @@ program main
     relTol = 1.d-12
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
+    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(2) = 2 ! East
     NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
     innerPhi = 1000.0d0
+    
     
     upperPhi = NESW_phiValues(1)
     rightPhi = NESW_phiValues(2)
@@ -108,7 +112,11 @@ program main
     type is (domain_uniform)
         call buildEvenGridOrthogonalPoissonMatrix(world%N_x, world%N_y, world%del_x, world%del_y, &
         world%boundary_conditions, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
-        solver = RedBlackSolverEven(omega, world, world%N_x, world%N_y)
+        if (redBlackBool) then
+            solver = RedBlackSolverEven(omega, world, world%N_x, world%N_y)
+        else
+            solver = ZebraSolverEven(omega, world, world%N_x, world%N_y)
+        end if
     end select
     call directSolver%initializePardiso(1, 11, 1, 0)
 
@@ -129,6 +137,16 @@ program main
     if (rightBound ==1 .and. rightPhi ==0) directSolver%solution(world%N_x:mat_dimension:world%N_x) = rightPhi
     if (lowerBound == 1 .and. lowerPhi == 0) directSolver%solution(1:world%N_x) = lowerPhi
     if (leftBound == 1 .and. leftPhi == 0) directSolver%solution(1:mat_dimension - world%N_x + 1:world%N_x) = leftPhi
+
+    if (upperBound == 1 .and. upperPhi /= 0) solver%solution(:, solver%N_y) = upperPhi
+    if (rightBound ==1 .and. rightPhi /=0) solver%solution(solver%N_x, :) = rightPhi
+    if (lowerBound == 1 .and. lowerPhi /= 0) solver%solution(:, 1) = lowerPhi
+    if (leftBound == 1 .and. leftPhi /= 0) solver%solution(1,:) = leftPhi
+
+    if (upperBound == 1 .and. upperPhi == 0) solver%solution(:, solver%N_y)  = upperPhi
+    if (rightBound ==1 .and. rightPhi ==0) solver%solution(solver%N_x, :) = rightPhi
+    if (lowerBound == 1 .and. lowerPhi == 0) solver%solution(:, 1) = lowerPhi
+    if (leftBound == 1 .and. leftPhi == 0) solver%solution(1,:)  = leftPhi
 
     if (center_box_bool) then
         !$OMP parallel private(k)
