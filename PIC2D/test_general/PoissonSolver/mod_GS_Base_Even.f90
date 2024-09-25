@@ -64,9 +64,7 @@ contains
         !$OMP do collapse(2)
         do j_fine = 1, self%world%N_y, self%y_indx_step
             do i_fine = 1, self%world%N_x, self%x_indx_step
-                if (self%world%boundary_conditions(i_fine,j_fine) == 0) then
-                    continue
-                else if (self%world%boundary_conditions(i_fine,j_fine) /= 1) then
+                if (self%world%boundary_conditions(i_fine,j_fine) /= 1) then
                     numberBound = numberBound + 1
                 end if
             end do
@@ -134,7 +132,7 @@ contains
             j_fine = j_coarse * self%y_indx_step - (self%y_indx_step-1)
             k = 0
             found_first_indx = .false.
-            do i_fine = 1, self%world%N_x, self%y_indx_step
+            do i_fine = 1, self%world%N_x, self%x_indx_step
                 i_coarse = (i_fine + (self%x_indx_step-1))/self%x_indx_step
                 if (.not. found_first_indx) then
                     if (self%world%boundary_conditions(i_fine, j_fine) == 0) then
@@ -152,6 +150,172 @@ contains
         end do
         !$OMP end do
         !$OMP end parallel
+
+        ! ------------------------ get numbers for each boundary side -------------------- 
+
+        ! lower boundary
+        k = 0
+        found_first_indx = .false.
+        do i_coarse = 2, self%N_x-1
+            i_fine = i_coarse * self%x_indx_step - self%x_indx_step + 1
+            if (.not. found_first_indx) then
+                if (self%world%boundary_conditions(i_fine,1) /= 1) then
+                    found_first_indx = .true.
+                    k = k + 1
+                end if
+            else
+                if (self%world%boundary_conditions(i_fine,1) == 1) then
+                    found_first_indx = .false.
+                end if
+            end if
+        end do
+        self%number_bottom_row_sections = k
+        allocate(self%start_bottom_row_indx(self%number_bottom_row_sections), self%end_bottom_row_indx(self%number_bottom_row_sections), &
+        self%bottom_row_boundary_type(self%number_bottom_row_sections))
+
+        k = 0
+        found_first_indx = .false.
+        do i_coarse = 2, self%N_x-1
+            i_fine = i_coarse * self%x_indx_step - self%x_indx_step + 1
+            if (.not. found_first_indx) then
+                if (self%world%boundary_conditions(i_fine,1) /= 1) then
+                    found_first_indx = .true.
+                    k = k + 1
+                    self%start_bottom_row_indx(k) = i_coarse
+                    self%bottom_row_boundary_type(k) = self%world%boundary_conditions(i_fine,1)
+                end if
+            else
+                if (self%world%boundary_conditions(i_fine,1) == 1) then
+                    found_first_indx = .false.
+                    self%end_bottom_row_indx(k) = i_coarse-1
+                end if
+            end if
+        end do
+        if (found_first_indx) self%end_bottom_row_indx(k) = self%N_x-1
+        
+
+        ! upper boundary
+        k = 0
+        found_first_indx = .false.
+        do i_coarse = 2, self%N_x-1
+            i_fine = i_coarse * self%x_indx_step - self%x_indx_step + 1
+            if (.not. found_first_indx) then
+                if (self%world%boundary_conditions(i_fine,self%world%N_y) /= 1) then
+                    found_first_indx = .true.
+                    k = k + 1
+                end if
+            else
+                if (self%world%boundary_conditions(i_fine,self%world%N_y) == 1) then
+                    found_first_indx = .false.
+                end if
+            end if
+        end do
+        self%number_top_row_sections = k
+        allocate(self%start_top_row_indx(self%number_top_row_sections), self%end_top_row_indx(self%number_top_row_sections), &
+        self%top_row_boundary_type(self%number_top_row_sections))
+
+        k = 0
+        found_first_indx = .false.
+        do i_coarse = 2, self%N_x-1
+            i_fine = i_coarse * self%x_indx_step - self%x_indx_step + 1
+            if (.not. found_first_indx) then
+                if (self%world%boundary_conditions(i_fine,self%world%N_y) /= 1) then
+                    found_first_indx = .true.
+                    k = k + 1
+                    self%start_top_row_indx(k) = i_coarse
+                    self%top_row_boundary_type(k) = self%world%boundary_conditions(i_fine,self%world%N_y)
+                end if
+            else
+                if (self%world%boundary_conditions(i_fine,self%world%N_y) == 1) then
+                    found_first_indx = .false.
+                    self%end_top_row_indx(k) = i_coarse-1
+                end if
+            end if
+        end do
+        if (found_first_indx) self%end_top_row_indx(k) = self%N_x-1
+
+
+        ! left boundary
+        k = 0
+        found_first_indx = .false.
+        do j_coarse = 2, world%N_y-1
+            j_fine = j_coarse * self%y_indx_step - self%y_indx_step + 1
+            if (.not. found_first_indx) then
+                if (self%world%boundary_conditions(1,j_fine) /= 1) then
+                    found_first_indx = .true.
+                    k = k + 1
+                end if
+            else
+                if (self%world%boundary_conditions(1, j_fine) == 1) then
+                    found_first_indx = .false.
+                end if
+            end if
+        end do
+        self%number_left_column_sections = k
+        allocate(self%start_left_column_indx(self%number_left_column_sections), self%end_left_column_indx(self%number_left_column_sections), &
+        self%left_column_boundary_type(self%number_left_column_sections))
+
+        k = 0
+        found_first_indx = .false.
+        do j_coarse = 2, world%N_y-1
+            j_fine = j_coarse * self%y_indx_step - self%y_indx_step + 1
+            if (.not. found_first_indx) then
+                if (self%world%boundary_conditions(1,j_fine) /= 1) then
+                    found_first_indx = .true.
+                    k = k + 1
+                    self%start_left_column_indx(k) = j_coarse
+                    self%left_column_boundary_type(k) = self%world%boundary_conditions(1,j_fine)
+                end if
+            else
+                if (self%world%boundary_conditions(1, j_fine) == 1) then
+                    found_first_indx = .false.
+                    self%end_left_column_indx(k) = j_coarse - 1
+                end if
+            end if
+        end do
+        if (found_first_indx) self%end_left_column_indx(k) = self%N_y-1
+
+        ! right boundary
+        k = 0
+        found_first_indx = .false.
+        do j_coarse = 2, world%N_y-1
+            j_fine = j_coarse * self%y_indx_step - self%y_indx_step + 1
+            if (.not. found_first_indx) then
+                if (self%world%boundary_conditions(self%world%N_x,j_fine) /= 1) then
+                    found_first_indx = .true.
+                    k = k + 1
+                end if
+            else
+                if (self%world%boundary_conditions(self%world%N_x, j_fine) == 1) then
+                    found_first_indx = .false.
+                end if
+            end if
+        end do
+        self%number_right_column_sections = k
+        allocate(self%start_right_column_indx(self%number_right_column_sections), self%end_right_column_indx(self%number_right_column_sections), &
+        self%right_column_boundary_type(self%number_right_column_sections))
+
+        k = 0
+        found_first_indx = .false.
+        do j_coarse = 2, world%N_y-1
+            j_fine = j_coarse * self%y_indx_step - self%y_indx_step + 1
+            if (.not. found_first_indx) then
+                if (self%world%boundary_conditions(self%world%N_x,j_fine) /= 1) then
+                    found_first_indx = .true.
+                    k = k + 1
+                    self%start_right_column_indx(k) = j_coarse
+                    self%right_column_boundary_type(k) = self%world%boundary_conditions(self%world%N_x,j_fine)
+                end if
+            else
+                if (self%world%boundary_conditions(self%world%N_x, j_fine) == 1) then
+                    found_first_indx = .false.
+                    self%end_right_column_indx(k) = j_coarse - 1
+                end if
+            end if
+        end do
+        if (found_first_indx) self%end_right_column_indx(k) = self%N_y-1
+
+
     end subroutine initialize_GS_Even
 
     subroutine constructPoissonOrthogonal(self)

@@ -34,13 +34,13 @@ setDebug:
 main: main.o $(total_obj_list)
 	$(FC) $(BASE) -o $@ main.o $(total_obj_list)
 
-main.o: main.f90 solver
+main.o: main.f90 solver world constants
 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
 
-solver: world
+solver: world constants
 	cd $(solver_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-world: constants
+world: constants 
 	cd $(world_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
 constants:

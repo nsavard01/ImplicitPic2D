@@ -255,10 +255,11 @@ program main
     ! print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, 'Took', solver%iterNumber, 'iterations'
-    call solver%calcResidual()
+  
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) solver%solution
     close(41)
+   
     ! end associate
     ! ! !$OMP parallel workshare
     ! ! CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
