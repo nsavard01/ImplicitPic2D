@@ -143,13 +143,13 @@ contains
         class(RedBlackSolverEven), intent(in out) :: self
         integer(int32), intent(in) :: iterNum
         real(real64) :: oldSol, omega_inv
-        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p, iter, i_finest, j_finest
+        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p,iter
         omega_inv = 1.0d0 - self%omega
         ! p indexs in horizontal maps to i, k in vertical maps to j
         do iter = 1, iterNum 
 
 
-            !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, oldSol, i_finest, j_finest)
+            !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, oldSol)
 
             !first do corners which need to be neumann for change
             !$OMP sections
@@ -393,39 +393,37 @@ contains
         real(real64) :: oldSol, Res, omega_inv, res_first
         integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p, i_finest, j_finest
         omega_inv = 1.0d0 - self%omega
-        res_first = 0.0d0
 
+        Res = 0.0d0
+        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, oldSol, i_finest, j_finest)
+
+            !first do corners which need to be neumann for change
+            !$OMP sections
+            !$OMP section
         if (self%world%boundary_conditions(1,1) == 2) then
             ! lower left corner
-            oldSol = self%solution(1,1)
             self%solution(1,1) = (self%sourceTerm(1,1) - 2.0d0 * self%solution(1, 2) * self%coeffY - &
                 2.0d0 * self%solution(2, 1) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(1,1)
-            Res = Res + (self%solution(1,1) - oldSol)**2
         end if
+        !$OMP section
         if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
             ! lower right corner
-            oldSol = self%solution(self%N_x,1)
             self%solution(self%N_x, 1) = (self%sourceTerm(self%N_x, 1) - 2.0d0 * self%solution(self%N_x, 2) * self%coeffY - &
                 2.0d0 * self%solution(self%N_x-1, 1) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(self%N_x, 1)
-            Res = Res + (self%solution(self%N_x,1) - oldSol)**2
         end if
+        !$OMP section
         if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
             ! upper left corner
-            oldSol = self%solution(1, self%N_y)
             self%solution(1, self%N_y) = (self%sourceTerm(1, self%N_y) - 2.0d0 * self%solution(1, self%N_y-1) * self%coeffY - &
-                2.0d0 * self%solution(2, self%N_y-1) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(1, self%N_y)
-            Res = Res + (self%solution(1,self%N_y) - oldSol)**2   
+                2.0d0 * self%solution(2, self%N_y) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(1, self%N_y)
         end if
+        !$OMP section
         if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
             ! upper right corner
-            oldSol = self%solution(self%N_x, self%N_y)
             self%solution(self%N_x, self%N_y) = (self%sourceTerm(self%N_x, self%N_y) - 2.0d0 * self%solution(self%N_x, self%N_y-1) * self%coeffY - &
                 2.0d0 * self%solution(self%N_x-1, self%N_y) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(self%N_x, self%N_y)
-            Res = Res + (self%solution(self%N_x, self%N_y) - oldSol)**2
         end if
-        res_first = Res
-        Res = 0.0d0
-        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, oldSol, i_finest, j_finest) reduction(+:Res)
+        !$OMP end sections nowait
 
         !Go through all red points first
         !$OMP do
@@ -441,69 +439,97 @@ contains
                     oldSol = self%solution(i,j)
                     self%solution(i,j) = (self%sourceTerm(i,j) - (self%solution(i, N_indx) + self%solution(i, S_indx)) * self%coeffY - &
                         (self%solution(E_indx, j) + self%solution(W_indx, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-                    Res = Res + (self%solution(i, j) - oldSol)**2
                 end do
             end do
         end do
         !$OMP end do nowait
 
-        ! Now go through red boundaries
-        ! Red Upper/lower rows
-        !$OMP do 
-        do i = 3, self%N_x-2, 2
-            i_finest = i * self%x_indx_step - self%x_indx_step + 1
-
-            ! Lower row
-            oldSol = self%solution(i,1)
-            if (self%world%boundary_conditions(i_finest, 1) == 2) then
-                self%solution(i,1) = (self%sourceTerm(i,1) - 2.0d0 * self%solution(i, 2) * self%coeffY - &
-                    (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-            else if (self%world%boundary_conditions(i_finest, 1) == 3) then
-                self%solution(i,1) = (self%sourceTerm(i,1) - (self%solution(i, 2) + self%solution(i, self%N_y-1)) * self%coeffY - &
-                    (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-                self%solution(i, self%N_y) = self%solution(i,1)
+        ! !Now go through red boundaries
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
             end if
-            Res = Res + (self%solution(i, 1) - oldSol)**2
-            ! Upper row
-            oldSol = self%solution(i,self%N_y)
-            if (self%world%boundary_conditions(i_finest, self%world%N_y) == 2) then
-                self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - 2.0d0 * self%solution(i, self%N_y-1) * self%coeffY - &
-                    (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
+            if (MOD(self%start_bottom_row_indx(p),2) == 1) then
+                k = self%start_bottom_row_indx(p)
+            else
+                k = self%start_bottom_row_indx(p) + 1
             end if
-            Res = Res + (self%solution(i, self%N_y) - oldSol)**2
-            
+            do i = k, self%end_bottom_row_indx(p), 2
+                self%solution(i,1) = (self%sourceTerm(i,1) - (self%solution(i, 2) + self%solution(i, S_indx)) * self%coeffY - &
+                        (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(i,1)
+            end do
         end do
         !$OMP end do nowait
 
-        ! Red Left/right columns
-        !$OMP do 
-        do j = 3, self%N_y-2, 2
-            j_finest = j * self%y_indx_step - self%y_indx_step + 1
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            if (MOD(self%start_top_row_indx(p),2) == 1) then
+                k = self%start_top_row_indx(p)
+            else
+                k = self%start_top_row_indx(p) + 1
+            end if
+            do i = k, self%end_top_row_indx(p), 2
+                self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - (self%solution(i, N_indx) + self%solution(i, self%N_y-1)) * self%coeffY - &
+                        (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(i,self%N_y)
+            end do
+        end do
+        !$OMP end do nowait
 
-            ! Left column
-            oldSol = self%solution(1,j)
-            if (self%world%boundary_conditions(1, j_finest) == 2) then
-                self%solution(1,j) = (self%sourceTerm(1,j) - (self%solution(1, j-1) + self%solution(1, j+1)) * self%coeffY - &
-                    2.0d0 * self%solution(2, j) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-            else if (self%world%boundary_conditions(1,j_finest) == 3) then
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            if (MOD(self%start_left_column_indx(p),2) == 1) then
+                k = self%start_left_column_indx(p)
+            else
+                k = self%start_left_column_indx(p) + 1
+            end if
+            do j = k, self%end_left_column_indx(p), 2
                 self%solution(1,j) = (self%sourceTerm(1,j) - (self%solution(1, j+1) + self%solution(1, j-1)) * self%coeffY - &
-                    (self%solution(2, j) + self%solution(self%N_x-1, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-                self%solution(self%N_x, j) = self%solution(1,j)
-            end if
-            Res = Res + (self%solution(1,j) - oldSol)**2
-
-            ! Right column
-            oldSol = self%solution(self%N_x,j)
-            if (self%world%boundary_conditions(self%world%N_x, j_finest) == 2) then
-                self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j-1) + self%solution(self%N_x, j+1)) * self%coeffY - &
-                    2.0d0 * self%solution(self%N_x-1, j) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-            end if
-            Res = Res + (self%solution(self%N_x,j) - oldSol)**2
+                        (self%solution(2, j) + self%solution(W_indx, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(1,j)
+            end do
         end do
         !$OMP end do
 
 
-        ! Go through all black points
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
+            end if
+            if (MOD(self%start_right_column_indx(p),2) == 1) then
+                k = self%start_right_column_indx(p)
+            else
+                k = self%start_right_column_indx(p) + 1
+            end if
+            do j = k, self%end_right_column_indx(p), 2
+                self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j+1) + self%solution(self%N_x, j-1)) * self%coeffY - &
+                        (self%solution(self%N_x-1, j) + self%solution(E_indx, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(self%N_x,j)
+            end do
+        end do
+        !$OMP end do
+
+        !$OMP barrier
+        ! ------------------------------------------------- Now black points ------------------------------------------------------------------
+
+        ! !Go through all black points
         !$OMP do
         do k = 1, self%number_inner_rows
             j = self%start_row_indx + k - 1
@@ -516,66 +542,91 @@ contains
                     oldSol = self%solution(i,j)
                     self%solution(i,j) = (self%sourceTerm(i,j) - (self%solution(i, N_indx) + self%solution(i, S_indx)) * self%coeffY - &
                         (self%solution(E_indx, j) + self%solution(W_indx, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-                    Res = Res + (self%solution(i,j) - oldSol)**2
                 end do
             end do
         end do
         !$OMP end do nowait
 
-        ! Now go through black boundaries
-        ! black Upper/lower rows
-        !$OMP do 
-        do i = 2, self%N_x-1, 2
-            i_finest = i * self%x_indx_step - self%x_indx_step + 1
-
-            ! Lower row
-            oldSol = self%solution(i,1)
-            if (self%world%boundary_conditions(i_finest, 1) == 2) then
-                self%solution(i,1) = (self%sourceTerm(i,1) - 2.0d0 * self%solution(i, 2) * self%coeffY - &
-                    (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-            else if (self%world%boundary_conditions(i_finest, 1) == 3) then
-                self%solution(i,1) = (self%sourceTerm(i,1) - (self%solution(i, 2) + self%solution(i, self%N_y-1)) * self%coeffY - &
-                    (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-                self%solution(i, self%N_y) = self%solution(i,1)
+        ! !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
             end if
-            Res = Res + (self%solution(i,1) - oldSol)**2
-
-            ! Upper row
-            oldSol = self%solution(i,self%N_y)
-            if (self%world%boundary_conditions(i_finest, self%world%N_y) == 2) then
-                self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - 2.0d0 * self%solution(i, self%N_y-1) * self%coeffY - &
-                    (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
+            if (MOD(self%start_bottom_row_indx(p),2) == 0) then
+                k = self%start_bottom_row_indx(p)
+            else
+                k = self%start_bottom_row_indx(p) + 1
             end if
-            Res = Res + (self%solution(i,self%N_y) - oldSol)**2
+            do i = k, self%end_bottom_row_indx(p), 2
+                self%solution(i,1) = (self%sourceTerm(i,1) - (self%solution(i, 2) + self%solution(i, S_indx)) * self%coeffY - &
+                        (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(i,1)
+            end do
         end do
         !$OMP end do nowait
 
-        ! black Left/right columns
-        !$OMP do 
-        do j = 2, self%N_y-1, 2
-            j_finest = j * self%y_indx_step - self%y_indx_step + 1
+        ! ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            if (MOD(self%start_top_row_indx(p),2) == 0) then
+                k = self%start_top_row_indx(p)
+            else
+                k = self%start_top_row_indx(p) + 1
+            end if
+            do i = k, self%end_top_row_indx(p), 2
+                self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - (self%solution(i, N_indx) + self%solution(i, self%N_y-1)) * self%coeffY - &
+                        (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(i,self%N_y)
+            end do
+        end do
+        !$OMP end do nowait
 
-            ! Left column
-            oldSol = self%solution(1,j)
-            if (self%world%boundary_conditions(1, j_finest) == 2) then
-                self%solution(1,j) = (self%sourceTerm(1,j) - (self%solution(1, j-1) + self%solution(1, j+1)) * self%coeffY - &
-                    2.0d0 * self%solution(2, j) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-            else if (self%world%boundary_conditions(1,j_finest) == 3) then
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            if (MOD(self%start_left_column_indx(p),2) == 0) then
+                k = self%start_left_column_indx(p)
+            else
+                k = self%start_left_column_indx(p) + 1
+            end if
+            do j = k, self%end_left_column_indx(p), 2
                 self%solution(1,j) = (self%sourceTerm(1,j) - (self%solution(1, j+1) + self%solution(1, j-1)) * self%coeffY - &
-                    (self%solution(2, j) + self%solution(self%N_x-1, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
-                self%solution(self%N_x, j) = self%solution(1,j)
-            end if
-            Res = Res + (self%solution(1,j) - oldSol)**2
+                        (self%solution(2, j) + self%solution(W_indx, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(1,j)
+            end do
+        end do
+        !$OMP end do nowait
 
-            ! Right column
-            oldSol = self%solution(self%N_x,j)
-            if (self%world%boundary_conditions(self%world%N_x, j_finest) == 2) then
-                self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j-1) + self%solution(self%N_x, j+1)) * self%coeffY - &
-                    2.0d0 * self%solution(self%N_x-1, j) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * oldSol
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
             end if
-            Res = Res + (self%solution(self%N_x,j) - oldSol)**2
+            if (MOD(self%start_right_column_indx(p),2) == 0) then
+                k = self%start_right_column_indx(p)
+            else
+                k = self%start_right_column_indx(p) + 1
+            end if
+            do j = k, self%end_right_column_indx(p), 2
+                self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j+1) + self%solution(self%N_x, j-1)) * self%coeffY - &
+                        (self%solution(self%N_x-1, j) + self%solution(E_indx, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(self%N_x,j)
+            end do
         end do
         !$OMP end do
+        
         !$OMP end parallel
         
         Res = SQRT((Res+res_first)/ (self%number_solve_nodes))
