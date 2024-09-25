@@ -49,10 +49,10 @@ program main
     relTol = 1.d-12
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(1) = 2 ! North
     NESW_wallBoundaries(2) = 2 ! East
     NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
