@@ -45,7 +45,8 @@ contains
         real(real64), intent(in) :: omega
         integer, intent(in) :: N_x, N_y
         type(domain_uniform), intent(in), target :: world
-        call self%initialize_GS_Even(omega, world, N_x, N_y)
+        call self%initialize_GS_orthogonal_base(omega, world, N_x, N_y)
+        call self%initialize_GS_Even(world)
         call self%constructPoissonOrthogonal()
     end function RedBlackSolverEven_constructor
 
