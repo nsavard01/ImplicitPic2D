@@ -8,6 +8,12 @@ module mod_GS_Base
         real(real64), allocatable :: sourceTerm(:,:), solution(:,:), residual(:,:)
         integer(int32), allocatable :: number_row_sections(:), start_inner_indx_x(:,:), end_inner_indx_x(:,:)
         integer(int32) :: number_inner_rows, number_solve_nodes, max_number_row_sections, iterNumber, N_x, N_y, start_row_indx, end_row_indx
+        ! Get non-dirichlet indices on boundaries
+        integer :: number_bottom_row_sections, number_top_row_sections, number_left_column_sections, number_right_column_sections
+        integer, allocatable :: start_bottom_row_indx(:), end_bottom_row_indx(:), bottom_row_boundary_type(:)
+        integer, allocatable :: start_top_row_indx(:), end_top_row_indx(:), top_row_boundary_type(:)
+        integer, allocatable :: start_left_column_indx(:), end_left_column_indx(:), left_column_boundary_type(:)
+        integer, allocatable :: start_right_column_indx(:), end_right_column_indx(:), right_column_boundary_type(:)
         integer :: x_indx_step, y_indx_step
         real(real64) :: omega
     contains
