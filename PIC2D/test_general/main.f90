@@ -50,8 +50,8 @@ program main
     stepTol = 1.d-6
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 0.0d0
@@ -249,7 +249,7 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%smoothIterations(10000)
+    call solver%solveGS(stepTol)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'
@@ -259,7 +259,7 @@ program main
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) solver%solution
     close(41)
-    
+   
     ! end associate
     ! ! !$OMP parallel workshare
     ! ! CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
