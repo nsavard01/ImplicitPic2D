@@ -178,6 +178,7 @@ contains
             end do
             !$OMP end do
 
+            !$OMP barrier
 
             ! Go through all black points
             !$OMP do
@@ -369,7 +370,8 @@ contains
         end do
         !$OMP end do
 
-
+        !$OMP barrier
+        
         ! Go through all black points
         !$OMP do
         do k = 1, self%number_inner_rows
