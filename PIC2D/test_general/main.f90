@@ -46,12 +46,12 @@ program main
     numberPostSmoothOper = 4
     numberIter = 50000
     omega = 1.5d0
-    relTol = 1.d-12
+    relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 3 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 3 ! South
+    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
@@ -249,15 +249,15 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%solveGS(stepTol)
+    call solver%solveGS(stepTol, relTol)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, 'Took', solver%iterNumber, 'iterations'
-  
+    call solver%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%solution
+    write(41) solver%residual
     close(41)
    
     ! end associate

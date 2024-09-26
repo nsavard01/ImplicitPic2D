@@ -1,6 +1,7 @@
 module mod_ZebraSolverEven
     use iso_fortran_env, only: int32, int64, real64
     use mod_GS_Base_Even
+    use mod_domain_uniform
     use omp_lib
     implicit none
 
@@ -39,6 +40,7 @@ contains
         real(real64), intent(in) :: omega
         integer, intent(in) :: N_x, N_y
         type(domain_uniform), intent(in), target :: world
+        call self%initialize_GS_orthogonal_base(omega, world, N_x, N_y)
         call self%initialize_GS_Even(world)
         call self%constructPoissonOrthogonal()
     end function ZebraSolverEven_constructor

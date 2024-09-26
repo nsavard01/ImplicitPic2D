@@ -118,39 +118,136 @@ contains
         class(GS_Base_Even), intent(in out) :: self
         integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p, i_finest, j_finest
 
-        ! first do corners (due to inconvenience in vectorizing) which have to be neumann for changes
-            ! these are all red points
+        ! ! first do corners (due to inconvenience in vectorizing) which have to be neumann for changes
+        !     ! these are all red points
+        ! if (self%world%boundary_conditions(1,1) == 2) then
+        !     ! lower left corner
+        !     self%residual(1,1) = self%sourceTerm(1,1) - 2.0d0 * self%solution(1, 2) * self%coeffY - &
+        !         2.0d0 * self%solution(2, 1) * self%coeffX  - self%solution(1,1)/self%centerCoeff
+        ! end if
+        ! if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
+        !     ! lower right corner
+        !     self%residual(self%N_x, 1) = self%sourceTerm(self%N_x, 1) - 2.0d0 * self%solution(self%N_x, 2) * self%coeffY - &
+        !         2.0d0 * self%solution(self%N_x-1, 1) * self%coeffX -  self%solution(self%N_x, 1)/self%centerCoeff
+        ! end if
+        ! if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
+        !     ! upper left corner
+        !     self%residual(1, self%N_y) = self%sourceTerm(1, self%N_y) - 2.0d0 * self%solution(1, self%N_y-1) * self%coeffY - &
+        !         2.0d0 * self%solution(2, self%N_y-1) * self%coeffX - self%solution(1, self%N_y)/self%centerCoeff
+        ! end if
+        ! if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
+        !     ! upper right corner
+        !     self%residual(self%N_x, self%N_y) = self%sourceTerm(self%N_x, self%N_y) - 2.0d0 * self%solution(self%N_x, self%N_y-1) * self%coeffY - &
+        !         2.0d0 * self%solution(self%N_x-1, self%N_y) * self%coeffX - self%solution(self%N_x, self%N_y)/self%centerCoeff
+        ! end if
+
+        ! !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, i_finest, j_finest)
+
+        ! !$OMP do
+        ! ! Sweep inner nodes
+        ! do k = 1, self%number_inner_rows
+        !     j = self%start_row_indx + k - 1
+        !     N_indx = j + 1
+        !     S_indx = j - 1
+        !     do p = 1, self%number_row_sections(k)
+        !         do i = self%start_inner_indx_x(p, k), self%end_inner_indx_x(p,k) 
+        !             E_indx = i+1
+        !             W_indx = i-1
+        !             self%residual(i,j) = self%sourceTerm(i,j) - (self%solution(i, N_indx) + self%solution(i, S_indx)) * self%coeffY - &
+        !                 (self%solution(E_indx, j) + self%solution(W_indx, j)) * self%coeffX - self%solution(i,j) / self%centerCoeff
+        !         end do
+        !     end do
+        ! end do
+        ! !$OMP end do nowait
+
+        ! ! Sweep upper/lower rows
+        ! !$OMP do 
+        ! do i = 2, self%N_x-1
+        !     i_finest = i * self%x_indx_step - self%x_indx_step + 1
+
+        !     ! Lower row
+        !     if (self%world%boundary_conditions(i_finest, 1) == 2) then
+        !         self%residual(i,1) = self%sourceTerm(i,1) - 2.0d0 * self%solution(i, 2) * self%coeffY - &
+        !             (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX - self%solution(i,1)/self%centerCoeff
+        !     else if (self%world%boundary_conditions(i_finest, 1) == 3) then
+        !         self%residual(i,1) = self%sourceTerm(i,1) - (self%solution(i, 2) + self%solution(i, self%N_y-1)) * self%coeffY - &
+        !             (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX -  self%solution(i,1)/self%centerCoeff
+        !         self%solution(i, self%N_y) = self%solution(i,1)
+        !     end if
+
+        !     ! Upper row
+        !     if (self%world%boundary_conditions(i_finest, self%world%N_y) == 2) then
+        !         self%residual(i,self%N_y) = self%sourceTerm(i,self%N_y) - 2.0d0 * self%solution(i, self%N_y-1) * self%coeffY - &
+        !             (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX -  self%solution(i, self%N_y)/self%centerCoeff
+        !     end if
+        ! end do
+        ! !$OMP end do nowait
+
+        ! ! Sweep left/right columns
+        ! !$OMP do 
+        ! do j = 2, self%N_y-1
+        !     j_finest = j * self%y_indx_step - self%y_indx_step + 1
+
+        !     ! Left column
+        !     if (self%world%boundary_conditions(1, j_finest) == 2) then
+        !         self%residual(1,j) = self%sourceTerm(1,j) - (self%solution(1, j-1) + self%solution(1, j+1)) * self%coeffY - &
+        !             2.0d0 * self%solution(2, j) * self%coeffX - self%solution(1,j)/self%centerCoeff
+        !     else if (self%world%boundary_conditions(1,j_finest) == 3) then
+        !         self%residual(1,j) = self%sourceTerm(1,j) - (self%solution(1, j+1) + self%solution(1, j-1)) * self%coeffY - &
+        !             (self%solution(2, j) + self%solution(self%N_x-1, j)) * self%coeffX - self%solution(1,j)/self%centerCoeff
+        !         self%solution(self%N_x, j) = self%solution(1,j)
+        !     end if
+
+        !     ! Right column
+        !     if (self%world%boundary_conditions(self%world%N_x, j_finest) == 2) then
+        !         self%residual(self%N_x,j) = self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j-1) + self%solution(self%N_x, j+1)) * self%coeffY - &
+        !             2.0d0 * self%solution(self%N_x-1, j) * self%coeffX - self%solution(self%N_x,j)/self%centerCoeff
+        !     end if
+        ! end do
+        ! !$OMP end do
+        
+        ! !$OMP end parallel
+
+
+
+        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx)
+
+        !first do corners
+        !$OMP sections
+        !$OMP section
         if (self%world%boundary_conditions(1,1) == 2) then
             ! lower left corner
             self%residual(1,1) = self%sourceTerm(1,1) - 2.0d0 * self%solution(1, 2) * self%coeffY - &
                 2.0d0 * self%solution(2, 1) * self%coeffX  - self%solution(1,1)/self%centerCoeff
         end if
+        !$OMP section
         if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
             ! lower right corner
             self%residual(self%N_x, 1) = self%sourceTerm(self%N_x, 1) - 2.0d0 * self%solution(self%N_x, 2) * self%coeffY - &
                 2.0d0 * self%solution(self%N_x-1, 1) * self%coeffX -  self%solution(self%N_x, 1)/self%centerCoeff
         end if
+        !$OMP section
         if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
             ! upper left corner
             self%residual(1, self%N_y) = self%sourceTerm(1, self%N_y) - 2.0d0 * self%solution(1, self%N_y-1) * self%coeffY - &
-                2.0d0 * self%solution(2, self%N_y-1) * self%coeffX - self%solution(1, self%N_y)/self%centerCoeff
+                2.0d0 * self%solution(2, self%N_y) * self%coeffX - self%solution(1, self%N_y)/self%centerCoeff
         end if
+        !$OMP section
         if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
             ! upper right corner
             self%residual(self%N_x, self%N_y) = self%sourceTerm(self%N_x, self%N_y) - 2.0d0 * self%solution(self%N_x, self%N_y-1) * self%coeffY - &
                 2.0d0 * self%solution(self%N_x-1, self%N_y) * self%coeffX - self%solution(self%N_x, self%N_y)/self%centerCoeff
         end if
+        !$OMP end sections nowait
 
-        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, i_finest, j_finest)
-
+        ! Inner Nodes
         !$OMP do
-        ! Sweep inner nodes
         do k = 1, self%number_inner_rows
             j = self%start_row_indx + k - 1
             N_indx = j + 1
             S_indx = j - 1
             do p = 1, self%number_row_sections(k)
-                do i = self%start_inner_indx_x(p, k), self%end_inner_indx_x(p,k) 
+                do i = self%start_inner_indx_x(p, k), self%end_inner_indx_x(p,k)  
                     E_indx = i+1
                     W_indx = i-1
                     self%residual(i,j) = self%sourceTerm(i,j) - (self%solution(i, N_indx) + self%solution(i, S_indx)) * self%coeffY - &
@@ -160,52 +257,65 @@ contains
         end do
         !$OMP end do nowait
 
-        ! Sweep upper/lower rows
-        !$OMP do 
-        do i = 2, self%N_x-1
-            i_finest = i * self%x_indx_step - self%x_indx_step + 1
-
-            ! Lower row
-            if (self%world%boundary_conditions(i_finest, 1) == 2) then
-                self%residual(i,1) = self%sourceTerm(i,1) - 2.0d0 * self%solution(i, 2) * self%coeffY - &
-                    (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX - self%solution(i,1)/self%centerCoeff
-            else if (self%world%boundary_conditions(i_finest, 1) == 3) then
-                self%residual(i,1) = self%sourceTerm(i,1) - (self%solution(i, 2) + self%solution(i, self%N_y-1)) * self%coeffY - &
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
+            end if
+            do i = self%start_bottom_row_indx(p), self%end_bottom_row_indx(p)
+                self%residual(i,1) = self%sourceTerm(i,1) - (self%solution(i, 2) + self%solution(i, S_indx)) * self%coeffY - &
                     (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX -  self%solution(i,1)/self%centerCoeff
-                self%solution(i, self%N_y) = self%solution(i,1)
-            end if
-
-            ! Upper row
-            if (self%world%boundary_conditions(i_finest, self%world%N_y) == 2) then
-                self%residual(i,self%N_y) = self%sourceTerm(i,self%N_y) - 2.0d0 * self%solution(i, self%N_y-1) * self%coeffY - &
-                    (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX -  self%solution(i, self%N_y)/self%centerCoeff
-            end if
+            end do
         end do
         !$OMP end do nowait
 
-        ! Sweep left/right columns
-        !$OMP do 
-        do j = 2, self%N_y-1
-            j_finest = j * self%y_indx_step - self%y_indx_step + 1
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            do i = self%start_top_row_indx(p), self%end_top_row_indx(p)
+                self%residual(i,self%N_y) = self%sourceTerm(i,self%N_y) - (self%solution(i, self%N_y-1) + self%solution(i, N_indx)) * self%coeffY - &
+                    (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX -  self%solution(i, self%N_y)/self%centerCoeff
+            end do
+        end do
+        !$OMP end do nowait
 
-            ! Left column
-            if (self%world%boundary_conditions(1, j_finest) == 2) then
-                self%residual(1,j) = self%sourceTerm(1,j) - (self%solution(1, j-1) + self%solution(1, j+1)) * self%coeffY - &
-                    2.0d0 * self%solution(2, j) * self%coeffX - self%solution(1,j)/self%centerCoeff
-            else if (self%world%boundary_conditions(1,j_finest) == 3) then
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            do j = self%start_left_column_indx(p), self%end_left_column_indx(p)
                 self%residual(1,j) = self%sourceTerm(1,j) - (self%solution(1, j+1) + self%solution(1, j-1)) * self%coeffY - &
-                    (self%solution(2, j) + self%solution(self%N_x-1, j)) * self%coeffX - self%solution(1,j)/self%centerCoeff
-                self%solution(self%N_x, j) = self%solution(1,j)
-            end if
+                    (self%solution(2, j) + self%solution(W_indx, j)) * self%coeffX - self%solution(1,j)/self%centerCoeff
+            end do
+        end do
+        !$OMP end do nowait
 
-            ! Right column
-            if (self%world%boundary_conditions(self%world%N_x, j_finest) == 2) then
-                self%residual(self%N_x,j) = self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j-1) + self%solution(self%N_x, j+1)) * self%coeffY - &
-                    2.0d0 * self%solution(self%N_x-1, j) * self%coeffX - self%solution(self%N_x,j)/self%centerCoeff
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
             end if
+            do j = self%start_right_column_indx(p), self%end_right_column_indx(p)
+                self%residual(self%N_x,j) = self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j-1) + self%solution(self%N_x, j+1)) * self%coeffY - &
+                (self%solution(self%N_x-1, j) + self%solution(E_indx, j)) * self%coeffX - self%solution(self%N_x,j)/self%centerCoeff
+            end do
         end do
         !$OMP end do
-        
         !$OMP end parallel
     end subroutine calcResidual_even
 

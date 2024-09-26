@@ -260,8 +260,6 @@ contains
             end do
             !$OMP end do
 
-            !$OMP barrier
-
             ! !right boundary
             !$OMP do
             do p = 1, self%number_right_column_sections
@@ -518,6 +516,28 @@ contains
                 self%solution(1,j) = (self%sourceTerm(1,j) - (self%solution(1, j+1) + self%solution(1, j-1)) * self%coeffY - &
                         (self%solution(2, j) + self%solution(W_indx, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(1,j)
                 Res = Res + (self%solution(1,j) - oldSol)**2
+            end do
+        end do
+        !$OMP end do
+
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
+            end if
+            if (MOD(self%start_right_column_indx(p),2) == 1) then
+                k = self%start_right_column_indx(p)
+            else
+                k = self%start_right_column_indx(p) + 1
+            end if
+            do j = k, self%end_right_column_indx(p), 2
+                oldSol = self%solution(self%N_x, j)
+                self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j+1) + self%solution(self%N_x, j-1)) * self%coeffY - &
+                        (self%solution(self%N_x-1, j) + self%solution(E_indx, j)) * self%coeffX) * self%centerCoeff * self%omega + omega_inv * self%solution(self%N_x,j)
+                Res = Res + (self%solution(self%N_x,j) - oldSol)**2
             end do
         end do
         !$OMP end do

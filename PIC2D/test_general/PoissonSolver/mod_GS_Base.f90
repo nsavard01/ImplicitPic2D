@@ -1,6 +1,7 @@
 module mod_GS_Base
     use iso_fortran_env, only: int32, int64, real64
     use mod_domain_base
+    use omp_lib
     implicit none
 
     ! Have tested, having indexed references is faster than using if statements for entire domain using boundary conditions (factor of 2)
@@ -326,17 +327,28 @@ contains
 
     end subroutine initialize_GS_orthogonal_base
     
-    subroutine solveGS(self, tol)
+    subroutine solveGS(self, stepTol, relTol)
         ! Solve GS down to some tolerance
         class(GS_Base), intent(in out) :: self
-        real(real64), intent(in) :: tol
-        real(real64) :: Res
-        Res = 1.0
+        real(real64), intent(in) :: stepTol, relTol
+        real(real64) :: stepRes, relRes, R2_init, R2
+        stepRes = 1.0d0
+        relRes = 1.0d0
         self%iterNumber = 0
-        do while (Res > tol)
+        call self%calcResidual()
+        !$OMP parallel workshare
+        R2_init = SUM(self%residual**2)
+        !$OMP end parallel workshare
+        R2_init = SQRT(R2_init)
+        do while (stepRes > stepTol .or. relRes > relTol)
             ! single iterations slightly faster
             call self%smoothIterations(100)
-            Res = self%smoothWithRes()
+            stepRes = self%smoothWithRes()
+            call self%calcResidual()
+            !$OMP parallel workshare
+            R2 = SUM(self%residual**2)
+            !$OMP end parallel workshare
+            relRes = sqrt(R2)/R2_init
             self%iterNumber = self%iterNumber + 101
         end do
 
