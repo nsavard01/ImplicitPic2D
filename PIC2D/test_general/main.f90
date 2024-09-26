@@ -31,7 +31,7 @@ program main
     call omp_set_max_active_levels(numThreads)
     
     evenGridBool = .true.
-    redBlackBool = .true.
+    redBlackBool = .false.
     PCG_bool = .false.
     Krylov_bool = .false.
     center_box_bool = .true.
@@ -49,8 +49,8 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 2 ! North
-    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(2) = 1 ! East
     NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
@@ -249,7 +249,7 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%solveGS(stepTol, relTol)
+    call solver%smoothIterations(10000)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'

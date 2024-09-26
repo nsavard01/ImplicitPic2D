@@ -340,7 +340,7 @@ contains
         R2_init = SUM(self%residual**2)
         !$OMP end parallel workshare
         R2_init = SQRT(R2_init)
-        do while (stepRes > stepTol .or. relRes > relTol)
+        do while (stepRes > stepTol .and. relRes > relTol)
             ! single iterations slightly faster
             call self%smoothIterations(100)
             stepRes = self%smoothWithRes()
