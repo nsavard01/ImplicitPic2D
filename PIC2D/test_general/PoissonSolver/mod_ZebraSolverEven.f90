@@ -542,6 +542,7 @@ contains
                     ! Determine boundary properties
                     idx_start = self%start_inner_indx_x(p,k)
                     idx_end = self%end_inner_indx_x(p,k)
+                    
                     boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
                     boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
 
@@ -557,7 +558,7 @@ contains
                         if (boundary_end /= 2) then
                             ! dirichlet boundary on other side
                             cp_thread(i) = 2.0d0 * self%coeffX * self%centerCoeff
-                            source_thread(i) = self%sourceTerm(i, j) - 2.0d0 * self%coeffY * (self%solution(i, N_indx)  + self%solution(i, S_indx))
+                            source_thread(i) = self%sourceTerm(i, j) - self%coeffY * (self%solution(i, N_indx)  + self%solution(i, S_indx))
                             dp_thread(i) = source_thread(i) * self%centerCoeff
                         else
                             ! another neumann on other side, need to do point iteration to get guess for phi at boundary
@@ -593,7 +594,7 @@ contains
                         source_thread(i) = (source_thread(i) - dp_thread(i-1) * m_thread)/&
                             (inv_centerCoeff - cp_thread(i-1)  * m_thread)
                     case (3)
-                        source_thread(i) = source_thread(idx_start-1)
+                        source_thread(i) = self%solution(1,j)
                     end select
 
                     ! backwards substitution
@@ -671,7 +672,6 @@ contains
                     boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
                     boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
 
-
                     !left boundary
                     i = idx_start - 1
                     select case (boundary_start)
@@ -683,7 +683,7 @@ contains
                         if (boundary_end /= 2) then
                             ! dirichlet boundary on other side
                             cp_thread(i) = 2.0d0 * self%coeffX * self%centerCoeff
-                            source_thread(i) = self%sourceTerm(i, j) - 2.0d0 * self%coeffY * (self%solution(i, N_indx)  + self%solution(i, S_indx))
+                            source_thread(i) = self%sourceTerm(i, j) - self%coeffY * (self%solution(i, N_indx)  + self%solution(i, S_indx))
                             dp_thread(i) = source_thread(i) * self%centerCoeff
                         else
                             ! another neumann on other side, need to do point iteration to get guess for phi at boundary
@@ -719,7 +719,7 @@ contains
                         source_thread(i) = (source_thread(i) - dp_thread(i-1) * m_thread)/&
                             (inv_centerCoeff - cp_thread(i-1)  * m_thread)
                     case (3)
-                        source_thread(i) = source_thread(idx_start-1)
+                        source_thread(i) = self%solution(1,j)
                     end select
 
                     ! backwards substitution
@@ -781,7 +781,6 @@ contains
             
             !$OMP end parallel
         end do
-
     
     end subroutine smoothIterations_ZebraEven
 
