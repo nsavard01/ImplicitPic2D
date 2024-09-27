@@ -30,6 +30,7 @@ module mod_ZebraSolverEven
         procedure, public, pass(self) :: constructPoissonOrthogonal => constructPoissonOrthogonal_ZebraEven
         procedure, public, pass(self) :: smoothIterations => smoothIterations_ZebraEven
         procedure, public, pass(self) :: solve_row
+        procedure, public, pass(self) :: solve_column
         ! procedure, public, pass(self) :: smoothWithRes => smoothWithRes_ZebraEven
         ! procedure, public, pass(self) :: matMult
         ! procedure, public, pass(self) :: XAX_Mult
@@ -528,162 +529,190 @@ contains
 
             ! white rows 
 
-            !$OMP do
-            do k = self%inner_row_idx_white_start, self%number_inner_rows, 2
-                j = self%start_row_indx + k - 1
-                N_indx = j + 1
-                S_indx = j - 1
-                j_fine = j * self%y_indx_step - self%y_indx_step + 1
-                do p = 1, self%number_row_sections(k)
-
-                    ! Determine boundary properties
-                    idx_start = self%start_inner_indx_x(p,k)
-                    idx_end = self%end_inner_indx_x(p,k)
-                    vector_size = idx_end - idx_start + 3
-                    
-                    boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
-                    boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
-
-
-                    call self%solve_row(idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
-                end do
-            end do
-            !$OMP end do nowait
-
-            !$OMP sections
-            !$OMP section
-            ! bottom boundary
-            if (self%number_bottom_row_sections /= 0) then
-                N_indx = 2
-                j = 1
-                do p = 1, self%number_bottom_row_sections
-                    if (self%bottom_row_boundary_type(p) == 2) then
-                        S_indx = N_indx
-                    else
-                        S_indx = self%N_y-1
-                    end if
-                     ! Determine boundary properties
-                    idx_start = self%start_bottom_row_indx(p)
-                    idx_end = self%end_bottom_row_indx(p)
-                    vector_size = idx_end - idx_start + 3
-                    
-                    boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, 1)
-                    boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, 1)
-
-
-                    call self%solve_row(idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
-                end do
-            end if
-            !$OMP section
-            ! top boundary
-            if (self%number_top_row_sections /= 0) then
-                S_indx = self%N_y-1
-                j = self%N_y
-                do p = 1, self%number_top_row_sections
-                    if (self%top_row_boundary_type(p) == 2) then
-                        N_indx = S_indx
-                    else
-                        N_indx = 2
-                    end if
-                     ! Determine boundary properties
-                    idx_start = self%start_top_row_indx(p)
-                    idx_end = self%end_top_row_indx(p)
-                    vector_size = idx_end - idx_start + 3
-                    
-                    boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, 1)
-                    boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, 1)
-
-                    call self%solve_row(idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
-                end do
-            end if
-            !$OMP end sections
-
-            !$OMP barrier
-            
-            ! black columns
-
             ! !$OMP do
-            ! do k = self%inner_column_idx_black_start, self%number_inner_columns, 2
-            !     i = self%start_column_indx + k - 1
-            !     E_indx = i + 1
-            !     W_indx = j - 1
-            !     do p = 1, self%number_column_sections(k)
-            !         do j = self%start_inner_indx_y(p,k), self%end_inner_indx_y(p,k)
-            !             self%solution(i,j) = 500.0d0
-            !         end do
-            !     end do
-            ! end do
-            ! !$OMP end do
-            
-            !$OMP barrier
+            ! do k = self%inner_row_idx_white_start, self%number_inner_rows, 2
+            !     j = self%start_row_indx + k - 1
+            !     N_indx = j + 1
+            !     S_indx = j - 1
+            !     j_fine = j * self%y_indx_step - self%y_indx_step + 1
+            !     do p = 1, self%number_row_sections(k)
 
-            ! black row
-            !$OMP do
-            do k = self%inner_row_idx_black_start, self%number_inner_rows, 2
-                j = self%start_row_indx + k - 1
-                N_indx = j + 1
-                S_indx = j - 1
-                j_fine = j * self%y_indx_step - self%y_indx_step + 1
-                do p = 1, self%number_row_sections(k)
+            !         ! Determine boundary properties
+            !         idx_start = self%start_inner_indx_x(p,k)
+            !         idx_end = self%end_inner_indx_x(p,k)
+            !         vector_size = idx_end - idx_start + 3
+                    
+            !         boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
+            !         boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
 
-                    ! Determine boundary properties
-                    idx_start = self%start_inner_indx_x(p,k)
-                    idx_end = self%end_inner_indx_x(p,k)
-                    vector_size = idx_end - idx_start + 3
-                    boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
-                    boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
 
-                    call self%solve_row(idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
-                end do
-            end do
-            !$OMP end do
-
-            !$OMP barrier
-
-            ! white columns
-            ! !$OMP do
-            ! do k = self%inner_column_idx_white_start, self%number_inner_columns, 2
-            !     i = self%start_column_indx + k - 1
-            !     E_indx = i + 1
-            !     W_indx = j - 1
-            !     do p = 1, self%number_column_sections(k)
-            !         do j = self%start_inner_indx_y(p,k), self%end_inner_indx_y(p,k)
-            !             self%solution(i,j) = 500.0d0
-            !         end do
+            !         call self%solve_row(idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
             !     end do
             ! end do
             ! !$OMP end do nowait
 
             ! !$OMP sections
             ! !$OMP section
-            ! ! left boundary
-            ! if (self%number_left_column_sections /= 0) then
-            !     do p = 1, self%number_left_column_sections
-            !         if (self%left_column_boundary_type(p) == 2) then
-            !             W_indx = 2
+            ! ! bottom boundary
+            ! if (self%number_bottom_row_sections /= 0) then
+            !     N_indx = 2
+            !     j = 1
+            !     do p = 1, self%number_bottom_row_sections
+            !         if (self%bottom_row_boundary_type(p) == 2) then
+            !             S_indx = N_indx
             !         else
-            !             W_indx = self%N_x-1
+            !             S_indx = self%N_y-1
             !         end if
-            !         do j = self%start_left_column_indx(p), self%end_left_column_indx(p)
-            !             self%solution(1,j) = 500.0d0
-            !         end do
+            !          ! Determine boundary properties
+            !         idx_start = self%start_bottom_row_indx(p)
+            !         idx_end = self%end_bottom_row_indx(p)
+            !         vector_size = idx_end - idx_start + 3
+                    
+            !         boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, 1)
+            !         boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, 1)
+
+
+            !         call self%solve_row(idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
             !     end do
             ! end if
             ! !$OMP section
-            ! ! right boundary
-            ! if (self%number_right_column_sections /= 0) then
-            !     do p = 1, self%number_right_column_sections
-            !         if (self%right_column_boundary_type(p) == 2) then
-            !             E_indx = self%N_x-1
+            ! ! top boundary
+            ! if (self%number_top_row_sections /= 0) then
+            !     S_indx = self%N_y-1
+            !     j = self%N_y
+            !     do p = 1, self%number_top_row_sections
+            !         if (self%top_row_boundary_type(p) == 2) then
+            !             N_indx = S_indx
             !         else
-            !             E_indx = 2
+            !             N_indx = 2
             !         end if
-            !         do j = self%start_right_column_indx(p), self%end_right_column_indx(p)
-            !             self%solution(self%N_x,j) = 500.0d0
-            !         end do
+            !          ! Determine boundary properties
+            !         idx_start = self%start_top_row_indx(p)
+            !         idx_end = self%end_top_row_indx(p)
+            !         vector_size = idx_end - idx_start + 3
+                    
+            !         boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, 1)
+            !         boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, 1)
+
+            !         call self%solve_row(idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
             !     end do
             ! end if
             ! !$OMP end sections
+
+            !$OMP barrier
+            
+            ! black columns
+
+            !$OMP do
+            do k = self%inner_column_idx_black_start, self%number_inner_columns, 2
+                i = self%start_column_indx + k - 1
+                E_indx = i + 1
+                W_indx = i - 1
+                i_fine = i * self%x_indx_step - self%x_indx_step + 1
+                do p = 1, self%number_column_sections(k)
+                    ! Determine boundary properties
+                    idx_start = self%start_inner_indx_y(p,k)
+                    idx_end = self%end_inner_indx_y(p,k)
+                    vector_size = idx_end - idx_start + 3
+                    boundary_start = self%world%boundary_conditions(i_fine, (idx_start-1) * self%y_indx_step - self%y_indx_step + 1)
+                    boundary_end = self%world%boundary_conditions(i_fine, (idx_end+1) * self%y_indx_step - self%y_indx_step + 1)
+
+                    call self%solve_column(idx_start, idx_end, boundary_start, boundary_end, vector_size, i, E_indx, W_indx)
+                end do
+            end do
+            !$OMP end do
+            
+            !$OMP barrier
+
+            ! black row
+            ! !$OMP do
+            ! do k = self%inner_row_idx_black_start, self%number_inner_rows, 2
+            !     j = self%start_row_indx + k - 1
+            !     N_indx = j + 1
+            !     S_indx = j - 1
+            !     j_fine = j * self%y_indx_step - self%y_indx_step + 1
+            !     do p = 1, self%number_row_sections(k)
+
+            !         ! Determine boundary properties
+            !         idx_start = self%start_inner_indx_x(p,k)
+            !         idx_end = self%end_inner_indx_x(p,k)
+            !         vector_size = idx_end - idx_start + 3
+            !         boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
+            !         boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, j_fine)
+
+            !         call self%solve_row(idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
+            !     end do
+            ! end do
+            ! !$OMP end do
+
+            !$OMP barrier
+
+            ! white columns
+            !$OMP do
+            do k = self%inner_column_idx_white_start, self%number_inner_columns, 2
+                i = self%start_column_indx + k - 1
+                E_indx = i + 1
+                W_indx = i - 1
+                i_fine = i * self%x_indx_step - self%x_indx_step + 1
+                do p = 1, self%number_column_sections(k)
+                    ! Determine boundary properties
+                    idx_start = self%start_inner_indx_y(p,k)
+                    idx_end = self%end_inner_indx_y(p,k)
+                    vector_size = idx_end - idx_start + 3
+                    boundary_start = self%world%boundary_conditions(i_fine, (idx_start-1) * self%y_indx_step - self%y_indx_step + 1)
+                    boundary_end = self%world%boundary_conditions(i_fine, (idx_end+1) * self%y_indx_step - self%y_indx_step + 1)
+
+                    call self%solve_column(idx_start, idx_end, boundary_start, boundary_end, vector_size, i, E_indx, W_indx)
+                end do
+            end do
+            !$OMP end do nowait
+
+            !$OMP sections
+            !$OMP section
+            ! left boundary
+            if (self%number_left_column_sections /= 0) then
+                E_indx = 2
+                i = 1
+                do p = 1, self%number_left_column_sections
+                    if (self%left_column_boundary_type(p) == 2) then
+                        W_indx = E_indx
+                    else
+                        W_indx = self%N_x-1
+                    end if
+                     ! Determine boundary properties
+                    idx_start = self%start_left_column_indx(p)
+                    idx_end = self%end_left_column_indx(p)
+                    vector_size = idx_end - idx_start + 3
+                    
+                    boundary_start = self%world%boundary_conditions(1,(idx_start-1) * self%y_indx_step - self%y_indx_step + 1)
+                    boundary_end = self%world%boundary_conditions(1, (idx_end+1) * self%y_indx_step - self%y_indx_step + 1)
+
+                    call self%solve_column(idx_start, idx_end, boundary_start, boundary_end, vector_size, i, E_indx, W_indx)
+                end do
+            end if
+            !$OMP section
+            ! right boundary
+            if (self%number_right_column_sections /= 0) then
+                W_indx = self%N_x-1
+                i = self%N_x
+                do p = 1, self%number_right_column_sections
+                    if (self%right_column_boundary_type(p) == 2) then
+                        E_indx = W_indx
+                    else
+                        E_indx = 2
+                    end if
+                     ! Determine boundary properties
+                    idx_start = self%start_right_column_indx(p)
+                    idx_end = self%end_right_column_indx(p)
+                    vector_size = idx_end - idx_start + 3
+                    
+                    boundary_start = self%world%boundary_conditions(1,(idx_start-1) * self%y_indx_step - self%y_indx_step + 1)
+                    boundary_end = self%world%boundary_conditions(1, (idx_end+1) * self%y_indx_step - self%y_indx_step + 1)
+
+                    call self%solve_column(idx_start, idx_end, boundary_start, boundary_end, vector_size, i, E_indx, W_indx)
+                end do
+            end if
+            !$OMP end sections
             
             !$OMP end parallel
         end do
@@ -905,9 +934,9 @@ contains
     ! end function smoothWithRes_ZebraEven
 
 
-    subroutine solve_row(self, idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx)
+    subroutine solve_row(self, idx_start, idx_end, boundary_start, boundary_end, vector_size, j_grid, N_indx, S_indx)
         class(ZebraSolverEven), intent(in out) :: self
-        integer(int32), intent(in) :: idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx
+        integer(int32), intent(in) :: idx_start, idx_end, boundary_start, boundary_end, vector_size, j_grid, N_indx, S_indx
         integer(int32) :: i_grid, i_local
         real(real64) :: source_thread(vector_size), cp_thread(vector_size-1), dp_thread(vector_size-1), m_thread
         
@@ -917,26 +946,26 @@ contains
         select case (boundary_start)
         case (1)
             cp_thread(1) = 0.0d0
-            source_thread(1) = self%solution(i_grid,j)
-            dp_thread(1) = self%solution(i_grid,j)
+            source_thread(1) = self%solution(i_grid,j_grid)
+            dp_thread(1) = self%solution(i_grid,j_grid)
         case (2)
             if (boundary_end /= 2) then
                 ! dirichlet boundary on other side
                 cp_thread(1) = 2.0d0 * self%coeffX * self%centerCoeff
-                source_thread(1) = self%sourceTerm(i_grid, j) - self%coeffY * (self%solution(i_grid, N_indx)  + self%solution(i_grid, S_indx))
+                source_thread(1) = self%sourceTerm(i_grid, j_grid) - self%coeffY * (self%solution(i_grid, N_indx)  + self%solution(i_grid, S_indx))
                 dp_thread(1) = source_thread(1) * self%centerCoeff
             else
                 ! another neumann on other side, need to do point iteration to get guess for phi at boundary
                 cp_thread(1) = 0.0d0
-                source_thread(1) = (self%sourceTerm(i_grid,j) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))- &
-                    2.0d0 * self%coeffX * self%solution(2, j)) * self%centerCoeff* self%omega + self%inv_omega * self%solution(i_grid,j)
+                source_thread(1) = (self%sourceTerm(i_grid,j_grid) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))- &
+                    2.0d0 * self%coeffX * self%solution(2, j_grid)) * self%centerCoeff* self%omega + self%inv_omega * self%solution(i_grid,j_grid)
                 dp_thread(1) = source_thread(1)
             end if
         case (3)
             ! Point iteration
             cp_thread(1) = 0.0d0
-            source_thread(1) = (self%sourceTerm(i_grid,j) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))- &
-                self%coeffX * (self%solution(2, j) + self%solution(self%N_x-1, j))) * self%centerCoeff* self%omega + self%inv_omega * self%solution(i_grid,j)
+            source_thread(1) = (self%sourceTerm(i_grid,j_grid) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))- &
+                self%coeffX * (self%solution(2, j_grid) + self%solution(self%N_x-1, j_grid))) * self%centerCoeff* self%omega + self%inv_omega * self%solution(i_grid,j_grid)
             dp_thread(1) = source_thread(1)
         end select
 
@@ -945,7 +974,7 @@ contains
             i_local = i_grid - idx_start + 2
             m_thread = self%inv_centerCoeff - cp_thread(i_local-1) * self%coeffX
             cp_thread(i_local) = self%coeffX / m_thread
-            source_thread(i_local) = self%sourceTerm(i_grid,j) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))
+            source_thread(i_local) = self%sourceTerm(i_grid,j_grid) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))
             dp_thread(i_local) = (source_thread(i_local) - dp_thread(i_local-1) * self%coeffX) / m_thread
         end do
 
@@ -953,14 +982,14 @@ contains
         i_grid = idx_end + 1
         select case(boundary_end)
         case (1)
-            source_thread(vector_size) = self%solution(i_grid, j)
+            source_thread(vector_size) = self%solution(i_grid, j_grid)
         case (2)
-            source_thread(vector_size) = self%sourceTerm(i_grid,j) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))
+            source_thread(vector_size) = self%sourceTerm(i_grid,j_grid) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))
             m_thread = 2.0d0 * self%coeffX
             source_thread(vector_size) = (source_thread(vector_size) - dp_thread(vector_size-1) * m_thread)/&
                 (self%inv_centerCoeff - cp_thread(vector_size-1)  * m_thread)
         case (3)
-            source_thread(vector_size) = self%solution(1,j)
+            source_thread(vector_size) = self%solution(1,j_grid)
         end select
 
         ! backwards substitution
@@ -968,9 +997,76 @@ contains
             source_thread(i_local) = dp_thread(i_local)-cp_thread(i_local)*source_thread(i_local+1)
         end do
 
-        self%solution(idx_start-1:idx_end+1,j) = source_thread
+        self%solution(idx_start-1:idx_end+1,j_grid) = source_thread
 
     end subroutine solve_row
+
+    subroutine solve_column(self, idx_start, idx_end, boundary_start, boundary_end, vector_size, i_grid, E_indx, W_indx)
+        class(ZebraSolverEven), intent(in out) :: self
+        integer(int32), intent(in) :: idx_start, idx_end, boundary_start, boundary_end, vector_size, i_grid, E_indx, W_indx
+        integer(int32) :: j_grid, j_local
+        real(real64) :: source_thread(vector_size), cp_thread(vector_size-1), dp_thread(vector_size-1), m_thread
+        
+
+        !left boundary
+        j_grid = idx_start - 1
+        select case (boundary_start)
+        case (1)
+            cp_thread(1) = 0.0d0
+            source_thread(1) = self%solution(i_grid,j_grid)
+            dp_thread(1) = self%solution(i_grid,j_grid)
+        case (2)
+            if (boundary_end /= 2) then
+                ! dirichlet boundary on other side
+                cp_thread(1) = 2.0d0 * self%coeffY * self%centerCoeff
+                source_thread(1) = self%sourceTerm(i_grid, j_grid) - self%coeffX * (self%solution(E_indx, j_grid)  + self%solution(W_indx, j_grid))
+                dp_thread(1) = source_thread(1) * self%centerCoeff
+            else
+                ! another neumann on other side, need to do point iteration to get guess for phi at boundary
+                cp_thread(1) = 0.0d0
+                source_thread(1) = (self%sourceTerm(i_grid,j_grid) - self%coeffX * (self%solution(E_indx, j_grid) + self%solution(W_indx, j_grid))- &
+                    2.0d0 * self%coeffY * self%solution(i_grid, 2)) * self%centerCoeff* self%omega + self%inv_omega * self%solution(i_grid,j_grid)
+                dp_thread(1) = source_thread(1)
+            end if
+        case (3)
+            ! Point iteration
+            cp_thread(1) = 0.0d0
+            source_thread(1) = (self%sourceTerm(i_grid,j_grid) - self%coeffX * (self%solution(E_indx, j_grid) + self%solution(W_indx, j_grid))- &
+                self%coeffY * (self%solution(i_grid, 2) + self%solution(i_grid, self%N_y-1))) * self%centerCoeff* self%omega + self%inv_omega * self%solution(i_grid,j_grid)
+            dp_thread(1) = source_thread(1)
+        end select
+
+        ! forward substitution
+        do j_grid = idx_start,idx_end
+            j_local = j_grid - idx_start + 2
+            m_thread = self%inv_centerCoeff - cp_thread(j_local-1) * self%coeffY
+            cp_thread(j_local) = self%coeffY / m_thread
+            source_thread(j_local) = self%sourceTerm(i_grid,j_grid) - self%coeffX * (self%solution(E_indx, j_grid) + self%solution(W_indx, j_grid))
+            dp_thread(j_local) = (source_thread(j_local) - dp_thread(j_local-1) * self%coeffY) / m_thread
+        end do
+
+        ! rightmost boundary properties
+        j_grid = idx_end + 1
+        select case(boundary_end)
+        case (1)
+            source_thread(vector_size) = self%solution(i_grid, j_grid)
+        case (2)
+            source_thread(vector_size) = self%sourceTerm(i_grid,j_grid) - self%coeffX * (self%solution(E_indx, j_grid) + self%solution(W_indx, j_grid))
+            m_thread = 2.0d0 * self%coeffY
+            source_thread(vector_size) = (source_thread(vector_size) - dp_thread(vector_size-1) * m_thread)/&
+                (self%inv_centerCoeff - cp_thread(vector_size-1)  * m_thread)
+        case (3)
+            source_thread(vector_size) = self%solution(i_grid,1)
+        end select
+
+        ! backwards substitution
+        do j_local = vector_size-1, 1, -1
+            source_thread(j_local) = dp_thread(j_local)-cp_thread(j_local)*source_thread(j_local+1)
+        end do
+
+        self%solution(i_grid,idx_start-1:idx_end+1) = source_thread
+
+    end subroutine solve_column
 
 
 end module mod_ZebraSolverEven
