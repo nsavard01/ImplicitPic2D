@@ -30,7 +30,7 @@ program main
     call omp_set_num_threads(numThreads)
     call omp_set_max_active_levels(numThreads)
     
-    evenGridBool = .true.
+    evenGridBool = .false.
     redBlackBool = .true.
     PCG_bool = .false.
     Krylov_bool = .false.
@@ -49,10 +49,10 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 2 ! North
-    NESW_wallBoundaries(2) = 2 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 1 ! West
+    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(2) = 3 ! East
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 3 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -117,6 +117,9 @@ program main
         else
             solver = ZebraSolverEven(omega, world, world%N_x, world%N_y)
         end if
+    type is (domain_curv)
+        call buildCurvGridOrthogonalPoissonMatrix(world%N_x, world%N_y, world%del_x, world%del_y, &
+        world%boundary_conditions, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
     end select
     call directSolver%initializePardiso(1, 11, 1, 0)
 
@@ -138,15 +141,15 @@ program main
     if (lowerBound == 1 .and. lowerPhi == 0) directSolver%solution(1:world%N_x) = lowerPhi
     if (leftBound == 1 .and. leftPhi == 0) directSolver%solution(1:mat_dimension - world%N_x + 1:world%N_x) = leftPhi
 
-    if (upperBound == 1 .and. upperPhi /= 0) solver%solution(:, solver%N_y) = upperPhi
-    if (rightBound ==1 .and. rightPhi /=0) solver%solution(solver%N_x, :) = rightPhi
-    if (lowerBound == 1 .and. lowerPhi /= 0) solver%solution(:, 1) = lowerPhi
-    if (leftBound == 1 .and. leftPhi /= 0) solver%solution(1,:) = leftPhi
+    ! if (upperBound == 1 .and. upperPhi /= 0) solver%solution(:, solver%N_y) = upperPhi
+    ! if (rightBound ==1 .and. rightPhi /=0) solver%solution(solver%N_x, :) = rightPhi
+    ! if (lowerBound == 1 .and. lowerPhi /= 0) solver%solution(:, 1) = lowerPhi
+    ! if (leftBound == 1 .and. leftPhi /= 0) solver%solution(1,:) = leftPhi
 
-    if (upperBound == 1 .and. upperPhi == 0) solver%solution(:, solver%N_y)  = upperPhi
-    if (rightBound ==1 .and. rightPhi ==0) solver%solution(solver%N_x, :) = rightPhi
-    if (lowerBound == 1 .and. lowerPhi == 0) solver%solution(:, 1) = lowerPhi
-    if (leftBound == 1 .and. leftPhi == 0) solver%solution(1,:)  = leftPhi
+    ! if (upperBound == 1 .and. upperPhi == 0) solver%solution(:, solver%N_y)  = upperPhi
+    ! if (rightBound ==1 .and. rightPhi ==0) solver%solution(solver%N_x, :) = rightPhi
+    ! if (lowerBound == 1 .and. lowerPhi == 0) solver%solution(:, 1) = lowerPhi
+    ! if (leftBound == 1 .and. leftPhi == 0) solver%solution(1,:)  = leftPhi
 
     if (center_box_bool) then
         !$OMP parallel private(k)
@@ -155,7 +158,7 @@ program main
             do i = inner_box_first_x, inner_box_last_x
                 k = (j-1) * world%N_x + i 
                 directSolver%solution(k) = innerPhi
-                solver%solution(i,j) = innerPhi
+                ! solver%solution(i,j) = innerPhi
             end do
         end do
         !$OMP end do
@@ -228,14 +231,14 @@ program main
     !     end if
     ! end if
 
-    !$OMP parallel
+    !$OMP parallel private(k, i, j)
     !$OMP do collapse(2)
     do j = 1, N_y
         do i = 1, N_x
             k = (j-1) * N_x + i
             if (world%boundary_conditions(i,j) /= 1) then
                 ! stageOne%sourceTerm(i,j) = -rho/eps_0
-                solver%sourceTerm(i,j) = -rho/eps_0
+                ! solver%sourceTerm(i,j) = -rho/eps_0
                 directSolver%sourceTerm(k) = -rho/eps_0
             else
                 directSolver%sourceTerm(k) = directSolver%solution(k)
@@ -249,15 +252,15 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%solveGS(stepTol, relTol)
+    call directSolver%runPardiso()
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    print *, 'Took', solver%iterNumber, 'iterations'
-    call solver%calcResidual()
+    ! print *, 'Took', solver%iterNumber, 'iterations'
+    ! call solver%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%solution
+    write(41) directSolver%solution
     close(41)
    
     ! end associate
