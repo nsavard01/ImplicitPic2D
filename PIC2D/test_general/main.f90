@@ -18,7 +18,7 @@ program main
     class(GS_Base_Even), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
-    integer :: inner_box_last_y = 125, inner_box_first_y = 75, inner_box_first_x = 150, inner_box_last_x = 250
+    integer :: inner_box_first_y = 75, inner_box_last_y = 125, inner_box_first_x = 150, inner_box_last_x = 250
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
@@ -31,7 +31,7 @@ program main
     call omp_set_max_active_levels(numThreads)
     
     evenGridBool = .true.
-    redBlackBool = .false.
+    redBlackBool = .true.
     PCG_bool = .false.
     Krylov_bool = .false.
     center_box_bool = .true.
@@ -249,7 +249,7 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%smoothIterations(10000)
+    call solver%solveGS(stepTol, relTol)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'

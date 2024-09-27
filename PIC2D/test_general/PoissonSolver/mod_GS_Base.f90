@@ -352,6 +352,11 @@ contains
             relRes = sqrt(R2)/R2_init
             self%iterNumber = self%iterNumber + 101
         end do
+        if (stepRes > stepTol) then
+            print *, 'Converged due to step size'
+        else
+            print *, 'Converged due to R2 decrease'
+        end if
 
     end subroutine solveGS
 
