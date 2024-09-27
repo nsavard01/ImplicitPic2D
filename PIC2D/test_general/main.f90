@@ -12,7 +12,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 401, N_y = 201, numThreads = 32
+    integer(int32) :: N_x = 401, N_y = 201, numThreads = 6
     type(pardisoSolver) :: directSolver
     class(domain_base), allocatable, target :: world
     class(GS_Base_Even), allocatable :: solver
@@ -49,10 +49,10 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(1) = 3 ! North
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 3 ! South
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -249,7 +249,7 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%smoothIterations(10000)
+    call solver%smoothIterations(100000)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'

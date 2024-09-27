@@ -607,36 +607,162 @@ contains
             end do
             !$OMP end do nowait
 
-            ! !$OMP sections
-            ! !$OMP section
-            ! ! bottom boundary
-            ! if (self%number_bottom_row_sections /= 0) then
-            !     do p = 1, self%number_bottom_row_sections
-            !         if (self%bottom_row_boundary_type(p) == 2) then
-            !             S_indx = 2
-            !         else
-            !             S_indx = self%N_y-1
-            !         end if
-            !         do i = self%start_bottom_row_indx(p), self%end_bottom_row_indx(p)
-            !             self%solution(i,1) = 500.0d0
-            !         end do
-            !     end do
-            ! end if
-            ! !$OMP section
-            ! ! top boundary
-            ! if (self%number_top_row_sections /= 0) then
-            !     do p = 1, self%number_top_row_sections
-            !         if (self%top_row_boundary_type(p) == 2) then
-            !             S_indx = 2
-            !         else
-            !             S_indx = self%N_y-1
-            !         end if
-            !         do i = self%start_top_row_indx(p), self%end_top_row_indx(p)
-            !             self%solution(i,self%N_y) = 500.0d0
-            !         end do
-            !     end do
-            ! end if
-            ! !$OMP end sections
+            !$OMP sections
+            !$OMP section
+            ! bottom boundary
+            if (self%number_bottom_row_sections /= 0) then
+                N_indx = 2
+                j = 1
+                do p = 1, self%number_bottom_row_sections
+                    if (self%bottom_row_boundary_type(p) == 2) then
+                        S_indx = N_indx
+                    else
+                        S_indx = self%N_y-1
+                    end if
+                     ! Determine boundary properties
+                    idx_start = self%start_bottom_row_indx(p)
+                    idx_end = self%end_bottom_row_indx(p)
+                    
+                    boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, 1)
+                    boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, 1)
+
+
+                    !left boundary
+                    i = idx_start - 1
+                    select case (boundary_start)
+                    case (1)
+                        cp_thread(i) = 0.0d0
+                        source_thread(i) = self%solution(i,j)
+                        dp_thread(i) = self%solution(i,j)
+                    case (2)
+                        if (boundary_end /= 2) then
+                            ! dirichlet boundary on other side
+                            cp_thread(i) = 2.0d0 * self%coeffX * self%centerCoeff
+                            source_thread(i) = self%sourceTerm(i, j) - self%coeffY * (self%solution(i, N_indx)  + self%solution(i, S_indx))
+                            dp_thread(i) = source_thread(i) * self%centerCoeff
+                        else
+                            ! another neumann on other side, need to do point iteration to get guess for phi at boundary
+                            cp_thread(i) = 0.0d0
+                            source_thread(i) = (self%sourceTerm(i,j) - self%coeffY * (self%solution(i, N_indx) + self%solution(i, S_indx))- &
+                                2.0d0 * self%coeffX * self%solution(2, j)) * self%centerCoeff* self%omega + omega_inv * self%solution(i,j)
+                            dp_thread(i) = source_thread(i)
+                        end if
+                    case (3)
+                        ! Point iteration
+                        cp_thread(i) = 0.0d0
+                        source_thread(i) = (self%sourceTerm(i,j) - self%coeffY * (self%solution(i, N_indx) + self%solution(i, S_indx))- &
+                        self%coeffX * (self%solution(2, j) + self%solution(self%N_x-1, j))) * self%centerCoeff* self%omega + omega_inv * self%solution(i,j)
+                        dp_thread(i) = source_thread(i)
+                    end select
+
+                    ! forward substitution
+                    do i = idx_start,idx_end
+                        m_thread = inv_centerCoeff - cp_thread(i-1) * self%coeffX
+                        cp_thread(i) = self%coeffX / m_thread
+                        source_thread(i) = self%sourceTerm(i,j) - self%coeffY * (self%solution(i, N_indx) + self%solution(i, S_indx))
+                        dp_thread(i) = (source_thread(i) - dp_thread(i-1) * self%coeffX) / m_thread
+                    end do
+
+                    ! rightmost boundary properties
+                    i = idx_end + 1
+                    select case(boundary_end)
+                    case (1)
+                        source_thread(i) = self%solution(i, j)
+                    case (2)
+                        source_thread(i) = self%sourceTerm(i,j) - self%coeffY * (self%solution(i, N_indx) + self%solution(i, S_indx))
+                        m_thread = 2.0d0 * self%coeffX
+                        source_thread(i) = (source_thread(i) - dp_thread(i-1) * m_thread)/&
+                            (inv_centerCoeff - cp_thread(i-1)  * m_thread)
+                    case (3)
+                        source_thread(i) = self%solution(1,j)
+                    end select
+
+                    ! backwards substitution
+                    do i = idx_end, idx_start-1, -1
+                        source_thread(i) = dp_thread(i)-cp_thread(i)*source_thread(i+1)
+                    end do
+
+                    self%solution(idx_start-1:idx_end+1,j) = source_thread(idx_start-1:idx_end+1)
+                end do
+            end if
+            !$OMP section
+            ! top boundary
+            if (self%number_top_row_sections /= 0) then
+                S_indx = self%N_y-1
+                j = self%N_y
+                do p = 1, self%number_top_row_sections
+                    if (self%top_row_boundary_type(p) == 2) then
+                        N_indx = S_indx
+                    else
+                        N_indx = 2
+                    end if
+                     ! Determine boundary properties
+                    idx_start = self%start_top_row_indx(p)
+                    idx_end = self%end_top_row_indx(p)
+                    
+                    boundary_start = self%world%boundary_conditions((idx_start-1) * self%x_indx_step - self%x_indx_step + 1, 1)
+                    boundary_end = self%world%boundary_conditions((idx_end+1) * self%x_indx_step - self%x_indx_step + 1, 1)
+
+
+                    !left boundary
+                    i = idx_start - 1
+                    select case (boundary_start)
+                    case (1)
+                        cp_thread(i) = 0.0d0
+                        source_thread(i) = self%solution(i,j)
+                        dp_thread(i) = self%solution(i,j)
+                    case (2)
+                        if (boundary_end /= 2) then
+                            ! dirichlet boundary on other side
+                            cp_thread(i) = 2.0d0 * self%coeffX * self%centerCoeff
+                            source_thread(i) = self%sourceTerm(i, j) - self%coeffY * (self%solution(i, N_indx)  + self%solution(i, S_indx))
+                            dp_thread(i) = source_thread(i) * self%centerCoeff
+                        else
+                            ! another neumann on other side, need to do point iteration to get guess for phi at boundary
+                            cp_thread(i) = 0.0d0
+                            source_thread(i) = (self%sourceTerm(i,j) - self%coeffY * (self%solution(i, N_indx) + self%solution(i, S_indx))- &
+                                2.0d0 * self%coeffX * self%solution(2, j)) * self%centerCoeff* self%omega + omega_inv * self%solution(i,j)
+                            dp_thread(i) = source_thread(i)
+                        end if
+                    case (3)
+                        ! Point iteration
+                        cp_thread(i) = 0.0d0
+                        source_thread(i) = (self%sourceTerm(i,j) - self%coeffY * (self%solution(i, N_indx) + self%solution(i, S_indx))- &
+                        self%coeffX * (self%solution(2, j) + self%solution(self%N_x-1, j))) * self%centerCoeff* self%omega + omega_inv * self%solution(i,j)
+                        dp_thread(i) = source_thread(i)
+                    end select
+
+                    ! forward substitution
+                    do i = idx_start,idx_end
+                        m_thread = inv_centerCoeff - cp_thread(i-1) * self%coeffX
+                        cp_thread(i) = self%coeffX / m_thread
+                        source_thread(i) = self%sourceTerm(i,j) - self%coeffY * (self%solution(i, N_indx) + self%solution(i, S_indx))
+                        dp_thread(i) = (source_thread(i) - dp_thread(i-1) * self%coeffX) / m_thread
+                    end do
+
+                    ! rightmost boundary properties
+                    i = idx_end + 1
+                    select case(boundary_end)
+                    case (1)
+                        source_thread(i) = self%solution(i, j)
+                    case (2)
+                        source_thread(i) = self%sourceTerm(i,j) - self%coeffY * (self%solution(i, N_indx) + self%solution(i, S_indx))
+                        m_thread = 2.0d0 * self%coeffX
+                        source_thread(i) = (source_thread(i) - dp_thread(i-1) * m_thread)/&
+                            (inv_centerCoeff - cp_thread(i-1)  * m_thread)
+                    case (3)
+                        source_thread(i) = self%solution(1,j)
+                    end select
+
+                    ! backwards substitution
+                    do i = idx_end, idx_start-1, -1
+                        source_thread(i) = dp_thread(i)-cp_thread(i)*source_thread(i+1)
+                    end do
+
+                    self%solution(idx_start-1:idx_end+1,j) = source_thread(idx_start-1:idx_end+1)
+                end do
+            end if
+            !$OMP end sections
 
             !$OMP barrier
             
