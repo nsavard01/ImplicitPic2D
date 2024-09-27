@@ -8,7 +8,7 @@ module mod_GS_Base_Even
 
     type, extends(GS_Base) :: GS_Base_Even
         ! store grid quantities
-        real(real64) :: coeffX, coeffY, centerCoeff
+        real(real64) :: coeffX, coeffY, centerCoeff, inv_centerCoeff
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal
         procedure, public, pass(self) :: initialize_GS_Even
@@ -30,6 +30,7 @@ contains
         self%coeffX = 1.0d0 / (world%del_x**2)
         self%coeffY = 1.0d0 / (world%del_y**2)
         self%centerCoeff = -1.0d0 / (2.0d0 * self%coeffX + 2.0d0 * self%coeffY)
+        self%inv_centerCoeff = 1.0d0 / self%centerCoeff
 
     end subroutine initialize_GS_Even
 
@@ -218,25 +219,25 @@ contains
         if (self%world%boundary_conditions(1,1) == 2) then
             ! lower left corner
             self%residual(1,1) = self%sourceTerm(1,1) - 2.0d0 * self%solution(1, 2) * self%coeffY - &
-                2.0d0 * self%solution(2, 1) * self%coeffX  - self%solution(1,1)/self%centerCoeff
+                2.0d0 * self%solution(2, 1) * self%coeffX  - self%solution(1,1)*self%inv_centerCoeff
         end if
         !$OMP section
         if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
             ! lower right corner
             self%residual(self%N_x, 1) = self%sourceTerm(self%N_x, 1) - 2.0d0 * self%solution(self%N_x, 2) * self%coeffY - &
-                2.0d0 * self%solution(self%N_x-1, 1) * self%coeffX -  self%solution(self%N_x, 1)/self%centerCoeff
+                2.0d0 * self%solution(self%N_x-1, 1) * self%coeffX -  self%solution(self%N_x, 1)*self%inv_centerCoeff
         end if
         !$OMP section
         if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
             ! upper left corner
             self%residual(1, self%N_y) = self%sourceTerm(1, self%N_y) - 2.0d0 * self%solution(1, self%N_y-1) * self%coeffY - &
-                2.0d0 * self%solution(2, self%N_y) * self%coeffX - self%solution(1, self%N_y)/self%centerCoeff
+                2.0d0 * self%solution(2, self%N_y) * self%coeffX - self%solution(1, self%N_y)*self%inv_centerCoeff
         end if
         !$OMP section
         if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
             ! upper right corner
             self%residual(self%N_x, self%N_y) = self%sourceTerm(self%N_x, self%N_y) - 2.0d0 * self%solution(self%N_x, self%N_y-1) * self%coeffY - &
-                2.0d0 * self%solution(self%N_x-1, self%N_y) * self%coeffX - self%solution(self%N_x, self%N_y)/self%centerCoeff
+                2.0d0 * self%solution(self%N_x-1, self%N_y) * self%coeffX - self%solution(self%N_x, self%N_y)*self%inv_centerCoeff
         end if
         !$OMP end sections nowait
 
@@ -267,7 +268,7 @@ contains
             end if
             do i = self%start_bottom_row_indx(p), self%end_bottom_row_indx(p)
                 self%residual(i,1) = self%sourceTerm(i,1) - (self%solution(i, 2) + self%solution(i, S_indx)) * self%coeffY - &
-                    (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX -  self%solution(i,1)/self%centerCoeff
+                    (self%solution(i-1, 1) + self%solution(i+1, 1)) * self%coeffX -  self%solution(i,1)*self%inv_centerCoeff
             end do
         end do
         !$OMP end do nowait
@@ -282,7 +283,7 @@ contains
             end if
             do i = self%start_top_row_indx(p), self%end_top_row_indx(p)
                 self%residual(i,self%N_y) = self%sourceTerm(i,self%N_y) - (self%solution(i, self%N_y-1) + self%solution(i, N_indx)) * self%coeffY - &
-                    (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX -  self%solution(i, self%N_y)/self%centerCoeff
+                    (self%solution(i-1, self%N_y) + self%solution(i+1, self%N_y)) * self%coeffX -  self%solution(i, self%N_y)*self%inv_centerCoeff
             end do
         end do
         !$OMP end do nowait
@@ -297,7 +298,7 @@ contains
             end if
             do j = self%start_left_column_indx(p), self%end_left_column_indx(p)
                 self%residual(1,j) = self%sourceTerm(1,j) - (self%solution(1, j+1) + self%solution(1, j-1)) * self%coeffY - &
-                    (self%solution(2, j) + self%solution(W_indx, j)) * self%coeffX - self%solution(1,j)/self%centerCoeff
+                    (self%solution(2, j) + self%solution(W_indx, j)) * self%coeffX - self%solution(1,j)*self%inv_centerCoeff
             end do
         end do
         !$OMP end do nowait
@@ -312,7 +313,7 @@ contains
             end if
             do j = self%start_right_column_indx(p), self%end_right_column_indx(p)
                 self%residual(self%N_x,j) = self%sourceTerm(self%N_x,j) - (self%solution(self%N_x, j-1) + self%solution(self%N_x, j+1)) * self%coeffY - &
-                (self%solution(self%N_x-1, j) + self%solution(E_indx, j)) * self%coeffX - self%solution(self%N_x,j)/self%centerCoeff
+                (self%solution(self%N_x-1, j) + self%solution(E_indx, j)) * self%coeffX - self%solution(self%N_x,j)*self%inv_centerCoeff
             end do
         end do
         !$OMP end do

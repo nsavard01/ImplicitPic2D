@@ -31,7 +31,7 @@ program main
     call omp_set_max_active_levels(numThreads)
     
     evenGridBool = .true.
-    redBlackBool = .false.
+    redBlackBool = .true.
     PCG_bool = .false.
     Krylov_bool = .false.
     center_box_bool = .true.
@@ -249,7 +249,7 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%smoothIterations(100000)
+    call solver%smoothIterations(10000)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'
@@ -257,7 +257,7 @@ program main
     print *, 'Took', solver%iterNumber, 'iterations'
     call solver%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%solution
+    write(41) solver%residual
     close(41)
    
     ! end associate

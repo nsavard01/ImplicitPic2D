@@ -17,7 +17,7 @@ module mod_GS_Base
         integer, allocatable :: start_left_column_indx(:), end_left_column_indx(:), left_column_boundary_type(:)
         integer, allocatable :: start_right_column_indx(:), end_right_column_indx(:), right_column_boundary_type(:)
         integer :: x_indx_step, y_indx_step
-        real(real64) :: omega
+        real(real64) :: omega, inv_omega
         class(domain_base), pointer :: world
     contains
         procedure, public, pass(self) :: solveGS
@@ -43,6 +43,7 @@ contains
         integer :: i_coarse, i_fine, j_coarse, j_fine, k, numberBound, min_indx
         logical :: found_first_indx
         self%omega = omega
+        self%inv_omega = 1.0d0 - omega
         self%iterNumber = 0
         self%N_x = N_x
         self%N_y = N_y

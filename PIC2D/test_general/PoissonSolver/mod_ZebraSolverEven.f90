@@ -322,10 +322,7 @@ contains
         ! Solve GS down to some tolerance
         class(ZebraSolverEven), intent(in out) :: self
         integer(int32), intent(in) :: iterNum
-        real(real64) :: omega_inv, inv_centerCoeff
         integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p, iter, i_fine, j_fine, idx_start, idx_end, boundary_start, boundary_end, vector_size
-        omega_inv = 1.0d0 - self%omega
-        inv_centerCoeff = 1.0d0/self%centerCoeff
         ! p indexs in horizontal maps to i, k in vertical maps to j
 
         do iter = 1, iterNum 
@@ -912,9 +909,8 @@ contains
         class(ZebraSolverEven), intent(in out) :: self
         integer(int32), intent(in) :: idx_start, idx_end, boundary_start, boundary_end, vector_size, j, N_indx, S_indx
         integer(int32) :: i_grid, i_local
-        real(real64) :: source_thread(vector_size), cp_thread(vector_size-1), dp_thread(vector_size-1), m_thread, inv_centerCoeff, omega_inv
-        omega_inv = 1.0d0 - self%omega
-        inv_centerCoeff = 1.0d0/self%centerCoeff
+        real(real64) :: source_thread(vector_size), cp_thread(vector_size-1), dp_thread(vector_size-1), m_thread
+        
 
         !left boundary
         i_grid = idx_start - 1
@@ -933,21 +929,21 @@ contains
                 ! another neumann on other side, need to do point iteration to get guess for phi at boundary
                 cp_thread(1) = 0.0d0
                 source_thread(1) = (self%sourceTerm(i_grid,j) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))- &
-                    2.0d0 * self%coeffX * self%solution(2, j)) * self%centerCoeff* self%omega + omega_inv * self%solution(i_grid,j)
+                    2.0d0 * self%coeffX * self%solution(2, j)) * self%centerCoeff* self%omega + self%inv_omega * self%solution(i_grid,j)
                 dp_thread(1) = source_thread(1)
             end if
         case (3)
             ! Point iteration
             cp_thread(1) = 0.0d0
             source_thread(1) = (self%sourceTerm(i_grid,j) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))- &
-                self%coeffX * (self%solution(2, j) + self%solution(self%N_x-1, j))) * self%centerCoeff* self%omega + omega_inv * self%solution(i_grid,j)
+                self%coeffX * (self%solution(2, j) + self%solution(self%N_x-1, j))) * self%centerCoeff* self%omega + self%inv_omega * self%solution(i_grid,j)
             dp_thread(1) = source_thread(1)
         end select
 
         ! forward substitution
         do i_grid = idx_start,idx_end
             i_local = i_grid - idx_start + 2
-            m_thread = inv_centerCoeff - cp_thread(i_local-1) * self%coeffX
+            m_thread = self%inv_centerCoeff - cp_thread(i_local-1) * self%coeffX
             cp_thread(i_local) = self%coeffX / m_thread
             source_thread(i_local) = self%sourceTerm(i_grid,j) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))
             dp_thread(i_local) = (source_thread(i_local) - dp_thread(i_local-1) * self%coeffX) / m_thread
@@ -962,7 +958,7 @@ contains
             source_thread(vector_size) = self%sourceTerm(i_grid,j) - self%coeffY * (self%solution(i_grid, N_indx) + self%solution(i_grid, S_indx))
             m_thread = 2.0d0 * self%coeffX
             source_thread(vector_size) = (source_thread(vector_size) - dp_thread(vector_size-1) * m_thread)/&
-                (inv_centerCoeff - cp_thread(vector_size-1)  * m_thread)
+                (self%inv_centerCoeff - cp_thread(vector_size-1)  * m_thread)
         case (3)
             source_thread(vector_size) = self%solution(1,j)
         end select
