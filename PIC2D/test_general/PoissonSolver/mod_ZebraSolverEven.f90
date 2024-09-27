@@ -527,7 +527,7 @@ contains
             ! !$OMP end parallel
 
             !$OMP parallel private(k, p, i, j, E_indx, N_indx, S_indx, W_indx, &
-            !$OMP& i_fine, j_fine, idx_start, idx_end, vector_size)
+            !$OMP& i_fine, j_fine, idx_start, idx_end, vector_size, boundary_start, boundary_end)
 
             ! white rows 
 
