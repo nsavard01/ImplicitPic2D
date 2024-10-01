@@ -53,7 +53,7 @@ contains
     subroutine constructPoissonOrthogonal_RedBlackEven(self)
         ! Construct orthogonal grid solver
         class(RedBlackSolverEven), intent(in out) :: self
-        integer :: i, j, l, k, numberBound, x_indx_step, y_indx_step, min_indx
+        integer :: i, j, l, k
         allocate(self%start_black_indx(self%max_number_row_sections, self%number_inner_rows), &
             self%start_red_indx(self%max_number_row_sections, self%number_inner_rows)) !
         ! Get starting point for red or black points
@@ -76,67 +76,6 @@ contains
         end do
         !$OMP end do
         !$OMP end parallel 
-        
-        ! allocate(self%start_bottom_row_red_indx(self%number_bottom_row_sections), self%start_bottom_row_black_indx(self%number_bottom_row_sections))
-        ! do k = 1, self%number_bottom_row_sections
-        !     i = self%start_bottom_row_indx(k)
-        !     if (i == 1) then
-        !         ! don't start at corner
-        !         self%start_bottom_row_red_indx(k) = 3
-        !         self%start_bottom_row_black_indx(k) = 2
-        !     else if (MOD(i, 2) == 1) then
-        !         self%start_bottom_row_red_indx(k) = i
-        !         self%start_bottom_row_black_indx(k) = i+1
-        !     else
-        !         self%start_bottom_row_black_indx(k) = i
-        !         self%start_bottom_row_red_indx(k) = i+1
-        !     end if
-        ! end do
-        ! allocate(self%start_top_row_red_indx(self%number_top_row_sections), self%start_top_row_black_indx(self%number_top_row_sections))
-        ! do k = 1, self%number_top_row_sections
-        !     i = self%start_top_row_indx(k)
-        !     if (i == 1) then
-        !         ! don't start at corner
-        !         self%start_top_row_red_indx(k) = 3
-        !         self%start_top_row_black_indx(k) = 2
-        !     else if (MOD(i, 2) == 1) then
-        !         self%start_top_row_red_indx(k) = i
-        !         self%start_top_row_black_indx(k) = i+1
-        !     else
-        !         self%start_top_row_black_indx(k) = i
-        !         self%start_top_row_red_indx(k) = i+1
-        !     end if
-        ! end do
-        ! allocate(self%start_left_column_red_indx(self%number_left_column_sections), self%start_left_column_black_indx(self%number_left_column_sections))
-        ! do k = 1, self%number_left_column_sections
-        !     j = self%start_left_column_indx(k)
-        !     if (j == 1) then
-        !         ! don't start at corner
-        !         self%start_left_column_red_indx(k) = 3
-        !         self%start_left_column_black_indx(k) = 2
-        !     else if (MOD(j, 2) == 1) then
-        !         self%start_left_column_red_indx(k) = j
-        !         self%start_left_column_black_indx(k) = j+1
-        !     else
-        !         self%start_left_column_black_indx(k) = j
-        !         self%start_left_column_red_indx(k) = j+1
-        !     end if
-        ! end do
-        ! allocate(self%start_right_column_red_indx(self%number_right_column_sections), self%start_right_column_black_indx(self%number_right_column_sections))
-        ! do k = 1, self%number_right_column_sections
-        !     j = self%start_right_column_indx(k)
-        !     if (j == 1) then
-        !         ! don't start at corner
-        !         self%start_right_column_red_indx(k) = 3
-        !         self%start_right_column_black_indx(k) = 2
-        !     else if (MOD(j, 2) == 1) then
-        !         self%start_right_column_red_indx(k) = j
-        !         self%start_right_column_black_indx(k) = j+1
-        !     else
-        !         self%start_right_column_black_indx(k) = j
-        !         self%start_right_column_red_indx(k) = j+1
-        !     end if
-        ! end do
     end subroutine constructPoissonOrthogonal_RedBlackEven
 
     subroutine smoothIterations_RedBlackEven(self, iterNum)

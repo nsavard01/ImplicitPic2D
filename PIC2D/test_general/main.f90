@@ -8,6 +8,8 @@ program main
     use mod_GS_Base_Even
     use mod_RedBlackSolverEven
     use mod_ZebraSolverEven
+    use mod_GS_Base_Curv
+    use mod_RedBlackSolverCurv
     use omp_lib
     implicit none
 
@@ -15,7 +17,7 @@ program main
     integer(int32) :: N_x = 401, N_y = 201, numThreads = 6
     type(pardisoSolver) :: directSolver
     class(domain_base), allocatable, target :: world
-    class(GS_Base_Even), allocatable :: solver
+    class(GS_Base), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
     integer :: inner_box_first_y = 75, inner_box_last_y = 125, inner_box_first_x = 150, inner_box_last_x = 250
@@ -51,7 +53,7 @@ program main
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 1 ! North
     NESW_wallBoundaries(2) = 3 ! East
-    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 3 ! West
 
     NESW_phiValues(1) = 0.0d0
@@ -120,6 +122,9 @@ program main
     type is (domain_curv)
         call buildCurvGridOrthogonalPoissonMatrix(world%N_x, world%N_y, world%del_x, world%del_y, &
         world%boundary_conditions, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
+        if (redBlackBool) then
+            solver = RedBlackSolverCurv(omega, world, world%N_x, world%N_y)
+        end if
     end select
     call directSolver%initializePardiso(1, 11, 1, 0)
 
@@ -141,15 +146,15 @@ program main
     if (lowerBound == 1 .and. lowerPhi == 0) directSolver%solution(1:world%N_x) = lowerPhi
     if (leftBound == 1 .and. leftPhi == 0) directSolver%solution(1:mat_dimension - world%N_x + 1:world%N_x) = leftPhi
 
-    ! if (upperBound == 1 .and. upperPhi /= 0) solver%solution(:, solver%N_y) = upperPhi
-    ! if (rightBound ==1 .and. rightPhi /=0) solver%solution(solver%N_x, :) = rightPhi
-    ! if (lowerBound == 1 .and. lowerPhi /= 0) solver%solution(:, 1) = lowerPhi
-    ! if (leftBound == 1 .and. leftPhi /= 0) solver%solution(1,:) = leftPhi
+    if (upperBound == 1 .and. upperPhi /= 0) solver%solution(:, solver%N_y) = upperPhi
+    if (rightBound ==1 .and. rightPhi /=0) solver%solution(solver%N_x, :) = rightPhi
+    if (lowerBound == 1 .and. lowerPhi /= 0) solver%solution(:, 1) = lowerPhi
+    if (leftBound == 1 .and. leftPhi /= 0) solver%solution(1,:) = leftPhi
 
-    ! if (upperBound == 1 .and. upperPhi == 0) solver%solution(:, solver%N_y)  = upperPhi
-    ! if (rightBound ==1 .and. rightPhi ==0) solver%solution(solver%N_x, :) = rightPhi
-    ! if (lowerBound == 1 .and. lowerPhi == 0) solver%solution(:, 1) = lowerPhi
-    ! if (leftBound == 1 .and. leftPhi == 0) solver%solution(1,:)  = leftPhi
+    if (upperBound == 1 .and. upperPhi == 0) solver%solution(:, solver%N_y)  = upperPhi
+    if (rightBound ==1 .and. rightPhi ==0) solver%solution(solver%N_x, :) = rightPhi
+    if (lowerBound == 1 .and. lowerPhi == 0) solver%solution(:, 1) = lowerPhi
+    if (leftBound == 1 .and. leftPhi == 0) solver%solution(1,:)  = leftPhi
 
     if (center_box_bool) then
         !$OMP parallel private(k)
@@ -158,7 +163,7 @@ program main
             do i = inner_box_first_x, inner_box_last_x
                 k = (j-1) * world%N_x + i 
                 directSolver%solution(k) = innerPhi
-                ! solver%solution(i,j) = innerPhi
+                solver%solution(i,j) = innerPhi
             end do
         end do
         !$OMP end do
@@ -238,7 +243,7 @@ program main
             k = (j-1) * N_x + i
             if (world%boundary_conditions(i,j) /= 1) then
                 ! stageOne%sourceTerm(i,j) = -rho/eps_0
-                ! solver%sourceTerm(i,j) = -rho/eps_0
+                solver%sourceTerm(i,j) = -rho/eps_0
                 directSolver%sourceTerm(k) = -rho/eps_0
             else
                 directSolver%sourceTerm(k) = directSolver%solution(k)
@@ -258,9 +263,21 @@ program main
     ! print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
     ! print *, 'Took', solver%iterNumber, 'iterations'
-    ! call solver%calcResidual()
+    !$OMP parallel private(k, i, j)
+    !$OMP do collapse(2)
+    do j = 1, N_y
+        do i = 1, N_x
+            k = (j-1) * N_x + i
+            if (world%boundary_conditions(i,j) /= 1) then
+                solver%solution(i,j) = directSolver%solution(k)
+            end if
+        end do
+    end do
+    !$OMP end do
+    !$OMP end parallel
+    call solver%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) directSolver%solution
+    write(41) solver%residual
     close(41)
    
     ! end associate
