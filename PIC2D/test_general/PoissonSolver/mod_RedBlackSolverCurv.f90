@@ -26,7 +26,7 @@ module mod_RedBlackSolverCurv
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal => constructPoissonOrthogonal_RedBlackCurv
         procedure, public, pass(self) :: smoothIterations => smoothIterations_RedBlackCurv
-        ! procedure, public, pass(self) :: smoothWithRes => smoothWithRes_RedBlackCurv
+        procedure, public, pass(self) :: smoothWithRes => smoothWithRes_RedBlackCurv
         ! procedure, public, pass(self) :: matMult
         ! procedure, public, pass(self) :: XAX_Mult
     end type
@@ -392,7 +392,7 @@ contains
                             self%solution(2, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * self%solution(1,j)
                 end do
             end do
-            !$OMP end do
+            !$OMP end do nowait
 
             ! !right boundary
             !$OMP do
@@ -548,112 +548,337 @@ contains
         end do
     end subroutine smoothIterations_RedBlackCurv
 
-    ! function smoothWithRes_RedBlackCurv(self) result(Res)
-    !     ! Solve GS down to some tolerance
-    !     class(RedBlackSolverCurv), intent(in out) :: self
-    !     real(real64) :: oldSol, C_N, C_E, C_O, C_W, C_S, Res, omega_inv
-    !     integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
-    !     omega_inv = 1.0d0 - self%omega
-    !     Res = 0.0d0
+    function smoothWithRes_RedBlackCurv(self) result(Res)
+        ! Solve GS down to some tolerance
+        class(RedBlackSolverCurv), intent(in out) :: self
+        real(real64) :: oldSol, C_N, C_E, C_S, C_W, C_O, Res
+        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p,iter
+        Res = 0.0d0
        
-    !     !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, oldSol, &
-    !         !$OMP& C_N, C_E, C_O, C_W, C_S) reduction(+:Res)
+        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, oldSol, &
+            !$OMP& C_N, C_E, C_S, C_W, C_O) reduction(+:Res)
 
-    !         ! Go through all red points first
-    !         !$OMP do collapse(2)
-    !         ! Sweep rows that start with red
-    !     do k = self%startRedRow, self%numberRows, 2
-    !         do p = 1, self%numberColumns,2
-    !             j = self%startRow + k - 1
-    !             N_indx = self%vertIndx(1, k)
-    !             S_indx = self%vertIndx(2, k)
-    !             C_N = self%vertCoeffs(1, k)
-    !             C_S = self%vertCoeffs(2, k)
-    !             i = self%startCol + p - 1
-    !             E_indx = self%horzIndx(1, p)
-    !             W_indx = self%horzIndx(2, p)
-    !             C_E = self%horzCoeffs(1, p)
-    !             C_W = self%horzCoeffs(2, p)
-    !             C_O = self%centerCoeffs(p,k)
-    !             oldSol = self%solution(i,j)
-    !             self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-    !                 self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-    !             Res = Res + (self%solution(i,j) - oldSol)**2
-    !         end do
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do collapse(2)
-    !     ! sweep rows start with black
-    !     do k = self%startBlackRow, self%numberRows, 2
-    !         do p = 2, self%numberColumns,2
-    !             j = self%startRow + k - 1
-    !             N_indx = self%vertIndx(1, k)
-    !             S_indx = self%vertIndx(2, k)
-    !             C_N = self%vertCoeffs(1, k)
-    !             C_S = self%vertCoeffs(2, k)
-    !             i = self%startCol + p - 1
-    !             E_indx = self%horzIndx(1, p)
-    !             W_indx = self%horzIndx(2, p)
-    !             C_E = self%horzCoeffs(1, p)
-    !             C_W = self%horzCoeffs(2, p)
-    !             C_O = self%centerCoeffs(p,k)
-    !             oldSol = self%solution(i,j)
-    !             self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-    !                 self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-    !             Res = Res + (self%solution(i,j) - oldSol)**2
-    !         end do
-    !     end do
-    !     !$OMP end do
 
-    !     ! Go through all black points
-    !     !$OMP do collapse(2)
-    !     ! Sweep rows that start with black
-    !     do k = self%startBlackRow, self%numberRows, 2
-    !         do p = 1, self%numberColumns,2
-    !             j = self%startRow + k - 1
-    !             N_indx = self%vertIndx(1, k)
-    !             S_indx = self%vertIndx(2, k)
-    !             C_N = self%vertCoeffs(1, k)
-    !             C_S = self%vertCoeffs(2, k)
-    !             i = self%startCol + p - 1
-    !             E_indx = self%horzIndx(1, p)
-    !             W_indx = self%horzIndx(2, p)
-    !             C_E = self%horzCoeffs(1, p)
-    !             C_W = self%horzCoeffs(2, p)
-    !             C_O = self%centerCoeffs(p,k)
-    !             oldSol = self%solution(i,j)
-    !             self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-    !                 self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-    !             Res = Res + (self%solution(i,j) - oldSol)**2
-    !         end do
-    !     end do
-    !     !$OMP end do nowait
-    !     !$OMP do collapse(2)
-    !     ! sweep rows start with red
-    !     do k = self%startRedRow, self%numberRows, 2
-    !         do p = 2, self%numberColumns,2
-    !             j = self%startRow + k - 1
-    !             N_indx = self%vertIndx(1, k)
-    !             S_indx = self%vertIndx(2, k)
-    !             C_N = self%vertCoeffs(1, k)
-    !             C_S = self%vertCoeffs(2, k)
-    !             i = self%startCol + p - 1
-    !             E_indx = self%horzIndx(1, p)
-    !             W_indx = self%horzIndx(2, p)
-    !             C_E = self%horzCoeffs(1, p)
-    !             C_W = self%horzCoeffs(2, p)
-    !             C_O = self%centerCoeffs(p,k)
-    !             oldSol = self%solution(i,j)
-    !             self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx) * C_S - &
-    !                 self%solution(E_indx, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + omega_inv * oldSol
-    !             Res = Res + (self%solution(i,j) - oldSol)**2
-    !         end do
-    !     end do
-    !     !$OMP end do
-    !     !$OMP end parallel
-    !     Res = SQRT(Res/ (self%numberColumns * self%numberRows))
+        !Go through all red points first
+        !$OMP do
+        ! Sweep rows that start with red
+        do k = 1, self%number_inner_rows
+            j = self%start_row_indx + k - 1
+            N_indx = j + 1
+            S_indx = j - 1
+            C_N = self%inner_node_coeff_north(j-1)
+            C_S = self%inner_node_coeff_south(j-1)
+            do p = 1, self%number_row_sections(k)
+                do i = self%start_red_indx(p, k), self%end_inner_indx_x(p,k), 2     
+                    E_indx = i+1
+                    W_indx = i-1
+                    C_E = self%inner_node_coeff_east(i-1)
+                    C_W = self%inner_node_coeff_west(i-1)
+                    C_O = self%inner_node_centerCoeff(i-1, j-1)
+                    oldSol = self%solution(i,j)
+                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx)*C_S - &
+                        self%solution(E_indx, j)*C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * oldSol
+                    Res = Res + (self%solution(i,j) - oldSol)**2
+                end do
+            end do
+        end do
+        !$OMP end do nowait
 
-    ! end function smoothWithRes_RedBlackCurv
+        ! do corners which need to be neumann for change
+        !$OMP sections
+        !$OMP section
+        if (self%world%boundary_conditions(1,1) == 2) then
+            ! lower left corner
+            C_N = self%bottom_row_coeff_north(1)
+            C_E = self%left_column_coeff_east(1)
+            C_O = -0.5d0 / (C_N + C_E)
+            oldSol = self%solution(1,1)
+            self%solution(1,1) = (self%sourceTerm(1,1) - 2.0d0 * self%solution(1, 2) * C_N - &
+                2.0d0 * self%solution(2, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(1,1)
+            Res = Res + (self%solution(1,1) - oldSol)**2
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
+            ! lower right corner
+            C_N = self%bottom_row_coeff_north(self%number_bottom_row_sections)
+            C_W = self%right_column_coeff_west(1)
+            C_O = -0.5d0/ (C_N + C_W)
+            oldSol = self%solution(self%N_x, 1)
+            self%solution(self%N_x, 1) = (self%sourceTerm(self%N_x, 1) - 2.0d0 * self%solution(self%N_x, 2) * C_N - &
+                2.0d0 * self%solution(self%N_x-1, 1) * C_W) * C_O * self%omega + self%inv_omega * self%solution(self%N_x, 1)
+            Res = Res + (self%solution(self%N_x,1) - oldSol)**2
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
+            ! upper left corner
+            C_S = self%top_row_coeff_south(1)
+            C_E = self%left_column_coeff_east(self%number_left_column_sections)
+            C_O = -0.5d0 / (C_S + C_E)
+            oldSol = self%solution(1, self%N_y)
+            self%solution(1, self%N_y) = (self%sourceTerm(1, self%N_y) - 2.0d0 * self%solution(1, self%N_y-1) * C_S - &
+                2.0d0 * self%solution(2, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(1, self%N_y)
+            Res = Res + (self%solution(1, self%N_y) - oldSol)**2
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
+            ! upper right corner
+            C_S = self%top_row_coeff_south(self%number_top_row_sections)
+            C_W = self%right_column_coeff_west(self%number_right_column_sections)
+            C_O = -0.5d0 / (C_W + C_S)
+            oldSol = self%solution(self%N_x, self%N_y)
+            self%solution(self%N_x, self%N_y) = (self%sourceTerm(self%N_x, self%N_y) - 2.0d0 * self%solution(self%N_x, self%N_y-1) * C_S - &
+                2.0d0 * self%solution(self%N_x-1, self%N_y) * C_W) * C_O * self%omega + self%inv_omega * self%solution(self%N_x, self%N_y)
+            Res = Res + (self%solution(self%N_x, self%N_y) - oldSol)**2
+        end if
+        !$OMP end sections nowait
+
+        ! !Now go through red boundaries
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
+            end if
+            if (MOD(self%start_bottom_row_indx(p),2) == 1) then
+                k = self%start_bottom_row_indx(p)
+            else
+                k = self%start_bottom_row_indx(p) + 1
+            end if
+            C_S = self%bottom_row_coeff_south(p)
+            C_N = self%bottom_row_coeff_north(p)
+            do i = k, self%end_bottom_row_indx(p), 2
+                C_E = self%inner_node_coeff_east(i-1)
+                C_W = self%inner_node_coeff_west(i-1)
+                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                oldSol = self%solution(i,1)
+                self%solution(i,1) = (self%sourceTerm(i,1) - self%solution(i, 2) * C_N - self%solution(i, S_indx) * C_S - &
+                        self%solution(i-1, 1) * C_W - self%solution(i+1, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,1)
+                Res = Res + (self%solution(i,1) - oldSol)**2
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            if (MOD(self%start_top_row_indx(p),2) == 1) then
+                k = self%start_top_row_indx(p)
+            else
+                k = self%start_top_row_indx(p) + 1
+            end if
+            C_S = self%top_row_coeff_south(p)
+            C_N = self%top_row_coeff_north(p)
+            do i = k, self%end_top_row_indx(p), 2
+                C_E = self%inner_node_coeff_east(i-1)
+                C_W = self%inner_node_coeff_west(i-1)
+                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                oldSol = self%solution(i,self%N_y)
+                self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - self%solution(i, N_indx) * C_N - self%solution(i, self%N_y-1) * C_S - &
+                        self%solution(i-1, self%N_y) * C_W - self%solution(i+1, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,self%N_y)
+                Res = Res + (self%solution(i,self%N_y) - oldSol)**2
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            if (MOD(self%start_left_column_indx(p),2) == 1) then
+                k = self%start_left_column_indx(p)
+            else
+                k = self%start_left_column_indx(p) + 1
+            end if
+            C_E = self%left_column_coeff_east(p)
+            C_W = self%left_column_coeff_west(p)
+            do j = k, self%end_left_column_indx(p), 2
+                C_S = self%inner_node_coeff_south(j-1)
+                C_N = self%inner_node_coeff_north(j-1)
+                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                oldSol = self%solution(1,j)
+                self%solution(1,j) = (self%sourceTerm(1,j) - self%solution(1, j+1) * C_N - self%solution(1, j-1) * C_S - &
+                        self%solution(2, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * self%solution(1,j)
+                Res = Res + (self%solution(1,j) - oldSol)**2
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
+            end if
+            if (MOD(self%start_right_column_indx(p),2) == 1) then
+                k = self%start_right_column_indx(p)
+            else
+                k = self%start_right_column_indx(p) + 1
+            end if
+            C_E = self%right_column_coeff_east(p)
+            C_W = self%right_column_coeff_west(p)
+            do j = k, self%end_right_column_indx(p), 2
+                C_S = self%inner_node_coeff_south(j-1)
+                C_N = self%inner_node_coeff_north(j-1)
+                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                oldSol = self%solution(self%N_x, j)
+                self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - self%solution(self%N_x, j+1) * C_N - self%solution(self%N_x, j-1) * C_S - &
+                        self%solution(self%N_x-1, j) * C_W - self%solution(E_indx, j) * C_E) * C_O * self%omega + self%inv_omega * self%solution(self%N_x,j)
+                Res = Res + (self%solution(self%N_x,j) - oldSol)**2
+            end do
+        end do
+        !$OMP end do
+
+        !$OMP barrier
+        ! ------------------------------------------------- Now black points ------------------------------------------------------------------
+
+        ! !Go through all black points
+        !$OMP do
+        do k = 1, self%number_inner_rows
+            j = self%start_row_indx + k - 1
+            N_indx = j + 1
+            S_indx = j - 1
+            C_N = self%inner_node_coeff_north(j-1)
+            C_S = self%inner_node_coeff_south(j-1)
+            do p = 1, self%number_row_sections(k)
+                do i = self%start_black_indx(p, k), self%end_inner_indx_x(p,k), 2     
+                    E_indx = i+1
+                    W_indx = i-1
+                    C_E = self%inner_node_coeff_east(i-1)
+                    C_W = self%inner_node_coeff_west(i-1)
+                    C_O = self%inner_node_centerCoeff(i-1, j-1)
+                    oldSol = self%solution(i,j)
+                    self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx)*C_S - &
+                        self%solution(E_indx, j)*C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * oldSol
+                    Res = Res + (self%solution(i,j) - oldSol)**2
+                end do
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
+            end if
+            if (MOD(self%start_bottom_row_indx(p),2) == 0) then
+                k = self%start_bottom_row_indx(p)
+            else
+                k = self%start_bottom_row_indx(p) + 1
+            end if
+            C_S = self%bottom_row_coeff_south(p)
+            C_N = self%bottom_row_coeff_north(p)
+            do i = k, self%end_bottom_row_indx(p), 2
+                C_E = self%inner_node_coeff_east(i-1)
+                C_W = self%inner_node_coeff_west(i-1)
+                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                oldSol = self%solution(i,1)
+                self%solution(i,1) = (self%sourceTerm(i,1) - self%solution(i, 2) * C_N - self%solution(i, S_indx) * C_S - &
+                        self%solution(i-1, 1) * C_W - self%solution(i+1, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,1)
+                Res = Res + (self%solution(i,1) - oldSol)**2
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            if (MOD(self%start_top_row_indx(p),2) == 0) then
+                k = self%start_top_row_indx(p)
+            else
+                k = self%start_top_row_indx(p) + 1
+            end if
+            C_S = self%top_row_coeff_south(p)
+            C_N = self%top_row_coeff_north(p)
+            do i = k, self%end_top_row_indx(p), 2
+                C_E = self%inner_node_coeff_east(i-1)
+                C_W = self%inner_node_coeff_west(i-1)
+                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                oldSol = self%solution(i,self%N_y)
+                self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - self%solution(i, N_indx) * C_N - self%solution(i, self%N_y-1) * C_S - &
+                        self%solution(i-1, self%N_y) * C_W - self%solution(i+1, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,self%N_y)
+                Res = Res + (self%solution(i,self%N_y) - oldSol)**2
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            if (MOD(self%start_left_column_indx(p),2) == 0) then
+                k = self%start_left_column_indx(p)
+            else
+                k = self%start_left_column_indx(p) + 1
+            end if
+            C_E = self%left_column_coeff_east(p)
+            C_W = self%left_column_coeff_west(p)
+            do j = k, self%end_left_column_indx(p), 2
+                C_S = self%inner_node_coeff_south(j-1)
+                C_N = self%inner_node_coeff_north(j-1)
+                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                oldSol = self%solution(1,j)
+                self%solution(1,j) = (self%sourceTerm(1,j) - self%solution(1, j+1) * C_N - self%solution(1, j-1) * C_S - &
+                        self%solution(2, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * self%solution(1,j)
+                Res = Res + (self%solution(1,j) - oldSol)**2
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
+            end if
+            if (MOD(self%start_right_column_indx(p),2) == 0) then
+                k = self%start_right_column_indx(p)
+            else
+                k = self%start_right_column_indx(p) + 1
+            end if
+            C_E = self%right_column_coeff_east(p)
+            C_W = self%right_column_coeff_west(p)
+            do j = k, self%end_right_column_indx(p), 2
+                C_S = self%inner_node_coeff_south(j-1)
+                C_N = self%inner_node_coeff_north(j-1)
+                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                oldSol = self%solution(self%N_x,j)
+                self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - self%solution(self%N_x, j+1) * C_N - self%solution(self%N_x, j-1) * C_S - &
+                        self%solution(self%N_x-1, j) * C_W - self%solution(E_indx, j) * C_E) * C_O * self%omega + self%inv_omega * self%solution(self%N_x,j)
+                Res = Res + (self%solution(self%N_x,j) - oldSol)**2
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+        Res = SQRT(Res/ self%number_solve_nodes)
+
+    end function smoothWithRes_RedBlackCurv
 
 
     

@@ -51,10 +51,10 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 3 ! East
+    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(2) = 1 ! East
     NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 3 ! West
+    NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -257,27 +257,16 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call directSolver%runPardiso()
+    call solver%solveGS(stepTol, relTol)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
     ! print *, 'Took', solver%iterNumber, 'iterations'
-    !$OMP parallel private(k, i, j)
-    !$OMP do collapse(2)
-    do j = 1, N_y
-        do i = 1, N_x
-            k = (j-1) * N_x + i
-            if (world%boundary_conditions(i,j) /= 1) then
-                solver%solution(i,j) = directSolver%solution(k)
-            end if
-        end do
-    end do
-    !$OMP end do
-    !$OMP end parallel
+    
     call solver%calcResidual()
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%residual
+    write(41) solver%solution
     close(41)
    
     ! end associate
