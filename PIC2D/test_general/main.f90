@@ -8,6 +8,7 @@ program main
     use mod_GS_Base_Even
     use mod_RedBlackSolverEven
     use mod_ZebraSolverEven
+    use mod_ZebraSolverCurv
     use mod_GS_Base_Curv
     use mod_RedBlackSolverCurv
     use omp_lib
@@ -33,7 +34,7 @@ program main
     call omp_set_max_active_levels(numThreads)
     
     evenGridBool = .false.
-    redBlackBool = .true.
+    redBlackBool = .false.
     PCG_bool = .false.
     Krylov_bool = .false.
     center_box_bool = .true.
@@ -53,8 +54,8 @@ program main
     rho = e_const * 1d15
     NESW_wallBoundaries(1) = 2 ! North
     NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -124,6 +125,8 @@ program main
         world%boundary_conditions, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
         if (redBlackBool) then
             solver = RedBlackSolverCurv(omega, world, world%N_x, world%N_y)
+        else
+            solver = ZebraSolverCurv(omega, world, world%N_x, world%N_y)
         end if
     end select
     call directSolver%initializePardiso(1, 11, 1, 0)
@@ -257,7 +260,7 @@ program main
     
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%solveGS(stepTol, relTol)
+    call solver%smoothIterations(100000)
     call system_clock(endTime)
 
     ! print *, 'Took', solver%numIter, 'iterations'

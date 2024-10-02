@@ -269,7 +269,7 @@ contains
                         W_indx = i-1
                         C_E = self%inner_node_coeff_east(i-1)
                         C_W = self%inner_node_coeff_west(i-1)
-                        C_O = self%inner_node_centerCoeff(i-1, j-1)
+                        C_O = self%centerCoeff(i, j)
                         oldSol = self%solution(i,j)
                         self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx)*C_S - &
                             self%solution(E_indx, j)*C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * oldSol
@@ -285,7 +285,7 @@ contains
                 ! lower left corner
                 C_N = self%bottom_row_coeff_north(1)
                 C_E = self%left_column_coeff_east(1)
-                C_O = -0.5d0 / (C_N + C_E)
+                C_O = self%centerCoeff(1,1)
                 self%solution(1,1) = (self%sourceTerm(1,1) - 2.0d0 * self%solution(1, 2) * C_N - &
                     2.0d0 * self%solution(2, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(1,1)
             end if
@@ -294,7 +294,7 @@ contains
                 ! lower right corner
                 C_N = self%bottom_row_coeff_north(self%number_bottom_row_sections)
                 C_W = self%right_column_coeff_west(1)
-                C_O = -0.5d0/ (C_N + C_W)
+                C_O = self%centerCoeff(self%N_x, 1)
                 self%solution(self%N_x, 1) = (self%sourceTerm(self%N_x, 1) - 2.0d0 * self%solution(self%N_x, 2) * C_N - &
                     2.0d0 * self%solution(self%N_x-1, 1) * C_W) * C_O * self%omega + self%inv_omega * self%solution(self%N_x, 1)
             end if
@@ -303,7 +303,7 @@ contains
                 ! upper left corner
                 C_S = self%top_row_coeff_south(1)
                 C_E = self%left_column_coeff_east(self%number_left_column_sections)
-                C_O = -0.5d0 / (C_S + C_E)
+                C_O = self%centerCoeff(1, self%N_y)
                 self%solution(1, self%N_y) = (self%sourceTerm(1, self%N_y) - 2.0d0 * self%solution(1, self%N_y-1) * C_S - &
                     2.0d0 * self%solution(2, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(1, self%N_y)
             end if
@@ -312,7 +312,7 @@ contains
                 ! upper right corner
                 C_S = self%top_row_coeff_south(self%number_top_row_sections)
                 C_W = self%right_column_coeff_west(self%number_right_column_sections)
-                C_O = -0.5d0 / (C_W + C_S)
+                C_O = self%centerCoeff(self%N_x, self%N_y)
                 self%solution(self%N_x, self%N_y) = (self%sourceTerm(self%N_x, self%N_y) - 2.0d0 * self%solution(self%N_x, self%N_y-1) * C_S - &
                     2.0d0 * self%solution(self%N_x-1, self%N_y) * C_W) * C_O * self%omega + self%inv_omega * self%solution(self%N_x, self%N_y)
             end if
@@ -337,7 +337,7 @@ contains
                 do i = k, self%end_bottom_row_indx(p), 2
                     C_E = self%inner_node_coeff_east(i-1)
                     C_W = self%inner_node_coeff_west(i-1)
-                    C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                    C_O = self%centerCoeff(i,1)
                     self%solution(i,1) = (self%sourceTerm(i,1) - self%solution(i, 2) * C_N - self%solution(i, S_indx) * C_S - &
                             self%solution(i-1, 1) * C_W - self%solution(i+1, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,1)
                 end do
@@ -362,7 +362,7 @@ contains
                 do i = k, self%end_top_row_indx(p), 2
                     C_E = self%inner_node_coeff_east(i-1)
                     C_W = self%inner_node_coeff_west(i-1)
-                    C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                    C_O = self%centerCoeff(i,self%N_y)
                     self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - self%solution(i, N_indx) * C_N - self%solution(i, self%N_y-1) * C_S - &
                             self%solution(i-1, self%N_y) * C_W - self%solution(i+1, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,self%N_y)
                 end do
@@ -387,7 +387,7 @@ contains
                 do j = k, self%end_left_column_indx(p), 2
                     C_S = self%inner_node_coeff_south(j-1)
                     C_N = self%inner_node_coeff_north(j-1)
-                    C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                    C_O = self%centerCoeff(1,j)
                     self%solution(1,j) = (self%sourceTerm(1,j) - self%solution(1, j+1) * C_N - self%solution(1, j-1) * C_S - &
                             self%solution(2, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * self%solution(1,j)
                 end do
@@ -412,7 +412,7 @@ contains
                 do j = k, self%end_right_column_indx(p), 2
                     C_S = self%inner_node_coeff_south(j-1)
                     C_N = self%inner_node_coeff_north(j-1)
-                    C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                    C_O = self%centerCoeff(self%N_x,j)
                     self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - self%solution(self%N_x, j+1) * C_N - self%solution(self%N_x, j-1) * C_S - &
                             self%solution(self%N_x-1, j) * C_W - self%solution(E_indx, j) * C_E) * C_O * self%omega + self%inv_omega * self%solution(self%N_x,j)
                 end do
@@ -436,7 +436,7 @@ contains
                         W_indx = i-1
                         C_E = self%inner_node_coeff_east(i-1)
                         C_W = self%inner_node_coeff_west(i-1)
-                        C_O = self%inner_node_centerCoeff(i-1, j-1)
+                        C_O = self%centerCoeff(i, j)
                         oldSol = self%solution(i,j)
                         self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx)*C_S - &
                             self%solution(E_indx, j)*C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * oldSol
@@ -463,7 +463,7 @@ contains
                 do i = k, self%end_bottom_row_indx(p), 2
                     C_E = self%inner_node_coeff_east(i-1)
                     C_W = self%inner_node_coeff_west(i-1)
-                    C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                    C_O = self%centerCoeff(i,1)
                     self%solution(i,1) = (self%sourceTerm(i,1) - self%solution(i, 2) * C_N - self%solution(i, S_indx) * C_S - &
                             self%solution(i-1, 1) * C_W - self%solution(i+1, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,1)
                 end do
@@ -488,7 +488,7 @@ contains
                 do i = k, self%end_top_row_indx(p), 2
                     C_E = self%inner_node_coeff_east(i-1)
                     C_W = self%inner_node_coeff_west(i-1)
-                    C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                    C_O = self%centerCoeff(i,self%N_y)
                     self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - self%solution(i, N_indx) * C_N - self%solution(i, self%N_y-1) * C_S - &
                             self%solution(i-1, self%N_y) * C_W - self%solution(i+1, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,self%N_y)
                 end do
@@ -513,7 +513,7 @@ contains
                 do j = k, self%end_left_column_indx(p), 2
                     C_S = self%inner_node_coeff_south(j-1)
                     C_N = self%inner_node_coeff_north(j-1)
-                    C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                    C_O = self%centerCoeff(1,j)
                     self%solution(1,j) = (self%sourceTerm(1,j) - self%solution(1, j+1) * C_N - self%solution(1, j-1) * C_S - &
                             self%solution(2, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * self%solution(1,j)
                 end do
@@ -538,7 +538,7 @@ contains
                 do j = k, self%end_right_column_indx(p), 2
                     C_S = self%inner_node_coeff_south(j-1)
                     C_N = self%inner_node_coeff_north(j-1)
-                    C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                    C_O = self%centerCoeff(self%N_x,j)
                     self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - self%solution(self%N_x, j+1) * C_N - self%solution(self%N_x, j-1) * C_S - &
                             self%solution(self%N_x-1, j) * C_W - self%solution(E_indx, j) * C_E) * C_O * self%omega + self%inv_omega * self%solution(self%N_x,j)
                 end do
@@ -574,7 +574,7 @@ contains
                     W_indx = i-1
                     C_E = self%inner_node_coeff_east(i-1)
                     C_W = self%inner_node_coeff_west(i-1)
-                    C_O = self%inner_node_centerCoeff(i-1, j-1)
+                    C_O = self%centerCoeff(i, j)
                     oldSol = self%solution(i,j)
                     self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx)*C_S - &
                         self%solution(E_indx, j)*C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * oldSol
@@ -591,7 +591,7 @@ contains
             ! lower left corner
             C_N = self%bottom_row_coeff_north(1)
             C_E = self%left_column_coeff_east(1)
-            C_O = -0.5d0 / (C_N + C_E)
+            C_O = self%centerCoeff(1,1)
             oldSol = self%solution(1,1)
             self%solution(1,1) = (self%sourceTerm(1,1) - 2.0d0 * self%solution(1, 2) * C_N - &
                 2.0d0 * self%solution(2, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(1,1)
@@ -602,7 +602,7 @@ contains
             ! lower right corner
             C_N = self%bottom_row_coeff_north(self%number_bottom_row_sections)
             C_W = self%right_column_coeff_west(1)
-            C_O = -0.5d0/ (C_N + C_W)
+            C_O = self%centerCoeff(self%N_x,1)
             oldSol = self%solution(self%N_x, 1)
             self%solution(self%N_x, 1) = (self%sourceTerm(self%N_x, 1) - 2.0d0 * self%solution(self%N_x, 2) * C_N - &
                 2.0d0 * self%solution(self%N_x-1, 1) * C_W) * C_O * self%omega + self%inv_omega * self%solution(self%N_x, 1)
@@ -613,7 +613,7 @@ contains
             ! upper left corner
             C_S = self%top_row_coeff_south(1)
             C_E = self%left_column_coeff_east(self%number_left_column_sections)
-            C_O = -0.5d0 / (C_S + C_E)
+            C_O = self%centerCoeff(1,self%N_y)
             oldSol = self%solution(1, self%N_y)
             self%solution(1, self%N_y) = (self%sourceTerm(1, self%N_y) - 2.0d0 * self%solution(1, self%N_y-1) * C_S - &
                 2.0d0 * self%solution(2, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(1, self%N_y)
@@ -624,7 +624,7 @@ contains
             ! upper right corner
             C_S = self%top_row_coeff_south(self%number_top_row_sections)
             C_W = self%right_column_coeff_west(self%number_right_column_sections)
-            C_O = -0.5d0 / (C_W + C_S)
+            C_O = self%centerCoeff(self%N_x, self%N_y)
             oldSol = self%solution(self%N_x, self%N_y)
             self%solution(self%N_x, self%N_y) = (self%sourceTerm(self%N_x, self%N_y) - 2.0d0 * self%solution(self%N_x, self%N_y-1) * C_S - &
                 2.0d0 * self%solution(self%N_x-1, self%N_y) * C_W) * C_O * self%omega + self%inv_omega * self%solution(self%N_x, self%N_y)
@@ -651,7 +651,7 @@ contains
             do i = k, self%end_bottom_row_indx(p), 2
                 C_E = self%inner_node_coeff_east(i-1)
                 C_W = self%inner_node_coeff_west(i-1)
-                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                C_O = self%centerCoeff(i,1)
                 oldSol = self%solution(i,1)
                 self%solution(i,1) = (self%sourceTerm(i,1) - self%solution(i, 2) * C_N - self%solution(i, S_indx) * C_S - &
                         self%solution(i-1, 1) * C_W - self%solution(i+1, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,1)
@@ -678,7 +678,7 @@ contains
             do i = k, self%end_top_row_indx(p), 2
                 C_E = self%inner_node_coeff_east(i-1)
                 C_W = self%inner_node_coeff_west(i-1)
-                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                C_O = self%centerCoeff(i,self%N_y)
                 oldSol = self%solution(i,self%N_y)
                 self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - self%solution(i, N_indx) * C_N - self%solution(i, self%N_y-1) * C_S - &
                         self%solution(i-1, self%N_y) * C_W - self%solution(i+1, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,self%N_y)
@@ -705,7 +705,7 @@ contains
             do j = k, self%end_left_column_indx(p), 2
                 C_S = self%inner_node_coeff_south(j-1)
                 C_N = self%inner_node_coeff_north(j-1)
-                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                C_O = self%centerCoeff(1,j)
                 oldSol = self%solution(1,j)
                 self%solution(1,j) = (self%sourceTerm(1,j) - self%solution(1, j+1) * C_N - self%solution(1, j-1) * C_S - &
                         self%solution(2, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * self%solution(1,j)
@@ -732,7 +732,7 @@ contains
             do j = k, self%end_right_column_indx(p), 2
                 C_S = self%inner_node_coeff_south(j-1)
                 C_N = self%inner_node_coeff_north(j-1)
-                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                C_O = self%centerCoeff(self%N_x,j)
                 oldSol = self%solution(self%N_x, j)
                 self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - self%solution(self%N_x, j+1) * C_N - self%solution(self%N_x, j-1) * C_S - &
                         self%solution(self%N_x-1, j) * C_W - self%solution(E_indx, j) * C_E) * C_O * self%omega + self%inv_omega * self%solution(self%N_x,j)
@@ -758,7 +758,7 @@ contains
                     W_indx = i-1
                     C_E = self%inner_node_coeff_east(i-1)
                     C_W = self%inner_node_coeff_west(i-1)
-                    C_O = self%inner_node_centerCoeff(i-1, j-1)
+                    C_O = self%centerCoeff(i, j)
                     oldSol = self%solution(i,j)
                     self%solution(i,j) = (self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx)*C_S - &
                         self%solution(E_indx, j)*C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * oldSol
@@ -786,7 +786,7 @@ contains
             do i = k, self%end_bottom_row_indx(p), 2
                 C_E = self%inner_node_coeff_east(i-1)
                 C_W = self%inner_node_coeff_west(i-1)
-                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                C_O = self%centerCoeff(i,1)
                 oldSol = self%solution(i,1)
                 self%solution(i,1) = (self%sourceTerm(i,1) - self%solution(i, 2) * C_N - self%solution(i, S_indx) * C_S - &
                         self%solution(i-1, 1) * C_W - self%solution(i+1, 1) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,1)
@@ -813,7 +813,7 @@ contains
             do i = k, self%end_top_row_indx(p), 2
                 C_E = self%inner_node_coeff_east(i-1)
                 C_W = self%inner_node_coeff_west(i-1)
-                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                C_O = self%centerCoeff(i,self%N_y)
                 oldSol = self%solution(i,self%N_y)
                 self%solution(i,self%N_y) = (self%sourceTerm(i,self%N_y) - self%solution(i, N_indx) * C_N - self%solution(i, self%N_y-1) * C_S - &
                         self%solution(i-1, self%N_y) * C_W - self%solution(i+1, self%N_y) * C_E) * C_O * self%omega + self%inv_omega * self%solution(i,self%N_y)
@@ -840,7 +840,7 @@ contains
             do j = k, self%end_left_column_indx(p), 2
                 C_S = self%inner_node_coeff_south(j-1)
                 C_N = self%inner_node_coeff_north(j-1)
-                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                C_O = self%centerCoeff(1,j)
                 oldSol = self%solution(1,j)
                 self%solution(1,j) = (self%sourceTerm(1,j) - self%solution(1, j+1) * C_N - self%solution(1, j-1) * C_S - &
                         self%solution(2, j) * C_E - self%solution(W_indx, j) * C_W) * C_O * self%omega + self%inv_omega * self%solution(1,j)
@@ -867,7 +867,7 @@ contains
             do j = k, self%end_right_column_indx(p), 2
                 C_S = self%inner_node_coeff_south(j-1)
                 C_N = self%inner_node_coeff_north(j-1)
-                C_O = -1.0d0 / (C_N + C_S + C_W + C_E)
+                C_O = self%centerCoeff(self%N_x,j)
                 oldSol = self%solution(self%N_x,j)
                 self%solution(self%N_x,j) = (self%sourceTerm(self%N_x,j) - self%solution(self%N_x, j+1) * C_N - self%solution(self%N_x, j-1) * C_S - &
                         self%solution(self%N_x-1, j) * C_W - self%solution(E_indx, j) * C_E) * C_O * self%omega + self%inv_omega * self%solution(self%N_x,j)

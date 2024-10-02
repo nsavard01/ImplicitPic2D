@@ -8,8 +8,9 @@ module mod_GS_Base_Curv
 
     type, extends(GS_Base) :: GS_Base_Curv
         ! store grid quantities
-        real(real64), allocatable :: inner_node_centerCoeff(:,:), inner_node_coeff_north(:), inner_node_coeff_south(:), &
-            inner_node_coeff_east(:), inner_node_coeff_west(:)
+        real(real64), allocatable :: centerCoeff(:,:) ! just store all central coefficients on grid, assume most will be used, out of simplicity
+        real(real64), allocatable :: inner_node_coeff_north(:), inner_node_coeff_south(:), &
+            inner_node_coeff_east(:), inner_node_coeff_west(:) 
         real(real64), allocatable :: bottom_row_coeff_south(:), bottom_row_coeff_north(:)!, bottom_row_coeff_center(:)
         real(real64), allocatable :: top_row_coeff_south(:), top_row_coeff_north(:)!, top_row_coeff_center(:)
         real(real64), allocatable :: left_column_coeff_east(:), left_column_coeff_west(:)!, left_column_coeff_center(:)
@@ -38,12 +39,12 @@ subroutine initialize_GS_Curv(self, world)
     class(GS_Base_Curv), intent(in out) :: self
     type(domain_curv), intent(in), target :: world
     real(real64) :: del_x_west, del_x_east, del_y_north, del_y_south
-    integer :: i, j
+    integer :: i, j, p
 
     self%world => world
 
     ! Allocate inner node coefficients
-    allocate(self%inner_node_centerCoeff(self%N_x-2, self%N_y-2), self%inner_node_coeff_north(self%N_y-2), self%inner_node_coeff_south(self%N_y-2), &
+    allocate(self%centerCoeff(self%N_x, self%N_y), self%inner_node_coeff_north(self%N_y-2), self%inner_node_coeff_south(self%N_y-2), &
     self%inner_node_coeff_east(self%N_x-2), self%inner_node_coeff_west(self%N_x-2))
     do i = 1, self%N_x-2
         del_x_west = world%del_x(i)
@@ -63,12 +64,17 @@ subroutine initialize_GS_Curv(self, world)
     !$OMP do collapse(2)
     do j = 1, self%N_y-2
         do i = 1, self%N_x-2
-            self%inner_node_centerCoeff(i,j) = -1.0d0 / (self%inner_node_coeff_north(j) + self%inner_node_coeff_south(j) + &
+            self%centerCoeff(i+1,j+1) = -1.0d0 / (self%inner_node_coeff_north(j) + self%inner_node_coeff_south(j) + &
             self%inner_node_coeff_east(i) + self%inner_node_coeff_west(i))
         end do
     end do
     !$OMP end do
     !$OMP end parallel
+
+    self%centerCoeff(1,1) = -0.5d0 / (1.0d0 / (world%del_x(1)**2) + 1.0d0 / (world%del_y(1)**2))
+    self%centerCoeff(self%N_x, 1) = -0.5d0 / (1.0d0 / (world%del_x(self%N_x-1)**2) + 1.0d0 / (world%del_y(1)**2))
+    self%centerCoeff(1, self%N_y) = -0.5d0 / (1.0d0 / (world%del_x(1)**2) + 1.0d0 / (world%del_y(self%N_y-1)**2))
+    self%centerCoeff(self%N_x, self%N_y) = -0.5d0 / (1.0d0 / (world%del_x(self%N_x-1)**2) + 1.0d0 / (world%del_y(self%N_y-1)**2))
 
     ! allocate boundary values
     ! lower boundary
@@ -83,6 +89,10 @@ subroutine initialize_GS_Curv(self, world)
             self%bottom_row_coeff_north(i) = 1.0d0 / (world%del_y(1) * 0.5d0 * (world%del_y(self%N_y-1) + world%del_y(1)))
             self%bottom_row_coeff_south(i) = 1.0d0 / (world%del_y(self%N_y-1) * 0.5d0 * (world%del_y(self%N_y-1) + world%del_y(1)))
         end if
+        do p = self%start_bottom_row_indx(i), self%end_bottom_row_indx(i)
+            self%centerCoeff(p, 1) = -1.0d0 / (self%inner_node_coeff_east(p-1) + &
+            self%inner_node_coeff_west(p-1) + self%bottom_row_coeff_south(i) + self%bottom_row_coeff_north(i))
+        end do
     end do
 
     ! upper boundary
@@ -97,6 +107,10 @@ subroutine initialize_GS_Curv(self, world)
             self%top_row_coeff_north(i) = 1.0d0 / (world%del_y(1) * 0.5d0 * (world%del_y(self%N_y-1) + world%del_y(1)))
             self%top_row_coeff_south(i) = 1.0d0 / (world%del_y(self%N_y-1) * 0.5d0 * (world%del_y(self%N_y-1) + world%del_y(1)))
         end if
+        do p = self%start_top_row_indx(i), self%end_top_row_indx(i)
+            self%centerCoeff(p, self%N_y) = -1.0d0 / (self%inner_node_coeff_east(p-1) + &
+            self%inner_node_coeff_west(p-1) + self%top_row_coeff_south(i) + self%top_row_coeff_north(i))
+        end do
     end do
 
     ! left boundary
@@ -111,6 +125,10 @@ subroutine initialize_GS_Curv(self, world)
             self%left_column_coeff_east(i) = 1.0d0 / (world%del_x(1) * 0.5d0 * (world%del_x(self%N_x-1) + world%del_x(1)))
             self%left_column_coeff_west(i) = 1.0d0 / (world%del_x(self%N_x-1) * 0.5d0 * (world%del_x(self%N_x-1) + world%del_x(1)))
         end if
+        do p = self%start_left_column_indx(i), self%end_left_column_indx(i)
+            self%centerCoeff(1, p) = -1.0d0 / (self%inner_node_coeff_south(p-1) + &
+            self%inner_node_coeff_north(p-1) + self%left_column_coeff_east(i) + self%left_column_coeff_west(i))
+        end do
     end do
 
     ! right boundary
@@ -125,6 +143,10 @@ subroutine initialize_GS_Curv(self, world)
             self%right_column_coeff_east(i) = 1.0d0 / (world%del_x(1) * 0.5d0 * (world%del_x(self%N_x-1) + world%del_x(1)))
             self%right_column_coeff_west(i) = 1.0d0 / (world%del_x(self%N_x-1) * 0.5d0 * (world%del_x(self%N_x-1) + world%del_x(1)))
         end if
+        do p = self%start_right_column_indx(i), self%end_right_column_indx(i)
+            self%centerCoeff(self%N_x, p) = -1.0d0 / (self%inner_node_coeff_south(p-1) + &
+            self%inner_node_coeff_north(p-1) + self%right_column_coeff_east(i) + self%right_column_coeff_west(i))
+        end do
     end do
 
 
@@ -218,7 +240,7 @@ end subroutine initialize_GS_Curv
                     W_indx = i-1
                     C_E = self%inner_node_coeff_east(i-1)
                     C_W = self%inner_node_coeff_west(i-1)
-                    C_O = 1.0d0/self%inner_node_centerCoeff(i-1, j-1)
+                    C_O = 1.0d0/self%centerCoeff(i, j)
                     self%residual(i,j) = self%sourceTerm(i,j) - self%solution(i, N_indx) * C_N - self%solution(i, S_indx)*C_S - &
                         self%solution(E_indx, j)*C_E - self%solution(W_indx, j) * C_W - self%solution(i,j) * C_O
                 end do
@@ -233,7 +255,7 @@ end subroutine initialize_GS_Curv
             ! lower left corner
             C_N = self%bottom_row_coeff_north(1)
             C_E = self%left_column_coeff_east(1)
-            C_O = -2.0d0 * (C_N + C_E)
+            C_O = 1.0d0/self%centerCoeff(1,1)
             self%residual(1,1) = self%sourceTerm(1,1) - 2.0d0 * self%solution(1, 2) * C_N - &
                 2.0d0 * self%solution(2, 1) * C_E  - self%solution(1,1)*C_O
         end if
@@ -242,7 +264,7 @@ end subroutine initialize_GS_Curv
             ! lower right corner
             C_N = self%bottom_row_coeff_north(self%number_bottom_row_sections)
             C_W = self%right_column_coeff_west(1)
-            C_O = -2.0d0 * (C_N + C_W)
+            C_O = 1.0d0/self%centerCoeff(self%N_x,1)
             self%residual(self%N_x, 1) = self%sourceTerm(self%N_x, 1) - 2.0d0 * self%solution(self%N_x, 2) * C_N - &
                 2.0d0 * self%solution(self%N_x-1, 1) * C_W -  self%solution(self%N_x, 1)*C_O
         end if
@@ -251,7 +273,7 @@ end subroutine initialize_GS_Curv
             ! upper left corner
             C_S = self%top_row_coeff_south(1)
             C_E = self%left_column_coeff_east(self%number_left_column_sections)
-            C_O = -2.0d0 * (C_S + C_E)
+            C_O = 1.0d0/self%centerCoeff(1,self%N_y)
             self%residual(1, self%N_y) = self%sourceTerm(1, self%N_y) - 2.0d0 * self%solution(1, self%N_y-1) * C_S - &
                 2.0d0 * self%solution(2, self%N_y) * C_E - self%solution(1, self%N_y)*C_O
         end if
@@ -260,7 +282,7 @@ end subroutine initialize_GS_Curv
             ! upper right corner
             C_S = self%top_row_coeff_south(self%number_top_row_sections)
             C_W = self%right_column_coeff_west(self%number_right_column_sections)
-            C_O = -2.0d0 * (C_W + C_S)
+            C_O = 1.0d0/self%centerCoeff(self%N_x, self%N_y)
             self%residual(self%N_x, self%N_y) = self%sourceTerm(self%N_x, self%N_y) - 2.0d0 * self%solution(self%N_x, self%N_y-1) * C_S - &
                 2.0d0 * self%solution(self%N_x-1, self%N_y) * C_W - self%solution(self%N_x, self%N_y)*C_O
         end if
@@ -279,7 +301,7 @@ end subroutine initialize_GS_Curv
             do i = self%start_bottom_row_indx(p), self%end_bottom_row_indx(p)
                 C_E = self%inner_node_coeff_east(i-1)
                 C_W = self%inner_node_coeff_west(i-1)
-                C_O = -1.0d0  * (C_N + C_S + C_W + C_E)
+                C_O = 1.0d0/self%centerCoeff(i,1)
                 self%residual(i,1) = self%sourceTerm(i,1) - self%solution(i, 2) * C_N - self%solution(i, S_indx) * C_S - &
                     self%solution(i-1, 1) * C_W - self%solution(i+1, 1) * C_E -  self%solution(i,1)*C_O
             end do
@@ -299,7 +321,7 @@ end subroutine initialize_GS_Curv
             do i = self%start_top_row_indx(p), self%end_top_row_indx(p)
                 C_E = self%inner_node_coeff_east(i-1)
                 C_W = self%inner_node_coeff_west(i-1)
-                C_O = -1.0d0 * (C_N + C_S + C_W + C_E)
+                C_O = 1.0d0/self%centerCoeff(i, self%N_y)
                 self%residual(i,self%N_y) = self%sourceTerm(i,self%N_y) - self%solution(i, N_indx) * C_N - self%solution(i, self%N_y-1) * C_S - &
                     self%solution(i-1, self%N_y) * C_W - self%solution(i+1, self%N_y) * C_E -  self%solution(i, self%N_y)*C_O
             end do
@@ -319,7 +341,7 @@ end subroutine initialize_GS_Curv
             do j = self%start_left_column_indx(p), self%end_left_column_indx(p)
                 C_S = self%inner_node_coeff_south(j-1)
                 C_N = self%inner_node_coeff_north(j-1)
-                C_O = -1.0d0 * (C_N + C_S + C_W + C_E)
+                C_O = 1.0d0 / self%centerCoeff(1,j)
                 self%residual(1,j) = self%sourceTerm(1,j) - self%solution(1, j+1) * C_N - self%solution(1, j-1) * C_S - &
                     self%solution(2, j) * C_E - self%solution(W_indx, j) * C_W - self%solution(1,j)*C_O
             end do
@@ -339,7 +361,7 @@ end subroutine initialize_GS_Curv
             do j = self%start_right_column_indx(p), self%end_right_column_indx(p)
                 C_S = self%inner_node_coeff_south(j-1)
                 C_N = self%inner_node_coeff_north(j-1)
-                C_O = -1.0d0 * (C_N + C_S + C_W + C_E)
+                C_O = 1.0d0/ self%centerCoeff(self%N_x,j)
                 self%residual(self%N_x,j) = self%sourceTerm(self%N_x,j) - self%solution(self%N_x, j+1) * C_N - self%solution(self%N_x, j-1) * C_S - &
                     self%solution(self%N_x-1, j) * C_W - self%solution(E_indx, j) * C_E - self%solution(self%N_x,j)*C_O
             end do
