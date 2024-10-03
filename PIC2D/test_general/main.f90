@@ -21,11 +21,12 @@ program main
     class(GS_Base), allocatable :: solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
-    integer :: inner_box_first_y = 75, inner_box_last_y = 125, inner_box_first_x = 150, inner_box_last_x = 250
+    integer :: inner_box_first_y = 75, inner_box_last_y = 125, inner_box_first_x = 151, inner_box_last_x = 251
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
+    real(real64), allocatable :: test(:,:)
     logical :: evenGridBool, redBlackBool, PCG_bool, Krylov_bool, center_box_bool
 
     call execute_command_line("rm -r *.dat")
@@ -33,15 +34,15 @@ program main
     call omp_set_num_threads(numThreads)
     call omp_set_max_active_levels(numThreads)
     
-    evenGridBool = .false.
-    redBlackBool = .true.
+    evenGridBool = .true.
+    redBlackBool = .false.
     PCG_bool = .false.
     Krylov_bool = .false.
     center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 1
+    numberStages = 2
     call checkNodeDivisionMG(N_x, N_y, numberStages)
 
     ! More skewed delX and delY, more smoothing operations needed
@@ -52,10 +53,10 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(1) = 3 ! North
     NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(3) = 3 ! South
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -130,6 +131,7 @@ program main
         end if
     end select
     call directSolver%initializePardiso(1, 11, 1, 0)
+    allocate(test((solver%N_x+1)/2, (solver%N_y+1)/2))
 
     open(41,file='gridX.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) world%grid_X
@@ -162,11 +164,11 @@ program main
     if (center_box_bool) then
         !$OMP parallel private(k)
         !$OMP do collapse(2)
-        do j = inner_box_first_y, inner_box_last_y
-            do i = inner_box_first_x, inner_box_last_x
+        do j = inner_box_first_y, inner_box_last_y, solver%y_indx_step
+            do i = inner_box_first_x, inner_box_last_x, solver%x_indx_step
                 k = (j-1) * world%N_x + i 
                 directSolver%solution(k) = innerPhi
-                solver%solution(i,j) = innerPhi
+                solver%solution((i+solver%x_indx_step-1)/solver%x_indx_step,(j + solver%y_indx_step-1)/solver%y_indx_step) = innerPhi
             end do
         end do
         !$OMP end do
@@ -241,15 +243,15 @@ program main
 
     !$OMP parallel private(k, i, j)
     !$OMP do collapse(2)
-    do j = 1, N_y
-        do i = 1, N_x
+    do j = 1, solver%N_y
+        do i = 1, solver%N_x
             k = (j-1) * N_x + i
             if (world%boundary_conditions(i,j) /= 1) then
                 ! stageOne%sourceTerm(i,j) = -rho/eps_0
                 solver%sourceTerm(i,j) = -rho/eps_0
-                directSolver%sourceTerm(k) = -rho/eps_0
+                ! directSolver%sourceTerm(k) = -rho/eps_0
             else
-                directSolver%sourceTerm(k) = directSolver%solution(k)
+                ! directSolver%sourceTerm(k) = directSolver%solution(k)
             end if
         end do
     end do
@@ -267,9 +269,9 @@ program main
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
     ! print *, 'Took', solver%iterNumber, 'iterations'
     
-    call solver%calcResidual()
+    call solver%restriction(solver%solution, test)
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%solution
+    write(41) test
     close(41)
    
     ! end associate

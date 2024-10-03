@@ -9,7 +9,7 @@ module mod_GS_Base
         ! store grid quantities
         real(real64), allocatable :: sourceTerm(:,:), solution(:,:), residual(:,:)
         integer(int32), allocatable :: number_row_sections(:), start_inner_indx_x(:,:), end_inner_indx_x(:,:)
-        integer(int32) :: number_inner_rows, number_solve_nodes, max_number_row_sections, iterNumber, N_x, N_y, start_row_indx, end_row_indx
+        integer(int32) :: number_inner_rows, number_solve_nodes, max_number_row_sections, iterNumber, N_x, N_y, start_row_indx, end_row_indx, start_coarse_row_indx
         ! Get non-dirichlet indices on boundaries
         integer :: number_bottom_row_sections, number_top_row_sections, number_left_column_sections, number_right_column_sections
         integer, allocatable :: start_bottom_row_indx(:), end_bottom_row_indx(:), bottom_row_boundary_type(:)
@@ -49,7 +49,7 @@ contains
         self%N_y = N_y
         self%world => world
         allocate(self%sourceTerm(self%N_x, self%N_y), self%solution(self%N_x, self%N_y), self%residual(self%N_x, self%N_y))   
-        self%x_indx_step = (self%world%N_x-1)/(self%N_x-1) ! also equivalent to current stage
+        self%x_indx_step = (self%world%N_x-1)/(self%N_x-1) ! equivalent index step sizes in finest grid
         self%y_indx_step = (self%world%N_y-1)/(self%N_y-1)
         
         found_first_indx = .false.
@@ -248,7 +248,7 @@ contains
         ! left boundary
         k = 0
         found_first_indx = .false.
-        do j_coarse = 2, world%N_y-1
+        do j_coarse = 2, self%N_y-1
             j_fine = j_coarse * self%y_indx_step - self%y_indx_step + 1
             if (.not. found_first_indx) then
                 if (self%world%boundary_conditions(1,j_fine) /= 1) then
@@ -267,7 +267,7 @@ contains
 
         k = 0
         found_first_indx = .false.
-        do j_coarse = 2, world%N_y-1
+        do j_coarse = 2, self%N_y-1
             j_fine = j_coarse * self%y_indx_step - self%y_indx_step + 1
             if (.not. found_first_indx) then
                 if (self%world%boundary_conditions(1,j_fine) /= 1) then
@@ -288,7 +288,7 @@ contains
         ! right boundary
         k = 0
         found_first_indx = .false.
-        do j_coarse = 2, world%N_y-1
+        do j_coarse = 2, self%N_y-1
             j_fine = j_coarse * self%y_indx_step - self%y_indx_step + 1
             if (.not. found_first_indx) then
                 if (self%world%boundary_conditions(self%world%N_x,j_fine) /= 1) then
@@ -307,7 +307,7 @@ contains
 
         k = 0
         found_first_indx = .false.
-        do j_coarse = 2, world%N_y-1
+        do j_coarse = 2, self%N_y-1
             j_fine = j_coarse * self%y_indx_step - self%y_indx_step + 1
             if (.not. found_first_indx) then
                 if (self%world%boundary_conditions(self%world%N_x,j_fine) /= 1) then
@@ -324,6 +324,14 @@ contains
             end if
         end do
         if (found_first_indx) self%end_right_column_indx(k) = self%N_y-1
+
+        ! ----------- for restriction/prolongation ---------
+        ! get starting row index for coarse nodes
+        if (MOD(self%start_row_indx,2) == 1) then
+            self%start_coarse_row_indx = 1
+        else
+            self%start_coarse_row_indx = 2
+        end if
 
 
     end subroutine initialize_GS_orthogonal_base
