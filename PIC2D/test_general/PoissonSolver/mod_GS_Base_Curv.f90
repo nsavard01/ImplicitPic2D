@@ -39,7 +39,7 @@ subroutine initialize_GS_Curv(self, world)
     class(GS_Base_Curv), intent(in out) :: self
     type(domain_curv), intent(in), target :: world
     real(real64) :: del_x_west, del_x_east, del_y_north, del_y_south
-    integer :: i, j, p
+    integer :: i, j, p, i_fine, j_fine
 
     self%world => world
 
@@ -47,14 +47,16 @@ subroutine initialize_GS_Curv(self, world)
     allocate(self%centerCoeff(self%N_x, self%N_y), self%inner_node_coeff_north(self%N_y-2), self%inner_node_coeff_south(self%N_y-2), &
     self%inner_node_coeff_east(self%N_x-2), self%inner_node_coeff_west(self%N_x-2))
     do i = 1, self%N_x-2
-        del_x_west = world%del_x(i)
-        del_x_east = world%del_x(i+1)
+        i_fine = i * self%x_indx_step - self%x_indx_step + 1
+        del_x_west = SUM(world%del_x(i_fine:i_fine + self%x_indx_step-1))
+        del_x_east = SUM(world%del_x(i_fine+self%x_indx_step:i_fine + 2*self%x_indx_step-1))
         self%inner_node_coeff_west(i) = 1.0d0 / (del_x_west * 0.5d0 * (del_x_west + del_x_east))
         self%inner_node_coeff_east(i) = 1.0d0 / (del_x_east * 0.5d0 * (del_x_west + del_x_east))
     end do
     do j = 1, self%N_y-2
-        del_y_south = world%del_y(j)
-        del_y_north = world%del_y(j+1)
+        j_fine = j * self%y_indx_step - self%y_indx_step + 1
+        del_y_south = SUM(world%del_y(j_fine:j_fine+self%y_indx_step-1))
+        del_y_north = SUM(world%del_y(j_fine + self%y_indx_step:j_fine + 2 * self%y_indx_step -1))
         self%inner_node_coeff_north(j) = 1.0d0 / (del_y_north * 0.5d0 * (del_y_north + del_y_south))
         self%inner_node_coeff_south(j) = 1.0d0 / (del_y_south * 0.5d0 * (del_y_north + del_y_south))
     end do
@@ -71,10 +73,14 @@ subroutine initialize_GS_Curv(self, world)
     !$OMP end do
     !$OMP end parallel
 
-    self%centerCoeff(1,1) = -0.5d0 / (1.0d0 / (world%del_x(1)**2) + 1.0d0 / (world%del_y(1)**2))
-    self%centerCoeff(self%N_x, 1) = -0.5d0 / (1.0d0 / (world%del_x(self%N_x-1)**2) + 1.0d0 / (world%del_y(1)**2))
-    self%centerCoeff(1, self%N_y) = -0.5d0 / (1.0d0 / (world%del_x(1)**2) + 1.0d0 / (world%del_y(self%N_y-1)**2))
-    self%centerCoeff(self%N_x, self%N_y) = -0.5d0 / (1.0d0 / (world%del_x(self%N_x-1)**2) + 1.0d0 / (world%del_y(self%N_y-1)**2))
+    del_x_west = SUM(world%del_x(1:self%x_indx_step))
+    del_x_east = SUM(world%del_x(self%N_x-self%x_indx_step:self%N_x-1))
+    del_y_south = SUM(world%del_y(1:self%y_indx_step))
+    del_y_north = SUM(world%del_y(self%N_y-self%y_indx_step:self%N_y-1))
+    self%centerCoeff(1,1) = -0.5d0 / (1.0d0 / (del_x_west**2) + 1.0d0 / (del_y_south**2))
+    self%centerCoeff(self%N_x, 1) = -0.5d0 / (1.0d0 / (del_x_east**2) + 1.0d0 / (del_y_south**2))
+    self%centerCoeff(1, self%N_y) = -0.5d0 / (1.0d0 / (del_x_west**2) + 1.0d0 / (del_y_north**2))
+    self%centerCoeff(self%N_x, self%N_y) = -0.5d0 / (1.0d0 / (del_x_east**2) + 1.0d0 / (del_y_north**2))
 
     ! allocate boundary values
     ! lower boundary
@@ -82,12 +88,12 @@ subroutine initialize_GS_Curv(self, world)
     do i = 1, self%number_bottom_row_sections
         if (self%bottom_row_boundary_type(i) == 2) then
             !Neumann
-            self%bottom_row_coeff_north(i) = 1.0d0 / (world%del_y(1)**2)
-            self%bottom_row_coeff_south(i) = 1.0d0 / (world%del_y(1)**2)
+            self%bottom_row_coeff_north(i) = 1.0d0 / (del_y_south**2)
+            self%bottom_row_coeff_south(i) = 1.0d0 / (del_y_south**2)
         else
             !Periodic
-            self%bottom_row_coeff_north(i) = 1.0d0 / (world%del_y(1) * 0.5d0 * (world%del_y(self%N_y-1) + world%del_y(1)))
-            self%bottom_row_coeff_south(i) = 1.0d0 / (world%del_y(self%N_y-1) * 0.5d0 * (world%del_y(self%N_y-1) + world%del_y(1)))
+            self%bottom_row_coeff_north(i) = 1.0d0 / (del_y_south * 0.5d0 * (del_y_south + del_y_north))
+            self%bottom_row_coeff_south(i) = 1.0d0 / (del_y_north * 0.5d0 * (del_y_south + del_y_north))
         end if
         do p = self%start_bottom_row_indx(i), self%end_bottom_row_indx(i)
             self%centerCoeff(p, 1) = -1.0d0 / (self%inner_node_coeff_east(p-1) + &
@@ -100,12 +106,12 @@ subroutine initialize_GS_Curv(self, world)
     do i = 1, self%number_top_row_sections
         if (self%top_row_boundary_type(i) == 2) then
             !Neumann
-            self%top_row_coeff_north(i) = 1.0d0 / (world%del_y(self%N_y-1)**2)
-            self%top_row_coeff_south(i) = 1.0d0 / (world%del_y(self%N_y-1)**2)
+            self%top_row_coeff_north(i) = 1.0d0 / (del_y_north**2)
+            self%top_row_coeff_south(i) = 1.0d0 / (del_y_north**2)
         else
             !Periodic
-            self%top_row_coeff_north(i) = 1.0d0 / (world%del_y(1) * 0.5d0 * (world%del_y(self%N_y-1) + world%del_y(1)))
-            self%top_row_coeff_south(i) = 1.0d0 / (world%del_y(self%N_y-1) * 0.5d0 * (world%del_y(self%N_y-1) + world%del_y(1)))
+            self%top_row_coeff_north(i) = 1.0d0 / (del_y_south * 0.5d0 * (del_y_south + del_y_north))
+            self%top_row_coeff_south(i) = 1.0d0 / (del_y_north * 0.5d0 * (del_y_south + del_y_north))
         end if
         do p = self%start_top_row_indx(i), self%end_top_row_indx(i)
             self%centerCoeff(p, self%N_y) = -1.0d0 / (self%inner_node_coeff_east(p-1) + &
@@ -118,12 +124,12 @@ subroutine initialize_GS_Curv(self, world)
     do i = 1, self%number_left_column_sections
         if (self%left_column_boundary_type(i) == 2) then
             !Neumann
-            self%left_column_coeff_east(i) = 1.0d0 / (world%del_x(1)**2)
-            self%left_column_coeff_west(i) = 1.0d0 / (world%del_x(1)**2)
+            self%left_column_coeff_east(i) = 1.0d0 / (del_x_west**2)
+            self%left_column_coeff_west(i) = 1.0d0 / (del_x_west**2)
         else
             !Periodic
-            self%left_column_coeff_east(i) = 1.0d0 / (world%del_x(1) * 0.5d0 * (world%del_x(self%N_x-1) + world%del_x(1)))
-            self%left_column_coeff_west(i) = 1.0d0 / (world%del_x(self%N_x-1) * 0.5d0 * (world%del_x(self%N_x-1) + world%del_x(1)))
+            self%left_column_coeff_east(i) = 1.0d0 / (del_x_west * 0.5d0 * (del_x_west + del_x_east))
+            self%left_column_coeff_west(i) = 1.0d0 / (del_x_east * 0.5d0 * (del_x_west + del_x_east))
         end if
         do p = self%start_left_column_indx(i), self%end_left_column_indx(i)
             self%centerCoeff(1, p) = -1.0d0 / (self%inner_node_coeff_south(p-1) + &
@@ -136,12 +142,12 @@ subroutine initialize_GS_Curv(self, world)
     do i = 1, self%number_right_column_sections
         if (self%right_column_boundary_type(i) == 2) then
             !Neumann
-            self%right_column_coeff_east(i) = 1.0d0 / (world%del_x(self%N_x-1)**2)
-            self%right_column_coeff_west(i) = 1.0d0 / (world%del_x(self%N_x-1)**2)
+            self%right_column_coeff_east(i) = 1.0d0 / (del_x_east**2)
+            self%right_column_coeff_west(i) = 1.0d0 / (del_x_east**2)
         else
             !Periodic
-            self%right_column_coeff_east(i) = 1.0d0 / (world%del_x(1) * 0.5d0 * (world%del_x(self%N_x-1) + world%del_x(1)))
-            self%right_column_coeff_west(i) = 1.0d0 / (world%del_x(self%N_x-1) * 0.5d0 * (world%del_x(self%N_x-1) + world%del_x(1)))
+            self%right_column_coeff_east(i) = 1.0d0 / (del_x_west * 0.5d0 * (del_x_west + del_x_east))
+            self%right_column_coeff_west(i) = 1.0d0 / (del_x_east * 0.5d0 * (del_x_west + del_x_east))
         end if
         do p = self%start_right_column_indx(i), self%end_right_column_indx(i)
             self%centerCoeff(self%N_x, p) = -1.0d0 / (self%inner_node_coeff_south(p-1) + &
