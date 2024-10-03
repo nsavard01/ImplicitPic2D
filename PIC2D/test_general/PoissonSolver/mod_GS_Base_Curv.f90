@@ -18,7 +18,7 @@ module mod_GS_Base_Curv
     contains
         procedure, public, pass(self) :: constructPoissonOrthogonal
         procedure, public, pass(self) :: initialize_GS_Curv
-        ! procedure, public, pass(self) :: restriction => restriction_curv
+        procedure, public, pass(self) :: restriction => restriction_curv
         ! procedure, public, pass(self) :: prolongation => prolongation_curv
         procedure, public, pass(self) :: calcResidual => calcResidual_curv
         ! procedure, public, pass(self) :: YAX_Mult => YAX_Mult_curv
@@ -376,103 +376,208 @@ end subroutine initialize_GS_Curv
         !$OMP end parallel
     end subroutine calcResidual_curv
 
-! subroutine restriction_curv(self, fineGrid, coarseGrid)
-!     ! Use gauss seidel information to interpolate array fineGrid to coarseGrid
-!     class(GS_Base_Curv), intent(in) :: self
-!     real(real64), intent(in) :: fineGrid(self%N_x, self%N_y)
-!     real(real64), intent(in out) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
-!     real(real64) :: a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S
-!     integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, k, p
+    subroutine restriction_curv(self, fineGrid, coarseGrid)
+        ! Use gauss seidel information to interpolate array fineGrid to coarseGrid
+        class(GS_Base_Curv), intent(in) :: self
+        real(real64), intent(in) :: fineGrid(self%N_x, self%N_y)
+        real(real64), intent(in out) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
+        real(real64) :: a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S
+        integer :: i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, k, p, start_indx
 
-!     !$OMP parallel private(k, p, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, &
-!     !$OMP& a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S)
-!     !$OMP do collapse(2)
-!     ! loop over fine grid nodes which overlap with coarse grid nodes
-!     do k = self%startRowCoarse, self%endRowCoarse, 2
-!         do p = self%startColCoarse, self%endColCoarse, 2
-!             ! calculate fine indices around overlapping index
-!             i_fine = self%startCol + p - 1
-!             j_fine = self%startRow + k - 1
-!             N_indx = self%vertIndx(1,k)
-!             E_indx = self%horzIndx(1,p)
-!             S_indx = self%vertIndx(2,k)
-!             W_indx = self%horzIndx(2,p)
-!             i_coarse = (i_fine + 1)/2
-!             j_coarse = (j_fine + 1)/2
+        !$OMP parallel private(k, p, i_fine, j_fine, i_coarse, j_coarse, N_indx, E_indx, S_indx, W_indx, &
+        !$OMP& a_N, a_E, a_W, a_S, C_N, C_E, C_W, C_S, start_indx)
 
-!             ! Transpose of prolongation, seems to work best for red black
-!             if (E_indx /= W_indx) then
-!                 ! interpolation from east point
-!                 C_E = self%horzCoeffs(1, E_indx + 1 - self%startCol)
-!                 C_W = self%horzCoeffs(2, E_indx + 1 - self%startCol)
-!                 a_E = C_W/(C_E + C_W)
+        ! Inner Nodes
+        !$OMP do
+        do k = self%start_coarse_row_indx, self%number_inner_rows, 2
+            j_fine = self%start_row_indx + k - 1
+            j_coarse = (j_fine + 1)/2
+            N_indx = j_fine + 1
+            S_indx = j_fine - 1
+            a_N = self%inner_node_coeff_south(j_fine)/(self%inner_node_coeff_south(j_fine) + self%inner_node_coeff_north(j_fine)) ! interpolation from north point
+            a_S = self%inner_node_coeff_north(j_fine-2)/(self%inner_node_coeff_south(j_fine-2) + self%inner_node_coeff_north(j_fine-2)) ! interpolation from south point
+            do p = 1, self%number_row_sections(k)
+                start_indx = self%start_inner_indx_x(p, k)
+                if (MOD(start_indx,2) == 0) start_indx = start_indx + 1
+                do i_fine = start_indx, self%end_inner_indx_x(p,k), 2
+                    i_coarse = (i_fine+1)/2
+                    E_indx = i_fine+1
+                    W_indx = i_fine-1
+                    a_E = self%inner_node_coeff_west(i_fine)/(self%inner_node_coeff_west(i_fine) + self%inner_node_coeff_east(i_fine))
+                    a_W = self%inner_node_coeff_east(i_fine-2)/(self%inner_node_coeff_west(i_fine-2) + self%inner_node_coeff_east(i_fine-2))
+                    coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
+                        fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
+                        fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
+                        fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
+                        fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+                end do
+            end do
+        end do
+        !$OMP end do nowait
 
-!                 ! interpolation from west point
-!                 C_E = self%horzCoeffs(1, W_indx + 1 - self%startCol)
-!                 C_W = self%horzCoeffs(2, W_indx + 1 - self%startCol)
-!                 a_W = C_E/(C_E + C_W)
-!             else if (p == self%startColCoarse) then
-!                 ! left neumann
-!                 C_E = self%horzCoeffs(1, E_indx + 1 - self%startCol)
-!                 C_W = self%horzCoeffs(2, E_indx + 1 - self%startCol)
-!                 a_E = C_W/(C_E + C_W)
-!                 a_W = a_E
-!             else
-!                 ! right neumann
-!                 C_E = self%horzCoeffs(1, W_indx + 1 - self%startCol)
-!                 C_W = self%horzCoeffs(2, W_indx + 1 - self%startCol)
-!                 a_W = C_E/(C_E + C_W)
-!                 a_E = a_W
-!             end if
+        ! corners
+        !$OMP sections
+        !$OMP section
+        if (self%world%boundary_conditions(1,1) == 2) then
+            ! lower left corner
+            a_E = self%inner_node_coeff_west(1)/(self%inner_node_coeff_west(1) + self%inner_node_coeff_east(1))
+            a_N = self%inner_node_coeff_south(1)/(self%inner_node_coeff_south(1) + self%inner_node_coeff_north(1))
+            coarseGrid(1,1) = 0.25d0 * fineGrid(1,1) + 0.5d0 * a_E * fineGrid(2,1) + 0.5d0 * a_N * fineGrid(1,2) + a_N * a_E * fineGrid(2,2)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
+            ! lower right corner
+            a_W = self%inner_node_coeff_east(self%N_x-2)/(self%inner_node_coeff_west(self%N_x-2) + self%inner_node_coeff_east(self%N_x-2))
+            a_N = self%inner_node_coeff_south(1)/(self%inner_node_coeff_south(1) + self%inner_node_coeff_north(1))
+            coarseGrid((self%N_x+1)/2,1) = 0.25d0 * fineGrid(self%N_x,1) + &
+            0.5d0 * a_W * fineGrid(self%N_x-1,1) + 0.5d0 * a_N * fineGrid(self%N_x,2) + &
+            a_W * a_N * fineGrid(self%N_x-1,2)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
+            ! upper left corner
+            a_E = self%inner_node_coeff_west(1)/(self%inner_node_coeff_west(1) + self%inner_node_coeff_east(1))
+            a_S = self%inner_node_coeff_north(self%N_y-2)/(self%inner_node_coeff_south(self%N_y-2) + self%inner_node_coeff_north(self%N_y-2))
+            coarseGrid(1,(self%N_y+1)/2) = 0.25d0 * fineGrid(1,self%N_y) + &
+            0.5d0 * a_E * fineGrid(2, self%N_y) +  0.5d0 * a_S * fineGrid(1, self%N_y-1) + &
+            a_E * a_S * fineGrid(2, self%N_y-1)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
+            ! upper right corner
+            a_W = self%inner_node_coeff_east(self%N_x-2)/(self%inner_node_coeff_west(self%N_x-2) + self%inner_node_coeff_east(self%N_x-2))
+            a_S = self%inner_node_coeff_north(self%N_y-2)/(self%inner_node_coeff_south(self%N_y-2) + self%inner_node_coeff_north(self%N_y-2))
+            coarseGrid((self%N_x+1)/2,(self%N_y+1)/2) = 0.25d0 * fineGrid(self%N_x,self%N_y) + &
+            0.5d0 * a_W * fineGrid(self%N_x-1, self%N_y) + 0.5d0 * a_S * fineGrid(self%N_x, self%N_y-1) + &
+            a_W * a_S * fineGrid(self%N_x-1, self%N_y-1)
+        end if
+        !$OMP end sections nowait
 
-!             if (N_indx /= S_indx) then
-!                 ! interpolation from north point
-!                 C_N = self%vertCoeffs(1, N_indx + 1 - self%startRow)
-!                 C_S = self%vertCoeffs(2, N_indx + 1 - self%startRow)
-!                 a_N = C_S/(C_N + C_S)
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            a_N = self%inner_node_coeff_south(1)/(self%inner_node_coeff_south(1) + self%inner_node_coeff_north(1))
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+                a_S = a_N
+            else
+                S_indx = self%N_y-1
+                a_S = self%inner_node_coeff_north(self%N_y-2)/(self%inner_node_coeff_south(self%N_y-2) + self%inner_node_coeff_north(self%N_y-2))
+            end if
+            N_indx = 2
+            j_fine = 1
+            j_coarse = 1
+            if (MOD(start_indx,2) == 0) start_indx = start_indx + 1
+            do i_fine = start_indx, self%end_bottom_row_indx(p), 2
+                i_coarse = (i_fine+1)/2
+                E_indx = i_fine+1
+                W_indx = i_fine-1
+                a_E = self%inner_node_coeff_west(i_fine)/(self%inner_node_coeff_west(i_fine) + self%inner_node_coeff_east(i_fine))
+                a_W = self%inner_node_coeff_east(i_fine-2)/(self%inner_node_coeff_west(i_fine-2) + self%inner_node_coeff_east(i_fine-2))
+                coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
+                    fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
+                    fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
+                    fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
+                    fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+            end do
+        end do
+        !$OMP end do nowait
 
-!                 ! interpolation from west point
-!                 C_N = self%vertCoeffs(1, S_indx + 1 - self%startRow)
-!                 C_S = self%vertCoeffs(2, S_indx + 1 - self%startRow)
-!                 a_S = C_N/(C_N + C_S)
-!             else if (k == self%startRowCoarse) then
-!                 ! South neumann
-!                 C_N = self%vertCoeffs(1, N_indx + 1 - self%startRow)
-!                 C_S = self%vertCoeffs(2, N_indx + 1 - self%startRow)
-!                 a_N = C_S/(C_N + C_S)
-!                 a_S = a_N
-!             else
-!                 ! top neumann
-!                 C_N = self%vertCoeffs(1, S_indx + 1 - self%startRow)
-!                 C_S = self%vertCoeffs(2, S_indx + 1 - self%startRow)
-!                 a_S = C_N/(C_N + C_S)
-!                 a_N = a_S
-!             end if
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            a_S = self%inner_node_coeff_north(self%N_y-2)/(self%inner_node_coeff_south(self%N_y-2) + self%inner_node_coeff_north(self%N_y-2))
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+                a_N = a_S
+            else
+                N_indx = 2
+                a_N = self%inner_node_coeff_south(1)/(self%inner_node_coeff_south(1) + self%inner_node_coeff_north(1))
+            end if
+            S_indx = self%N_y-1
+            j_fine = self%N_y
+            j_coarse = (self%N_y+1)/2
+            start_indx = self%start_top_row_indx(p)
+            if (MOD(start_indx,2) == 0) start_indx = start_indx + 1
+            do i_fine = start_indx, self%end_top_row_indx(p), 2
+                i_coarse = (i_fine+1)/2
+                E_indx = i_fine+1
+                W_indx = i_fine-1
+                a_E = self%inner_node_coeff_west(i_fine)/(self%inner_node_coeff_west(i_fine) + self%inner_node_coeff_east(i_fine))
+                a_W = self%inner_node_coeff_east(i_fine-2)/(self%inner_node_coeff_west(i_fine-2) + self%inner_node_coeff_east(i_fine-2))
+                coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
+                    fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
+                    fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
+                    fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
+                    fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+            end do
+        end do
+        !$OMP end do nowait
 
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            a_E = self%inner_node_coeff_west(1)/(self%inner_node_coeff_west(1) + self%inner_node_coeff_east(1))
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+                a_W = a_E
+            else
+                W_indx = self%N_x-1
+                a_W = self%inner_node_coeff_east(self%N_x-2)/(self%inner_node_coeff_west(self%N_x-2) + self%inner_node_coeff_east(self%N_x-2))
+            end if
+            E_indx = 2
+            i_fine = 1
+            i_coarse = 1
+            start_indx = self%start_left_column_indx(p)
+            if (MOD(start_indx,2) == 0) start_indx = start_indx + 1
+            do j_fine = start_indx, self%end_left_column_indx(p), 2
+                a_N = self%inner_node_coeff_south(j_fine)/(self%inner_node_coeff_south(j_fine) + self%inner_node_coeff_north(j_fine))
+                a_S = self%inner_node_coeff_north(j_fine-2)/(self%inner_node_coeff_south(j_fine-2) + self%inner_node_coeff_north(j_fine-2))
+                j_coarse = (j_fine+1)/2
+                N_indx = j_fine + 1
+                S_indx = j_fine - 1
+                coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
+                    fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
+                    fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
+                    fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
+                    fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+            end do
+        end do
+        !$OMP end do nowait
 
-!             !node based restriction, works best for zebra
-!             ! C_N = self%vertCoeffs(1,k)
-!             ! C_E = self%horzCoeffs(1,p)
-!             ! C_S = self%vertCoeffs(2,k)
-!             ! C_W = self%horzCoeffs(2,p)
-!             ! a_N = C_N/(C_N + C_S)
-!             ! a_S = C_S/(C_N + C_S)
-!             ! a_E = C_E/(C_E + C_W)
-!             ! a_W = C_W/(C_E + C_W)
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            a_W = self%inner_node_coeff_east(self%N_x-2)/(self%inner_node_coeff_west(self%N_x-2) + self%inner_node_coeff_east(self%N_x-2))
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+                a_E = a_W
+            else
+                E_indx = 2
+                a_E = self%inner_node_coeff_west(1)/(self%inner_node_coeff_west(1) + self%inner_node_coeff_east(1))
+            end if
+            W_indx = self%N_x-1
+            i_fine = self%N_x
+            i_coarse = (self%N_x+1)/2
+            start_indx = self%start_right_column_indx(p)
+            if (MOD(start_indx,2) == 0) start_indx = start_indx + 1
+            do j_fine = start_indx, self%end_right_column_indx(p), 2
+                a_N = self%inner_node_coeff_south(j_fine)/(self%inner_node_coeff_south(j_fine) + self%inner_node_coeff_north(j_fine))
+                a_S = self%inner_node_coeff_north(j_fine-2)/(self%inner_node_coeff_south(j_fine-2) + self%inner_node_coeff_north(j_fine-2))
+                j_coarse = (j_fine+1)/2
+                N_indx = j_fine + 1
+                S_indx = j_fine - 1
+                coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
+                    fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
+                    fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
+                    fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
+                    fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
 
-
-!             ! Interpolate residual to coarse grid
-!             coarseGrid(i_coarse, j_coarse) = 0.25d0 * (fineGrid(i_fine, j_fine) + &
-!             fineGrid(E_indx, j_fine) * a_E + fineGrid(W_indx, j_fine) * a_W +  &
-!             fineGrid(i_fine, N_indx) * a_N + fineGrid(i_fine, S_indx) * a_S + &
-!             fineGrid(E_indx, N_indx) * a_E * a_N + fineGrid(E_indx, S_indx) * a_E * a_S + &
-!             fineGrid(W_indx, N_indx) * a_W * a_N + fineGrid(W_indx, S_indx) * a_W * a_S)
-!         end do
-!     end do
-!     !$OMP end do
-!     !$OMP end parallel
-
-! end subroutine restriction_curv
+    end subroutine restriction_curv
 
 ! subroutine prolongation_curv(self, fineGrid, coarseGrid)
 !     ! Prolongate operator from coarse to fine grid using gauss seidel data

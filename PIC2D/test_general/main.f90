@@ -34,7 +34,7 @@ program main
     call omp_set_num_threads(numThreads)
     call omp_set_max_active_levels(numThreads)
     
-    evenGridBool = .true.
+    evenGridBool = .false.
     redBlackBool = .false.
     PCG_bool = .false.
     Krylov_bool = .false.
@@ -53,7 +53,7 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(1) = 1! North
     NESW_wallBoundaries(2) = 2 ! East
     NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 2 ! West
@@ -259,6 +259,7 @@ program main
     !$OMP end parallel
 
     
+
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
     call solver%solveGS(stepTol, relTol)
@@ -269,10 +270,10 @@ program main
     ! print *, 'Took', solver%iterNumber, 'iterations'
     test = 0.0d0
     call solver%restriction(solver%solution, test)
-    solver%solution = 0.0d0
-    call solver%prolongation(solver%solution, test)
+    ! solver%solution = 0.0d0
+    ! call solver%prolongation(solver%solution, test)
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%solution
+    write(41) test
     close(41)
    
     ! end associate
