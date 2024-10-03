@@ -9,7 +9,8 @@ module mod_GS_Base
         ! store grid quantities
         real(real64), allocatable :: sourceTerm(:,:), solution(:,:), residual(:,:)
         integer(int32), allocatable :: number_row_sections(:), start_inner_indx_x(:,:), end_inner_indx_x(:,:)
-        integer(int32) :: number_inner_rows, number_solve_nodes, max_number_row_sections, iterNumber, N_x, N_y, start_row_indx, end_row_indx, start_coarse_row_indx
+        integer(int32) :: number_inner_rows, number_solve_nodes, max_number_row_sections, iterNumber, N_x, N_y, start_row_indx, end_row_indx
+        integer(int32) :: start_coarse_row_indx, start_fine_row_indx
         ! Get non-dirichlet indices on boundaries
         integer :: number_bottom_row_sections, number_top_row_sections, number_left_column_sections, number_right_column_sections
         integer, allocatable :: start_bottom_row_indx(:), end_bottom_row_indx(:), bottom_row_boundary_type(:)
@@ -329,8 +330,10 @@ contains
         ! get starting row index for coarse nodes
         if (MOD(self%start_row_indx,2) == 1) then
             self%start_coarse_row_indx = 1
+            self%start_fine_row_indx = 2
         else
             self%start_coarse_row_indx = 2
+            self%start_fine_row_indx = 1
         end if
 
 
