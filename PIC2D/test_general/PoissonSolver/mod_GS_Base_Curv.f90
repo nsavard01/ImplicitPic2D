@@ -19,7 +19,7 @@ module mod_GS_Base_Curv
         procedure, public, pass(self) :: constructPoissonOrthogonal
         procedure, public, pass(self) :: initialize_GS_Curv
         procedure, public, pass(self) :: restriction => restriction_curv
-        ! procedure, public, pass(self) :: prolongation => prolongation_curv
+        procedure, public, pass(self) :: prolongation => prolongation_curv
         procedure, public, pass(self) :: calcResidual => calcResidual_curv
         ! procedure, public, pass(self) :: YAX_Mult => YAX_Mult_curv
         ! procedure, public, pass(self) :: AX_Mult => AX_Mult_curv
@@ -579,97 +579,179 @@ end subroutine initialize_GS_Curv
 
     end subroutine restriction_curv
 
-! subroutine prolongation_curv(self, fineGrid, coarseGrid)
-!     ! Prolongate operator from coarse to fine grid using gauss seidel data
-!     class(GS_Base_Curv), intent(in) :: self
-!     real(real64), intent(in out) :: fineGrid(self%N_x, self%N_y)
-!     real(real64), intent(in) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
-!     real(real64) :: w_1, w_2, w_3, w_4, w_tot
-!     integer(int32) :: i_coarse, j_coarse, i_fine, j_fine, N_x_coarse, N_y_coarse, k, p
-!     N_x_coarse = (self%N_x+1)/2
-!     N_y_coarse = (self%N_y+1)/2
+    subroutine prolongation_curv(self, fineGrid, coarseGrid)
+        ! Prolongate operator from coarse to fine grid using gauss seidel data
+        class(GS_Base_Curv), intent(in) :: self
+        real(real64), intent(in out) :: fineGrid(self%N_x, self%N_y)
+        real(real64), intent(in) :: coarseGrid((self%N_x+1)/2, (self%N_y+1)/2)
+        real(real64) :: a_W, a_E, a_N, a_S, a_tot
+        integer(int32) :: i_coarse, j_coarse, i_fine, j_fine, N_x_coarse, N_y_coarse, k, p, start_indx
+        N_x_coarse = (self%N_x+1)/2
+        N_y_coarse = (self%N_y+1)/2
 
-!     !$OMP parallel private(i_coarse, j_coarse, i_fine, j_fine, w_1, w_2, w_3, w_4, w_tot)
-!     ! do each do loop individually because can't think of fewer loops which do several calculations without doing same operation on each
-!     !$OMP do collapse(2)
-!     ! set similar nodes
-!     do k = self%startRowCoarse, self%endRowCoarse, 2
-!         do p = self%startColCoarse, self%endColCoarse, 2
-!             i_fine = p + self%startCol -1
-!             j_fine = k + self%startRow - 1
-!             j_coarse = (j_fine+1)/2
-!             i_coarse = (i_fine+1)/2
-!             ! Add overlapping coarse nodes
-!             fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse)
-!         end do
-!     end do
-!     !$OMP end do nowait
-!     !$OMP do collapse(2)
-!     ! go horizontal each row
-!     do k = self%startRowCoarse, self%endRowCoarse, 2
-!         do i_coarse = 1, N_x_coarse-1
-!             i_fine = 2*i_coarse ! i_fine right of overlapping coarse node
-!             j_fine = k + self%startRow-1
-!             j_coarse = (j_fine+1)/2
-!             p = i_fine + 1 - self%startCol ! p at i_fine
-!             w_1 = self%horzCoeffs(1, p) !E
-!             w_2 = self%horzCoeffs(2, p) !W
-!             w_tot = w_1 + w_2
-!             w_1 = w_1 / w_tot
-!             w_2 = w_2 / w_tot
+        !$OMP parallel private(i_fine, j_fine, i_coarse, j_coarse, k, p, start_indx, &
+        !$OMP& a_W, a_E, a_N, a_S, a_tot)
+        ! do each do loop individually because can't think of fewer loops which don't do unnecessary calculations
 
-!             ! Average fine nodes between coarse nodes horizontally
-!             fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse+1, j_coarse) * w_1 + coarseGrid(i_coarse, j_coarse) * w_2
-!         end do
-!     end do
-!     !$OMP end do nowait
-!     !$OMP do collapse(2)
-!     ! go vertical
-!     do j_coarse = 1, N_y_coarse-1
-!         do p = self%startColCoarse, self%endColCoarse, 2
-!             i_fine = p + self%startCol-1
-!             i_coarse = (i_fine + 1)/2
-!             j_fine = j_coarse*2 ! j_fine north of overlapping coarse node
-!             k = j_fine + 1 - self%startRow
-!             w_1 = self%vertCoeffs(1, k) !N
-!             w_2 = self%vertCoeffs(2, k) !S
-!             w_tot = w_1 + w_2
-!             w_1 = w_1 / w_tot
-!             w_2 = w_2 / w_tot
-!             ! Average fine nodes between coarse nodes vertical direction
-!             fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse+1) * w_1 + coarseGrid(i_coarse, j_coarse) * w_2
-!         end do
-!     end do
-!     !$OMP end do nowait
-!     !$OMP do collapse(2)
-!     ! add offset fine nodes which require 4 point interpolation
-!     ! first loop through SW corner coarse nodes
-!     do j_coarse = 1, N_y_coarse-1
-!         do i_coarse = 1, N_x_coarse-1
-!             i_fine = i_coarse*2 ! i_fine east i_coarse
-!             j_fine = j_coarse*2 ! j_fine north j_fine
-!             p = i_fine + 1 - self%startCol
-!             k = j_fine + 1 - self%startRow
-!             w_1 = self%vertCoeffs(1, k) !N
-!             w_2 = self%vertCoeffs(2, k) !S
-!             w_tot = w_1 + w_2
-!             w_1 = w_1/w_tot
-!             w_2 = w_2/w_tot
+        !$OMP do collapse(2)
+        ! set similar nodes
+        do j_coarse = 1, N_y_coarse
+            do i_coarse = 1, N_x_coarse
+                i_fine = i_coarse*2 - 1
+                j_fine = j_coarse*2-1
+                ! Add overlapping coarse nodes
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse)
+            end do
+        end do
+        !$OMP end do nowait
 
-!             w_3 = self%horzCoeffs(1,p) !E
-!             w_4 = self%horzCoeffs(2,p) !W
-!             w_tot = w_3 + w_4
-!             w_3 = w_3/w_tot
-!             w_4 = w_4/w_tot
+        !$OMP do
+        ! inner fine nodes horizontally between coarse nodes
+        do k = self%start_coarse_row_indx, self%number_inner_rows, 2
+            j_fine = self%start_row_indx + k - 1
+            j_coarse = (j_fine + 1)/2
+            do p = 1, self%number_row_sections(k)
+                start_indx = self%start_inner_indx_x(p, k)
+                if (MOD(start_indx,2) == 1) start_indx = start_indx + 1
+                do i_fine = start_indx, self%end_inner_indx_x(p,k), 2  
+                    i_coarse = (i_fine)/2 ! i_coarse to the left of fine node
+                    a_W = self%inner_node_coeff_west(i_fine-1)
+                    a_E = self%inner_node_coeff_east(i_fine-1)
+                    a_tot = a_W + a_E
+                    a_W = a_W/a_tot
+                    a_E = a_E/a_tot
+                    fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse+1, j_coarse) * a_E + coarseGrid(i_coarse, j_coarse) * a_W
+                end do
+            end do
+        end do
+        !$OMP end do nowait
 
-!             fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse) * w_2*w_4 + coarseGrid(i_coarse+1, j_coarse) * w_3 * w_2 &
-!                 + coarseGrid(i_coarse, j_coarse+1) * w_1 * w_4 + coarseGrid(i_coarse+1, j_coarse+1) * w_1 * w_3
-!         end do
-!     end do
-!     !$OMP end do
-!     !$OMP end parallel
+        !$OMP do
+        ! inner fine nodes vertically between coarse nodes
+        do k = self%start_fine_row_indx, self%number_inner_rows, 2
+            j_fine = self%start_row_indx + k - 1
+            j_coarse = (j_fine)/2 ! this is coarse lower than j_fine
+            a_N = self%inner_node_coeff_north(j_fine-1)
+            a_S = self%inner_node_coeff_south(j_fine-1)
+            a_tot = a_S + a_N
+            a_N = a_N / a_tot
+            a_S = a_S / a_tot
+            do p = 1, self%number_row_sections(k)
+                start_indx = self%start_inner_indx_x(p, k)
+                if (MOD(start_indx,2) == 0) start_indx = start_indx + 1
+                do i_fine = start_indx, self%end_inner_indx_x(p,k), 2   ! i_fine odd
+                    i_coarse = (i_fine + 1)/2
+                    fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse) * a_S + coarseGrid(i_coarse, j_coarse+1) * a_N
+                end do
+            end do
+        end do
+        !$OMP end do nowait
 
-! end subroutine prolongation_curv
+        !$OMP do
+        ! inner fine nodes with bilinear interpolation
+        do k = self%start_fine_row_indx, self%number_inner_rows, 2
+            j_fine = self%start_row_indx + k - 1
+            j_coarse = (j_fine)/2 ! this is coarse lower than j_fine
+            a_N = self%inner_node_coeff_north(j_fine-1)
+            a_S = self%inner_node_coeff_south(j_fine-1)
+            a_tot = a_S + a_N
+            a_N = a_N / a_tot
+            a_S = a_S / a_tot
+            do p = 1, self%number_row_sections(k)
+                start_indx = self%start_inner_indx_x(p, k)
+                if (MOD(start_indx,2) == 1) start_indx = start_indx + 1
+                do i_fine = start_indx, self%end_inner_indx_x(p,k), 2  ! i_fine even
+                    i_coarse = (i_fine)/2 ! coarse node lower i_fine
+                    a_W = self%inner_node_coeff_west(i_fine-1)
+                    a_E = self%inner_node_coeff_east(i_fine-1)
+                    a_tot = a_W + a_E
+                    a_W = a_W/a_tot
+                    a_E = a_E/a_tot
+                    fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse) * a_S * a_W + coarseGrid(i_coarse+1, j_coarse) * a_E * a_S &
+                    + coarseGrid(i_coarse, j_coarse+1) * a_N * a_W + coarseGrid(i_coarse+1, j_coarse+1) * a_N * a_E
+                end do
+            end do
+        end do
+        !$OMP end do nowait
+
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            j_fine = 1
+            j_coarse = 1
+            start_indx = self%start_bottom_row_indx(p)
+            if (MOD(start_indx,2) == 1) start_indx = start_indx + 1
+            do i_fine = start_indx, self%end_bottom_row_indx(p), 2
+                i_coarse = (i_fine)/2 ! i_coarse to the left of fine node
+                a_W = self%inner_node_coeff_west(i_fine-1)
+                a_E = self%inner_node_coeff_east(i_fine-1)
+                a_tot = a_W + a_E
+                a_W = a_W/a_tot
+                a_E = a_E/a_tot
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse+1, j_coarse) * a_E + coarseGrid(i_coarse, j_coarse) * a_W
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            j_fine = self%N_y
+            j_coarse = (self%N_y+1)/2
+            start_indx = self%start_top_row_indx(p)
+            if (MOD(start_indx,2) == 1) start_indx = start_indx + 1
+            do i_fine = start_indx, self%end_top_row_indx(p), 2
+                i_coarse = (i_fine)/2 ! i_coarse to the left of fine node
+                a_W = self%inner_node_coeff_west(i_fine-1)
+                a_E = self%inner_node_coeff_east(i_fine-1)
+                a_tot = a_W + a_E
+                a_W = a_W/a_tot
+                a_E = a_E/a_tot
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse+1, j_coarse) * a_E + coarseGrid(i_coarse, j_coarse) * a_W
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            i_fine = 1
+            i_coarse = 1
+            start_indx = self%start_left_column_indx(p)
+            if (MOD(start_indx,2) == 1) start_indx = start_indx + 1
+            do j_fine = start_indx, self%end_left_column_indx(p), 2
+                j_coarse = (j_fine)/2
+                a_N = self%inner_node_coeff_north(j_fine-1)
+                a_S = self%inner_node_coeff_south(j_fine-1)
+                a_tot = a_S + a_N
+                a_N = a_N / a_tot
+                a_S = a_S / a_tot
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse) * a_S + coarseGrid(i_coarse, j_coarse+1) * a_N
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            i_fine = self%N_x
+            i_coarse = (self%N_x+1)/2
+            start_indx = self%start_right_column_indx(p)
+            if (MOD(start_indx,2) == 1) start_indx = start_indx + 1
+            do j_fine = start_indx, self%end_right_column_indx(p), 2
+                j_coarse = (j_fine)/2
+                a_N = self%inner_node_coeff_north(j_fine-1)
+                a_S = self%inner_node_coeff_south(j_fine-1)
+                a_tot = a_S + a_N
+                a_N = a_N / a_tot
+                a_S = a_S / a_tot
+                fineGrid(i_fine, j_fine) = fineGrid(i_fine, j_fine) + coarseGrid(i_coarse, j_coarse) * a_S + coarseGrid(i_coarse, j_coarse+1) * a_N
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+
+    end subroutine prolongation_curv
 
 
 end module mod_GS_Base_Curv

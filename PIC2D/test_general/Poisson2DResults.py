@@ -60,7 +60,7 @@ Width = gridY[-1] - gridY[0]
 # plt.colorbar()
 
 
-stage = 2
+stage = 1
 
 numNodes_x = int((numNodes[0] + (2**(stage-1)-1)) / 2**(stage-1))
 numNodes_y = int((numNodes[1] + (2**(stage-1)-1)) / 2**(stage-1))

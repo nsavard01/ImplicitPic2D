@@ -53,10 +53,10 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1! North
-    NESW_wallBoundaries(2) = 2 ! East
-    NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(1) = 3 ! North
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 3 ! South
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -270,10 +270,10 @@ program main
     ! print *, 'Took', solver%iterNumber, 'iterations'
     test = 0.0d0
     call solver%restriction(solver%solution, test)
-    ! solver%solution = 0.0d0
-    ! call solver%prolongation(solver%solution, test)
+    solver%solution = 0.0d0
+    call solver%prolongation(solver%solution, test)
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) test
+    write(41) solver%solution
     close(41)
    
     ! end associate
