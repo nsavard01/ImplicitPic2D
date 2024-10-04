@@ -1,5 +1,5 @@
 
-all: mod_pardisoSolver.o mod_CSRMAtrix.o mod_GS_Base.o mod_RedBlackSolverEven.o mod_ZebraSolverEven.o mod_RedBlackSolverCurv.o mod_ZebraSolverCurv.o
+all: mod_MGSolver.o
 
 # mod_PreCondBiCGSTABSolver.o: mod_PreCondBiCGSTABSolver.f90 mod_MGSolver.o
 # 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
@@ -7,11 +7,11 @@ all: mod_pardisoSolver.o mod_CSRMAtrix.o mod_GS_Base.o mod_RedBlackSolverEven.o 
 # mod_PreCondCGSolver.o: mod_PreCondCGSolver.f90 mod_MGSolver.o
 # 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
 
-# mod_MGSolver.o: mod_MGSolver.f90 mod_MG_Stage.o mod_pardisoSolver.o mod_CSRMAtrix.o
-# 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
+mod_MGSolver.o: mod_MGSolver.f90 mod_MG_Stage.o mod_pardisoSolver.o mod_CSRMAtrix.o
+	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
 
-# mod_MG_Stage.o: mod_MG_Stage.f90 mod_RedBlackSolverCurv.o mod_ZebraSolverCurv.o mod_RedBlackSolverEven.o mod_ZebraSolverEven.o mod_GS_Base_Curv.o mod_GS_Base_Even.o mod_GS_Base.o
-# 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
+mod_MG_Stage.o: mod_MG_Stage.f90 mod_RedBlackSolverCurv.o mod_ZebraSolverCurv.o mod_RedBlackSolverEven.o mod_ZebraSolverEven.o
+	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
 
 mod_RedBlackSolverCurv.o: mod_RedBlackSolverCurv.f90 mod_GS_Base_Curv.o
 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<

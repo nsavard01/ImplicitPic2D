@@ -2,31 +2,24 @@ program main
     use iso_fortran_env, only: int32, real64
     use mod_CSRMAtrix
     use mod_pardisoSolver
+    use mod_MGSolver
     use mod_domain_base
     use mod_domain_uniform
     use mod_domain_curv
-    use mod_GS_Base_Even
-    use mod_RedBlackSolverEven
-    use mod_ZebraSolverEven
-    use mod_ZebraSolverCurv
-    use mod_GS_Base_Curv
-    use mod_RedBlackSolverCurv
     use omp_lib
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 401, N_y = 201, numThreads = 6
-    type(pardisoSolver) :: directSolver
+    integer(int32) :: N_x = 1001, N_y = 8001, numThreads = 6
     class(domain_base), allocatable, target :: world
-    class(GS_Base), allocatable :: solver
+    type(MGSolver) :: mg_solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
-    integer :: inner_box_first_y = 75, inner_box_last_y = 125, inner_box_first_x = 151, inner_box_last_x = 251
+    integer :: inner_box_first_y, inner_box_last_y, inner_box_first_x, inner_box_last_x
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
-    real(real64), allocatable :: test(:,:)
     logical :: evenGridBool, redBlackBool, PCG_bool, Krylov_bool, center_box_bool
 
     call execute_command_line("rm -r *.dat")
@@ -42,7 +35,7 @@ program main
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 2
+    numberStages = 4
     call checkNodeDivisionMG(N_x, N_y, numberStages)
 
     ! More skewed delX and delY, more smoothing operations needed
@@ -53,10 +46,10 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 3 ! North
+    NESW_wallBoundaries(1) = 1 ! North
     NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 3 ! South
-    NESW_wallBoundaries(4) = 1 ! West
+    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -77,7 +70,6 @@ program main
     
     delX = 0.01d0 * Length/real(N_x-1)
     delY = 0.01d0 * Width/real(N_y-1)
-    directSolver = pardisoSolver(N_x * N_y)
     if (evenGridBool) then
         world = domain_uniform(N_x, N_y, Length, Width)
     else
@@ -104,6 +96,10 @@ program main
     world%boundary_conditions(1, world%N_y) = MIN(upperBound, leftBound)
 
     if (center_box_bool) then
+        inner_box_first_x = 3* N_x/8
+        inner_box_last_x = 5 * N_x / 8
+        inner_box_first_y = 3 * N_y / 8
+        inner_box_last_y = 5 * N_y / 8
         !$OMP parallel
         !$OMP workshare
         world%boundary_conditions(inner_box_first_x:inner_box_last_x, inner_box_first_y:inner_box_last_y) = 1
@@ -112,26 +108,10 @@ program main
     end if
 
 
-    select type (world)
-    type is (domain_uniform)
-        call buildEvenGridOrthogonalPoissonMatrix(world%N_x, world%N_y, world%del_x, world%del_y, &
-        world%boundary_conditions, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
-        if (redBlackBool) then
-            solver = RedBlackSolverEven(omega, world, world%N_x, world%N_y)
-        else
-            solver = ZebraSolverEven(omega, world, world%N_x, world%N_y)
-        end if
-    type is (domain_curv)
-        call buildCurvGridOrthogonalPoissonMatrix(world%N_x, world%N_y, world%del_x, world%del_y, &
-        world%boundary_conditions, directSolver%MatValues, directSolver%rowIndex, directSolver%columnIndex, directSolver%sourceTerm)
-        if (redBlackBool) then
-            solver = RedBlackSolverCurv(omega, world, world%N_x, world%N_y)
-        else
-            solver = ZebraSolverCurv(omega, world, world%N_x, world%N_y)
-        end if
-    end select
-    call directSolver%initializePardiso(1, 11, 1, 0)
-    allocate(test((solver%N_x+1)/2, (solver%N_y+1)/2))
+    mg_solver = MGSolver(world%N_x, world%N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    call mg_solver%makeSmootherStages(world, omega, redBlackBool)
+
+    associate(solver => mg_solver%MG_smoothers(1)%GS_smoother)
 
     open(41,file='gridX.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) world%grid_X
@@ -140,16 +120,6 @@ program main
     open(41,file='gridY.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) world%grid_Y
     close(41)
-    
-    if (upperBound == 1 .and. upperPhi /= 0) directSolver%solution(mat_dimension - world%N_x + 1: mat_dimension) = upperPhi
-    if (rightBound ==1 .and. rightPhi /=0) directSolver%solution(world%N_x:mat_dimension:world%N_x) = rightPhi
-    if (lowerBound == 1 .and. lowerPhi /= 0) directSolver%solution(1:world%N_x) = lowerPhi
-    if (leftBound == 1 .and. leftPhi /= 0) directSolver%solution(1:mat_dimension - world%N_x + 1:world%N_x) = leftPhi
-
-    if (upperBound == 1 .and. upperPhi == 0) directSolver%solution(mat_dimension - world%N_x + 1: mat_dimension) = upperPhi
-    if (rightBound ==1 .and. rightPhi ==0) directSolver%solution(world%N_x:mat_dimension:world%N_x) = rightPhi
-    if (lowerBound == 1 .and. lowerPhi == 0) directSolver%solution(1:world%N_x) = lowerPhi
-    if (leftBound == 1 .and. leftPhi == 0) directSolver%solution(1:mat_dimension - world%N_x + 1:world%N_x) = leftPhi
 
     if (upperBound == 1 .and. upperPhi /= 0) solver%solution(:, solver%N_y) = upperPhi
     if (rightBound ==1 .and. rightPhi /=0) solver%solution(solver%N_x, :) = rightPhi
@@ -164,11 +134,9 @@ program main
     if (center_box_bool) then
         !$OMP parallel private(k)
         !$OMP do collapse(2)
-        do j = inner_box_first_y, inner_box_last_y, solver%y_indx_step
-            do i = inner_box_first_x, inner_box_last_x, solver%x_indx_step
-                k = (j-1) * world%N_x + i 
-                directSolver%solution(k) = innerPhi
-                solver%solution((i+solver%x_indx_step-1)/solver%x_indx_step,(j + solver%y_indx_step-1)/solver%y_indx_step) = innerPhi
+        do j = inner_box_first_y, inner_box_last_y
+            do i = inner_box_first_x, inner_box_last_x
+                solver%solution(i,j) = innerPhi
             end do
         end do
         !$OMP end do
@@ -249,9 +217,6 @@ program main
             if (world%boundary_conditions(i,j) /= 1) then
                 ! stageOne%sourceTerm(i,j) = -rho/eps_0
                 solver%sourceTerm(i,j) = -rho/eps_0
-                ! directSolver%sourceTerm(k) = -rho/eps_0
-            else
-                ! directSolver%sourceTerm(k) = directSolver%solution(k)
             end if
         end do
     end do
@@ -262,19 +227,16 @@ program main
 
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call solver%solveGS(stepTol, relTol)
+    call mg_solver%solve(stepTol, relTol, 1)
     call system_clock(endTime)
 
-    ! print *, 'Took', solver%numIter, 'iterations'
+    print *, 'Took', mg_solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-    ! print *, 'Took', solver%iterNumber, 'iterations'
-    test = 0.0d0
-    call solver%restriction(solver%solution, test)
-    solver%solution = 0.0d0
-    call solver%prolongation(solver%solution, test)
+    
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) solver%solution
     close(41)
+    end associate
    
     ! end associate
     ! ! !$OMP parallel workshare

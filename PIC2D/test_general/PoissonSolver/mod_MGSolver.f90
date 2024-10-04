@@ -5,6 +5,8 @@ module mod_MGSolver
     use mod_PardisoSolver
     use mod_CSRMAtrix
     use mod_domain_base
+    use mod_domain_curv
+    use mod_domain_uniform
     use mod_GS_Base_Curv
     use mod_GS_Base_Even
     implicit none
@@ -20,8 +22,7 @@ module mod_MGSolver
         integer :: numberStages, smoothNumber, maxIter, numberPreSmoothOper, numberPostSmoothOper, numIter, N_x, N_y ! number of stages is total, so includes finest and coarsest grid
         real(real64) :: R2_current, stepResidual
     contains
-        procedure, public, pass(self) :: makeSmootherStages_even
-        procedure, public, pass(self) :: makeSmootherStages_curv
+        procedure, public, pass(self) :: makeSmootherStages
         ! procedure, public, pass(self) :: F_V_Cycle
         procedure, public, pass(self) :: F_Cycle
         procedure, public, pass(self) :: V_Cycle
@@ -52,131 +53,59 @@ contains
         self%directSolver = pardisoSolver(N_x_coarse * N_y_coarse)
     end function MGSolver_constructor
 
-    subroutine makeSmootherStages_even(self, del_x, del_y, NESW_wallBoundaries, boundaryConditions, omega, redBlackBool)
+    subroutine makeSmootherStages(self, world, omega, redBlackBool)
         class(MGSolver), intent(in out) :: self
-        integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x,self%N_y)
-        real(real64), intent(in) :: del_x, del_y, omega
+        class(domain_base), intent(in), target :: world
+        real(real64), intent(in) :: omega
         logical, intent(in) :: redBlackBool
-        real(real64) :: del_x_temp, del_y_temp, NESW_phiValTemp(4), delX, delY
-        integer :: stageIter, i, j, j_temp, i_temp, N_x_coarse, N_y_coarse
-        integer, allocatable :: boundaryConditionsTemp(:, :)
+        real(real64) :: del_x_temp, del_y_temp
+        integer :: stageIter,N_x_coarse, N_y_coarse, x_indx_step, y_indx_step, i, i_fine
+        real(real64), allocatable :: diffX(:), diffY(:)
+        integer, allocatable :: boundary_conditions(:,:)
 
         ! Construct first stage GS smoother (finest grid)
-        self%MG_smoothers(1) = MG_Stage(omega, self%N_x, self%N_y, .true., redBlackBool)
-        associate (stageOne => self%MG_smoothers(1)%GS_Smoother)
-        select type (stageOne)
-        class is (GS_Base_Even)
-            call stageOne%constructPoissonOrthogonal(del_x, del_y, NESW_wallBoundaries, boundaryConditions)
-        end select
-        end associate
+        self%MG_smoothers(1) = MG_Stage(omega, world, world%N_x, world%N_y, redBlackBool)
         N_x_coarse = self%N_x
         N_y_coarse = self%N_y
-        del_x_temp = del_x
-        del_y_temp = del_y
         print *, 'Assembling new boundaries and generating new GS_smoothers for even grid'
         do stageIter = 2, self%smoothNumber
             print *, 'Smoother number:', stageIter
             N_x_coarse = (N_x_coarse+1)/2
             N_y_coarse = (N_y_coarse+1)/2
-            allocate(boundaryConditionsTemp(N_x_coarse, N_y_coarse))
-            del_x_temp = 2.0d0 * del_x_temp
-            del_y_temp = 2.0d0 * del_y_temp
-            do j = 1, N_y_coarse
-                do i = 1, N_x_coarse
-                    i_temp = (2**(stageIter-1)) * i - (2**(stageIter-1)) +1
-                    j_temp = (2**(stageIter-1)) * j - (2**(stageIter-1)) +1
-                    boundaryConditionsTemp(i, j) = boundaryConditions(i_temp,j_temp)
-                end do
-            end do
-            self%MG_smoothers(stageIter) = MG_Stage(omega, N_x_coarse, N_y_coarse, .true., redBlackBool)
-            associate(stage => self%MG_smoothers(stageIter)%GS_Smoother)
-            select type (stage)
-            class is (GS_Base_Even)
-                call stage%constructPoissonOrthogonal(del_x_temp, del_y_temp, NESW_wallBoundaries, boundaryConditionsTemp)
-            end select
-            end associate
-            deallocate(boundaryConditionsTemp)
+            self%MG_smoothers(stageIter) = MG_Stage(omega, world, N_x_coarse, N_y_coarse, redBlackBool)
         end do
         
         ! Build direct pardiso solver
-        NESW_phiValTemp = 0.0d0
         N_x_coarse = (N_x_coarse+1)/2
         N_y_coarse = (N_y_coarse+1)/2
-        del_x_temp = 2.0d0 * del_x_temp
-        del_y_temp = 2.0d0 * del_y_temp
-  
-        call buildEvenGridOrthogonalPoissonMatrix(N_x_coarse, N_y_coarse, del_x_temp, del_y_temp, NESW_wallBoundaries, &
-        NESW_phiValTemp, self%directSolver%MatValues, self%directSolver%rowIndex, self%directSolver%columnIndex, self%directSolver%sourceTerm)
-        call self%directSolver%initializePardiso(1, 11, 1, 0) ! use default pardiso initialization values
-        
-    end subroutine makeSmootherStages_even
-
-    subroutine makeSmootherStages_curv(self, diffX, diffY, NESW_wallBoundaries, boundaryConditions, omega, redBlackBool)
-        class(MGSolver), intent(in out) :: self
-        integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x,self%N_y)
-        real(real64), intent(in) :: diffX(self%N_x-1), diffY(self%N_y-1), omega
-        logical, intent(in) :: redBlackBool
-        real(real64) :: diffX_temp(self%N_x-1), diffY_temp(self%N_y-1), NESW_phiValTemp(4), delX, delY
-        integer :: stageIter, i, j, j_temp, i_temp, N_x_coarse, N_y_coarse
-        integer, allocatable :: boundaryConditionsTemp(:, :)
-
-        ! Construct first stage GS smoother (finest grid)
-        self%MG_smoothers(1) = MG_Stage(omega, self%N_x, self%N_y, .false., redBlackBool)
-        associate (stageOne => self%MG_smoothers(1)%GS_Smoother)
-        select type (stageOne)
-        class is (GS_Base_Curv)
-            call stageOne%constructPoissonOrthogonal(diffX, diffY, NESW_wallBoundaries, boundaryConditions)
-        end select
-        end associate
-        N_x_coarse = self%N_x
-        N_y_coarse = self%N_y
-        diffX_temp = diffX
-        diffY_temp = diffY
-        print *, 'Assembling new boundaries and generating new GS_smoothers'
-        do stageIter = 2, self%smoothNumber
-            print *, 'Smoother number:', stageIter
-            N_x_coarse = (N_x_coarse+1)/2
-            N_y_coarse = (N_y_coarse+1)/2
-            allocate(boundaryConditionsTemp(N_x_coarse, N_y_coarse))
+        x_indx_step = (world%N_x-1)/(N_x_coarse-1)
+        y_indx_step = (world%N_y-1)/(N_y_coarse-1)
+        allocate(boundary_conditions(N_x_coarse, N_y_coarse))
+        boundary_conditions = world%boundary_conditions(1:world%N_x:x_indx_step, 1:world%N_y:y_indx_step)
+        select type (world)
+        type is (domain_uniform)
+            del_x_temp = (2**(self%numberStages-1)) * world%del_x
+            del_y_temp = (2**(self%numberStages-1)) * world%del_y
+            call buildEvenGridOrthogonalPoissonMatrix(N_x_coarse, N_y_coarse, del_x_temp, del_y_temp, boundary_conditions, &
+            self%directSolver%MatValues, self%directSolver%rowIndex, self%directSolver%columnIndex, self%directSolver%sourceTerm)
+        type is (domain_curv)
+            allocate(diffX(N_x_coarse-1), diffY(N_y_coarse-1))
             do i = 1, N_x_coarse-1
-                diffX_temp(i) = diffX_temp(2*i-1) + diffX_temp(2*i)
+                i_fine = i * x_indx_step - x_indx_step + 1
+                diffX(i) = SUM(world%del_x(i_fine:i_fine + x_indx_step-1))
             end do
             do i = 1, N_y_coarse-1
-                diffY_temp(i) = diffY_temp(2*i-1) + diffY_temp(2*i)
+                i_fine = i * y_indx_step - y_indx_step + 1
+                diffY(i) = SUM(world%del_y(i_fine:i_fine + y_indx_step-1))
             end do
-            do j = 1, N_y_coarse
-                do i = 1, N_x_coarse
-                    i_temp = (2**(stageIter-1)) * i - (2**(stageIter-1)) +1
-                    j_temp = (2**(stageIter-1)) * j - (2**(stageIter-1)) +1
-                    boundaryConditionsTemp(i, j) = boundaryConditions(i_temp,j_temp)
-                end do
-            end do
-            self%MG_smoothers(stageIter) = MG_Stage(omega, N_x_coarse, N_y_coarse, .false., redBlackBool)
-            associate(stage => self%MG_smoothers(stageIter)%GS_Smoother)
-            select type (stage)
-            class is (GS_Base_Curv)
-                call stage%constructPoissonOrthogonal(diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1), NESW_wallBoundaries, boundaryConditionsTemp)
-            end select
-            end associate
-            deallocate(boundaryConditionsTemp)
-        end do
-        
-        ! Build direct pardiso solver
-        NESW_phiValTemp = 0.0d0
-        N_x_coarse = (N_x_coarse+1)/2
-        N_y_coarse = (N_y_coarse+1)/2
-        do i = 1, N_x_coarse-1
-            diffX_temp(i) = diffX_temp(2*i-1) + diffX_temp(2*i)
-        end do
-        do i = 1, N_y_coarse-1
-            diffY_temp(i) = diffY_temp(2*i-1) + diffY_temp(2*i)
-        end do
-        call buildCurvGridOrthogonalPoissonMatrix(N_x_coarse, N_y_coarse, diffX_temp(1:N_x_coarse-1), diffY_temp(1:N_y_coarse-1) &
-            , NESW_wallBoundaries, NESW_phiValTemp, self%directSolver%MatValues, self%directSolver%rowIndex, self%directSolver%columnIndex, self%directSolver%sourceTerm)
+            call buildCurvGridOrthogonalPoissonMatrix(N_x_coarse, N_y_coarse, diffX, diffY, boundary_conditions, &
+            self%directSolver%MatValues, self%directSolver%rowIndex, self%directSolver%columnIndex, self%directSolver%sourceTerm)
+            deallocate(diffX, diffY)
+        end select
+        deallocate(boundary_conditions)
         call self%directSolver%initializePardiso(1, 11, 1, 0) ! use default pardiso initialization values
         
-    end subroutine makeSmootherStages_curv
-
+    end subroutine makeSmootherStages
 
 
     subroutine solve(self, stepTol, relTol, intSelect)
@@ -191,6 +120,7 @@ contains
         !$OMP parallel workshare
         initRes = SUM(self%MG_smoothers(1)%GS_Smoother%residual**2)
         !$OMP end parallel workshare
+        initRes = sqrt(initRes)
         call self%MG_smoothers(1)%GS_Smoother%smoothIterations(self%numberPreSmoothOper-1)
         self%stepResidual = self%MG_smoothers(1)%GS_Smoother%smoothWithRes()
         
@@ -198,7 +128,7 @@ contains
         !$OMP parallel workshare
         self%R2_current = SUM(self%MG_smoothers(1)%GS_Smoother%residual**2)
         !$OMP end parallel workshare
-        
+        self%R2_current = sqrt(self%R2_current)
         i = 0
         if ((self%stepResidual > stepTol .and. self%R2_current/initRes > relTol)) then
             do i = 1, self%maxIter
@@ -218,6 +148,7 @@ contains
                 !$OMP parallel workshare
                 self%R2_current = SUM(self%MG_smoothers(1)%GS_Smoother%residual**2)
                 !$OMP end parallel workshare
+                self%R2_current = sqrt(self%R2_current)
                 print *, 'MG iter:', i, 'res:', self%R2_current
                 if (self%R2_current/initRes < relTol) then
                     print *, 'Starting residual lowered'

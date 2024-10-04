@@ -1,6 +1,9 @@
 module mod_MG_Stage
     use iso_fortran_env, only: int32, int64, real64
     use mod_GS_Base
+    use mod_domain_base
+    use mod_domain_uniform
+    use mod_domain_curv
     use mod_ZebraSolverEven
     use mod_RedBlackSolverEven
     use mod_ZebraSolverCurv
@@ -21,24 +24,26 @@ module mod_MG_Stage
     end interface MG_Stage
 
 contains 
-    type(MG_Stage) function MG_Stage_constructor(omega, N_x, N_y, evenGridBool, redBlackBool) result(self)
+    type(MG_Stage) function MG_Stage_constructor(omega, world, N_x, N_y, redBlackBool) result(self)
     ! Construct object, set initial variables
     real(real64), intent(in) :: omega
     integer(int32), intent(in) :: N_x, N_y
-    logical, intent(in) :: evenGridBool, redBlackBool
-    if (evenGridBool) then
+    class(domain_base), intent(in), target :: world
+    logical, intent(in) :: redBlackBool
+    select type (world)
+    type is (domain_uniform)
         if (redBlackBool) then
-            self%GS_Smoother = RedBlackSolverEven(omega, N_x, N_y)
+            self%GS_smoother = RedBlackSolverEven(omega, world, N_x, N_y)
         else
-            self%GS_Smoother = ZebraSolverEven(omega, N_x, N_y)
+            self%GS_smoother = ZebraSolverEven(omega, world, N_x, N_y)
         end if
-    else
+    type is (domain_curv)
         if (redBlackBool) then
-            self%GS_Smoother = RedBlackSolverCurv(omega, N_x, N_y)
+            self%GS_smoother = RedBlackSolverCurv(omega, world, N_x, N_y)
         else
-            self%GS_Smoother = ZebraSolverCurv(omega, N_x, N_y)
+            self%GS_smoother = ZebraSolverCurv(omega, world, N_x, N_y)
         end if
-    end if
+    end select
     end function MG_Stage_constructor
 
 
