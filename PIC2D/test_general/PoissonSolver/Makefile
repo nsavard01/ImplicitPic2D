@@ -1,11 +1,11 @@
 
-all: mod_MGSolver.o
+all: mod_PreCondBiCGSTABSolver.o mod_PreCondCGSolver.o
 
-# mod_PreCondBiCGSTABSolver.o: mod_PreCondBiCGSTABSolver.f90 mod_MGSolver.o
-# 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
+mod_PreCondBiCGSTABSolver.o: mod_PreCondBiCGSTABSolver.f90 mod_MGSolver.o
+	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
 
-# mod_PreCondCGSolver.o: mod_PreCondCGSolver.f90 mod_MGSolver.o
-# 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
+mod_PreCondCGSolver.o: mod_PreCondCGSolver.f90 mod_MGSolver.o
+	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
 
 mod_MGSolver.o: mod_MGSolver.f90 mod_MG_Stage.o mod_pardisoSolver.o mod_CSRMAtrix.o
 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<

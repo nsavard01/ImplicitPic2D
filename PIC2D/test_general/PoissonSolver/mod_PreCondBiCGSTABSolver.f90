@@ -89,7 +89,7 @@ contains
         !$OMP end workshare
         !$OMP end parallel
         
-        R2_init = param_old
+        R2_init = sqrt(param_old)
         do i = 1, self%maxIter
 
             ! First preconditioning on p_vector
@@ -132,7 +132,7 @@ contains
             self%stepResidual = SUM(stageOne%solution**2)
             !$OMP end workshare
             !$OMP end parallel
-            self%stepResidual = alpha * SQRT(self%stepResidual/stageOne%numberBoundNodes)
+            self%stepResidual = alpha * SQRT(self%stepResidual/stageOne%number_solve_nodes)
 
             if (self%stepResidual < stepTol) then
                 print *, 'step tolerance low enough first time'
@@ -155,7 +155,7 @@ contains
             R2_new = SUM(self%residual**2)
             !$OMP end workshare
             !$OMP end parallel
-           
+            R2_new = sqrt(R2_new)
             if (R2_new/R2_init < relTol) then
                 print *, 'relative tolerance low enough first time'
                 !$OMP parallel
@@ -237,7 +237,7 @@ contains
             self%stepResidual = SUM(self%z**2)
             !$OMP end workshare
             !$OMP end parallel
-            self%stepResidual = w * SQRT(self%stepResidual/stageOne%numberBoundNodes)
+            self%stepResidual = w * SQRT(self%stepResidual/stageOne%number_solve_nodes)
 
             if (self%stepResidual < stepTol) then
                 print *, 'step tolerance low enough second time'
@@ -260,7 +260,7 @@ contains
             R2_new = SUM(self%residual**2)
             !$OMP end workshare
             !$OMP end parallel
-        
+            R2_new = sqrt(R2_new)
             if (R2_new/R2_init < relTol) then
                 print *, 'relative tolerance low enough second time'
                 !$OMP parallel

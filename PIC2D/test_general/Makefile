@@ -12,9 +12,8 @@ OBJ_world = mod_domain_curv.o mod_domain_uniform.o mod_domain_base.o
 world_obj_list = $(addprefix $(world_dir), $(OBJ_world))
 
 solver_dir = PoissonSolver/
-OBJ_solver = mod_MGSolver.o mod_MG_Stage.o mod_ZebraSolverCurv.o mod_RedBlackSolverCurv.o mod_ZebraSolverEven.o mod_RedBlackSolverEven.o mod_GS_Base_Curv.o \
-mod_GS_Base_Even.o mod_GS_Base.o mod_CSRMAtrix.o mod_pardisoSolver.o #mod_PreCondBiCGSTABSolver.o mod_PreCondCGSolver.o mod_MGSolver.o mod_MG_Stage.o   \
-mod_GS_Base_Curv.o 
+OBJ_solver = mod_PreCondBiCGSTABSolver.o mod_PreCondCGSolver.o mod_MGSolver.o mod_MG_Stage.o mod_ZebraSolverCurv.o mod_RedBlackSolverCurv.o mod_ZebraSolverEven.o mod_RedBlackSolverEven.o mod_GS_Base_Curv.o \
+mod_GS_Base_Even.o mod_GS_Base.o mod_CSRMAtrix.o mod_pardisoSolver.o
 solver_obj_list = $(addprefix $(solver_dir), $(OBJ_solver))
 
 total_obj_list = $(solver_obj_list) $(world_obj_list) $(constants_obj_list)

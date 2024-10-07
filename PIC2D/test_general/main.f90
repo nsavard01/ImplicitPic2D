@@ -3,6 +3,8 @@ program main
     use mod_CSRMAtrix
     use mod_pardisoSolver
     use mod_MGSolver
+    use mod_PreCondCGSolver
+    use mod_PreCondBiCGSTABSolver
     use mod_domain_base
     use mod_domain_uniform
     use mod_domain_curv
@@ -12,7 +14,7 @@ program main
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
     integer(int32) :: N_x = 1001, N_y = 8001, numThreads = 6
     class(domain_base), allocatable, target :: world
-    type(MGSolver) :: mg_solver
+    class(MGSolver), allocatable :: mg_solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
     integer :: inner_box_first_y, inner_box_last_y, inner_box_first_x, inner_box_last_x
@@ -20,7 +22,7 @@ program main
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
-    logical :: evenGridBool, redBlackBool, PCG_bool, Krylov_bool, center_box_bool
+    logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool
 
     call execute_command_line("rm -r *.dat")
     call mkl_set_num_threads(numThreads)
@@ -29,18 +31,17 @@ program main
     
     evenGridBool = .false.
     redBlackBool = .false.
-    PCG_bool = .false.
-    Krylov_bool = .false.
+    Krylov_bool = .true.
     center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 4
+    numberStages = 6
     call checkNodeDivisionMG(N_x, N_y, numberStages)
 
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 4
-    numberPostSmoothOper = 4
+    numberPreSmoothOper = 2
+    numberPostSmoothOper = 2
     numberIter = 50000
     omega = 1.5d0
     relTol = 1.d-8
@@ -107,8 +108,15 @@ program main
         !$OMP end parallel
     end if
 
-
-    mg_solver = MGSolver(world%N_x, world%N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    if (Krylov_bool) then
+        if (evenGridBool) then
+            mg_solver = PreCondCGSolver(world%N_x, world%N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+        else
+            mg_solver = BiCGSTAB_Solver(world%N_x, world%N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+        end if
+    else
+        mg_solver = MGSolver(world%N_x, world%N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
+    end if
     call mg_solver%makeSmootherStages(world, omega, redBlackBool)
 
     associate(solver => mg_solver%MG_smoothers(1)%GS_smoother)

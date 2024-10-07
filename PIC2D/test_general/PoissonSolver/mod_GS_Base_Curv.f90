@@ -21,8 +21,8 @@ module mod_GS_Base_Curv
         procedure, public, pass(self) :: restriction => restriction_curv
         procedure, public, pass(self) :: prolongation => prolongation_curv
         procedure, public, pass(self) :: calcResidual => calcResidual_curv
-        ! procedure, public, pass(self) :: YAX_Mult => YAX_Mult_curv
-        ! procedure, public, pass(self) :: AX_Mult => AX_Mult_curv
+        procedure, public, pass(self) :: YAX_Mult => YAX_Mult_curv
+        procedure, public, pass(self) :: AX_Mult => AX_Mult_curv
     end type
 
 contains
@@ -158,69 +158,316 @@ subroutine initialize_GS_Curv(self, world)
 
 end subroutine initialize_GS_Curv
 
-! subroutine AX_Mult_curv(self, x, y)
-!     ! Solve GS down to some tolerance
-!     class(GS_Base_Curv), intent(in out) :: self
-!     real(real64), intent(in) :: x(self%N_x, self%N_y)
-!     real(real64), intent(in out) :: y(self%N_x, self%N_y)
-!     real(real64) :: C_N, C_E, C_O, C_W, C_S
-!     integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
-!     !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
-!     !$OMP&  W_indx, C_O, C_N, C_E, C_S, C_W)
-!     ! loop through inner nodes
-!     !$OMP do collapse(2)
-!     do k = 1, self%numberRows
-!         do p = 1, self%numberColumns
-!             i = self%startCol + p - 1
-!             j = self%startRow + k - 1
-!             N_indx = self%vertIndx(1,k)
-!             E_indx = self%horzIndx(1,p)
-!             S_indx = self%vertIndx(2,k)
-!             W_indx = self%horzIndx(2,p)
-!             C_O = self%centerCoeffs(p,k)
-!             C_N = self%vertCoeffs(1,k)
-!             C_E = self%horzCoeffs(1,p)
-!             C_S = self%vertCoeffs(2,k)
-!             C_W = self%horzCoeffs(2,p)
-!             y(i,j) = C_N * x(i,N_indx) + C_S * x(i,S_indx) + &
-!                     C_E * x(E_indx, j) + C_W * x(W_indx, j) + x(i,j)/C_O
-!         end do
-!     end do
-!     !$OMP end do
-!     !$OMP end parallel
-! end subroutine AX_Mult_curv
+    subroutine AX_Mult_curv(self, x, y)
+        ! Solve GS down to some tolerance
+        class(GS_Base_Curv), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y)
+        real(real64), intent(in out) :: y(self%N_x, self%N_y)
+        real(real64) :: C_N, C_E, C_O, C_W, C_S
+        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
 
-! function YAX_Mult_curv(self, x, y) result(res)
-!     ! Solve GS down to some tolerance
-!     class(GS_Base_Curv), intent(in out) :: self
-!     real(real64), intent(in) :: x(self%N_x, self%N_y), y(self%N_x, self%N_y)
-!     real(real64) :: res, C_N, C_E, C_O, C_W, C_S
-!     integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
-!     res = 0.0d0
-!     !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
-!     !$OMP&  W_indx, C_O, C_N, C_E, C_S, C_W) reduction(+:res)
-!     ! loop through inner nodes
-!     !$OMP do collapse(2)
-!     do k = 1, self%numberRows
-!         do p = 1, self%numberColumns
-!             i = self%startCol + p - 1
-!             j = self%startRow + k - 1
-!             N_indx = self%vertIndx(1,k)
-!             E_indx = self%horzIndx(1,p)
-!             S_indx = self%vertIndx(2,k)
-!             W_indx = self%horzIndx(2,p)
-!             C_O = self%centerCoeffs(p,k)
-!             C_N = self%vertCoeffs(1,k)
-!             C_E = self%horzCoeffs(1,p)
-!             C_S = self%vertCoeffs(2,k)
-!             C_W = self%horzCoeffs(2,p)
-!             res = res + y(i,j) * (C_N * x(i,N_indx) + C_S * x(i,S_indx) + &
-!                     C_E * x(E_indx, j) + C_W * x(W_indx, j) + x(i,j)/C_O)
-!         end do
-!     end do
-!     !$OMP end do
-!     !$OMP end parallel
-! end function YAX_Mult_curv
+
+        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, &
+        !$OMP& C_N, C_E, C_S, C_W, C_O)
+
+        ! Inner Nodes
+        !$OMP do
+        do k = 1, self%number_inner_rows
+            j = self%start_row_indx + k - 1
+            N_indx = j + 1
+            S_indx = j - 1
+            C_N = self%inner_node_coeff_north(j-1)
+            C_S = self%inner_node_coeff_south(j-1)
+            do p = 1, self%number_row_sections(k)
+                do i = self%start_inner_indx_x(p, k), self%end_inner_indx_x(p,k)  
+                    E_indx = i+1
+                    W_indx = i-1
+                    C_E = self%inner_node_coeff_east(i-1)
+                    C_W = self%inner_node_coeff_west(i-1)
+                    C_O = 1.0d0/self%centerCoeff(i, j)
+                    y(i,j) = x(i, N_indx) * C_N + x(i, S_indx)*C_S + &
+                        x(E_indx, j)*C_E + x(W_indx, j) * C_W + x(i,j) * C_O
+                end do
+            end do
+        end do
+        !$OMP end do nowait
+
+        !first do corners
+        !$OMP sections
+        !$OMP section
+        if (self%world%boundary_conditions(1,1) == 2) then
+            ! lower left corner
+            C_N = self%bottom_row_coeff_north(1)
+            C_E = self%left_column_coeff_east(1)
+            C_O = 1.0d0/self%centerCoeff(1,1)
+            y(1,1) = 2.0d0 * x(1, 2) * C_N + &
+                2.0d0 * x(2, 1) * C_E + x(1,1)*C_O
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
+            ! lower right corner
+            C_N = self%bottom_row_coeff_north(self%number_bottom_row_sections)
+            C_W = self%right_column_coeff_west(1)
+            C_O = 1.0d0/self%centerCoeff(self%N_x,1)
+            y(self%N_x, 1) = 2.0d0 * x(self%N_x, 2) * C_N + &
+                2.0d0 * x(self%N_x-1, 1) * C_W + x(self%N_x, 1)*C_O
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
+            ! upper left corner
+            C_S = self%top_row_coeff_south(1)
+            C_E = self%left_column_coeff_east(self%number_left_column_sections)
+            C_O = 1.0d0/self%centerCoeff(1,self%N_y)
+            y(1, self%N_y) = 2.0d0 * x(1, self%N_y-1) * C_S + &
+                2.0d0 * x(2, self%N_y) * C_E + x(1, self%N_y)*C_O
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
+            ! upper right corner
+            C_S = self%top_row_coeff_south(self%number_top_row_sections)
+            C_W = self%right_column_coeff_west(self%number_right_column_sections)
+            C_O = 1.0d0/self%centerCoeff(self%N_x, self%N_y)
+            y(self%N_x, self%N_y) = 2.0d0 * x(self%N_x, self%N_y-1) * C_S + &
+                2.0d0 * x(self%N_x-1, self%N_y) * C_W + x(self%N_x, self%N_y)*C_O
+        end if
+        !$OMP end sections nowait
+
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
+            end if
+            C_S = self%bottom_row_coeff_south(p)
+            C_N = self%bottom_row_coeff_north(p)
+            do i = self%start_bottom_row_indx(p), self%end_bottom_row_indx(p)
+                C_E = self%inner_node_coeff_east(i-1)
+                C_W = self%inner_node_coeff_west(i-1)
+                C_O = 1.0d0/self%centerCoeff(i,1)
+                y(i,1) = x(i, 2) * C_N + x(i, S_indx) * C_S + &
+                    x(i-1, 1) * C_W + x(i+1, 1) * C_E + x(i,1)*C_O
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            C_S = self%top_row_coeff_south(p)
+            C_N = self%top_row_coeff_north(p)
+            do i = self%start_top_row_indx(p), self%end_top_row_indx(p)
+                C_E = self%inner_node_coeff_east(i-1)
+                C_W = self%inner_node_coeff_west(i-1)
+                C_O = 1.0d0/self%centerCoeff(i, self%N_y)
+                y(i,self%N_y) = x(i, N_indx) * C_N + x(i, self%N_y-1) * C_S + &
+                    x(i-1, self%N_y) * C_W + x(i+1, self%N_y) * C_E + x(i, self%N_y)*C_O
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            C_E = self%left_column_coeff_east(p)
+            C_W = self%left_column_coeff_west(p)
+            do j = self%start_left_column_indx(p), self%end_left_column_indx(p)
+                C_S = self%inner_node_coeff_south(j-1)
+                C_N = self%inner_node_coeff_north(j-1)
+                C_O = 1.0d0 / self%centerCoeff(1,j)
+                y(1,j) = x(1, j+1) * C_N + x(1, j-1) * C_S + &
+                    x(2, j) * C_E + x(W_indx, j) * C_W + x(1,j)*C_O
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
+            end if
+            C_E = self%right_column_coeff_east(p)
+            C_W = self%right_column_coeff_west(p)
+            do j = self%start_right_column_indx(p), self%end_right_column_indx(p)
+                C_S = self%inner_node_coeff_south(j-1)
+                C_N = self%inner_node_coeff_north(j-1)
+                C_O = 1.0d0/ self%centerCoeff(self%N_x,j)
+                y(self%N_x,j) = x(self%N_x, j+1) * C_N + x(self%N_x, j-1) * C_S + &
+                    x(self%N_x-1, j) * C_W + x(E_indx, j) * C_E + x(self%N_x,j)*C_O
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+    end subroutine AX_Mult_curv
+
+    function YAX_Mult_curv(self, x, y) result(res)
+        ! Solve GS down to some tolerance
+        class(GS_Base_Curv), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y), y(self%N_x, self%N_y)
+        real(real64) :: res, C_N, C_E, C_O, C_W, C_S
+        integer :: N_indx, E_indx, S_indx, W_indx, i, j, k, p
+        res = 0.0d0
+
+        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx, &
+        !$OMP& C_N, C_E, C_S, C_W, C_O) reduction(+:res)
+
+        ! Inner Nodes
+        !$OMP do
+        do k = 1, self%number_inner_rows
+            j = self%start_row_indx + k - 1
+            N_indx = j + 1
+            S_indx = j - 1
+            C_N = self%inner_node_coeff_north(j-1)
+            C_S = self%inner_node_coeff_south(j-1)
+            do p = 1, self%number_row_sections(k)
+                do i = self%start_inner_indx_x(p, k), self%end_inner_indx_x(p,k)  
+                    E_indx = i+1
+                    W_indx = i-1
+                    C_E = self%inner_node_coeff_east(i-1)
+                    C_W = self%inner_node_coeff_west(i-1)
+                    C_O = 1.0d0/self%centerCoeff(i, j)
+                    res = res + y(i,j) * (x(i, N_indx) * C_N + x(i, S_indx)*C_S + &
+                        x(E_indx, j)*C_E + x(W_indx, j) * C_W + x(i,j) * C_O)
+                end do
+            end do
+        end do
+        !$OMP end do nowait
+
+        !first do corners
+        !$OMP sections
+        !$OMP section
+        if (self%world%boundary_conditions(1,1) == 2) then
+            ! lower left corner
+            C_N = self%bottom_row_coeff_north(1)
+            C_E = self%left_column_coeff_east(1)
+            C_O = 1.0d0/self%centerCoeff(1,1)
+            res = res + y(1,1) * (2.0d0 * x(1, 2) * C_N + &
+                2.0d0 * x(2, 1) * C_E + x(1,1)*C_O)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
+            ! lower right corner
+            C_N = self%bottom_row_coeff_north(self%number_bottom_row_sections)
+            C_W = self%right_column_coeff_west(1)
+            C_O = 1.0d0/self%centerCoeff(self%N_x,1)
+            res = res + y(self%N_x, 1) * (2.0d0 * x(self%N_x, 2) * C_N + &
+                2.0d0 * x(self%N_x-1, 1) * C_W + x(self%N_x, 1)*C_O)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
+            ! upper left corner
+            C_S = self%top_row_coeff_south(1)
+            C_E = self%left_column_coeff_east(self%number_left_column_sections)
+            C_O = 1.0d0/self%centerCoeff(1,self%N_y)
+            res = res + y(1, self%N_y) * (2.0d0 * x(1, self%N_y-1) * C_S + &
+                2.0d0 * x(2, self%N_y) * C_E + x(1, self%N_y)*C_O)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
+            ! upper right corner
+            C_S = self%top_row_coeff_south(self%number_top_row_sections)
+            C_W = self%right_column_coeff_west(self%number_right_column_sections)
+            C_O = 1.0d0/self%centerCoeff(self%N_x, self%N_y)
+            res = res + y(self%N_x, self%N_y) * (2.0d0 * x(self%N_x, self%N_y-1) * C_S + &
+                2.0d0 * x(self%N_x-1, self%N_y) * C_W + x(self%N_x, self%N_y)*C_O)
+        end if
+        !$OMP end sections nowait
+
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
+            end if
+            C_S = self%bottom_row_coeff_south(p)
+            C_N = self%bottom_row_coeff_north(p)
+            do i = self%start_bottom_row_indx(p), self%end_bottom_row_indx(p)
+                C_E = self%inner_node_coeff_east(i-1)
+                C_W = self%inner_node_coeff_west(i-1)
+                C_O = 1.0d0/self%centerCoeff(i,1)
+                res = res + y(i,1) * (x(i, 2) * C_N + x(i, S_indx) * C_S + &
+                    x(i-1, 1) * C_W + x(i+1, 1) * C_E + x(i,1)*C_O)
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            C_S = self%top_row_coeff_south(p)
+            C_N = self%top_row_coeff_north(p)
+            do i = self%start_top_row_indx(p), self%end_top_row_indx(p)
+                C_E = self%inner_node_coeff_east(i-1)
+                C_W = self%inner_node_coeff_west(i-1)
+                C_O = 1.0d0/self%centerCoeff(i, self%N_y)
+                res = res + y(i,self%N_y) * (x(i, N_indx) * C_N + x(i, self%N_y-1) * C_S + &
+                    x(i-1, self%N_y) * C_W + x(i+1, self%N_y) * C_E + x(i, self%N_y)*C_O)
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            C_E = self%left_column_coeff_east(p)
+            C_W = self%left_column_coeff_west(p)
+            do j = self%start_left_column_indx(p), self%end_left_column_indx(p)
+                C_S = self%inner_node_coeff_south(j-1)
+                C_N = self%inner_node_coeff_north(j-1)
+                C_O = 1.0d0 / self%centerCoeff(1,j)
+                res = res + y(1,j) * (x(1, j+1) * C_N + x(1, j-1) * C_S + &
+                    x(2, j) * C_E + x(W_indx, j) * C_W + x(1,j)*C_O)
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
+            end if
+            C_E = self%right_column_coeff_east(p)
+            C_W = self%right_column_coeff_west(p)
+            do j = self%start_right_column_indx(p), self%end_right_column_indx(p)
+                C_S = self%inner_node_coeff_south(j-1)
+                C_N = self%inner_node_coeff_north(j-1)
+                C_O = 1.0d0/ self%centerCoeff(self%N_x,j)
+                res = res + y(self%N_x,j) * (x(self%N_x, j+1) * C_N + x(self%N_x, j-1) * C_S + &
+                    x(self%N_x-1, j) * C_W + x(E_indx, j) * C_E + x(self%N_x,j)*C_O)
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+    end function YAX_Mult_curv
 
     subroutine calcResidual_curv(self)
         ! Solve GS down to some tolerance

@@ -106,6 +106,7 @@ contains
         resProduct_old = SUM(self%residual * stageOne%solution)
         !$OMP end workshare
         !$OMP end parallel
+        R2_init = sqrt(R2_init)
 
         do i = 1, self%maxIter
             ! Calculate denominator of alpha = D^T * A  * D
@@ -129,8 +130,7 @@ contains
             self%R2_current = SUM(stageOne%residual**2)
             !$OMP end workshare
             !$OMP end parallel
-
-            print *, self%R2_current
+            self%R2_current = sqrt(self%R2_current)
             if (self%R2_current/R2_init < relTol) then
                 ! exit for reaching relative tolerance
                 exit
@@ -238,7 +238,7 @@ contains
             !$OMP end workshare
             !$OMP end parallel
 
-            if (resProduct_new/R2_init < relTol) then
+            if (sqrt(resProduct_new/R2_init) < relTol) then
                 ! exit for reaching relative tolerance
                 print *, 'reached rel tolerance'
                 exit

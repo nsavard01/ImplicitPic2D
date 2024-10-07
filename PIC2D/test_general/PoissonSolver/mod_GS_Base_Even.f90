@@ -15,8 +15,8 @@ module mod_GS_Base_Even
         procedure, public, pass(self) :: restriction => restriction_even
         procedure, public, pass(self) :: prolongation => prolongation_even
         procedure, public, pass(self) :: calcResidual => calcResidual_even
-        ! procedure, public, pass(self) :: AX_Mult => AX_Mult_even
-        ! procedure, public, pass(self) :: YAX_Mult => YAX_Mult_even
+        procedure, public, pass(self) :: AX_Mult => AX_Mult_even
+        procedure, public, pass(self) :: YAX_Mult => YAX_Mult_even
     end type
 
 contains
@@ -40,79 +40,241 @@ contains
         ! integer(int32), intent(in) :: NESW_wallBoundaries(4), boundaryConditions(self%N_x, self%N_y)
         ! real(real64), intent(in) :: del_x, del_y
     end subroutine constructPoissonOrthogonal
+  
 
-!     subroutine AX_Mult_even(self, x, y)
-!         ! Use gauss-seidel to calculate x^T * A * x
-!         class(GS_Base_Even), intent(in out) :: self
-!         real(real64), intent(in) :: x(self%N_x, self%N_y)
-!         real(real64), intent(in out) :: y(self%N_x, self%N_y)
-!         integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i, j
-!         real(real64) :: inv_centerCoeff
-!         inv_centerCoeff = 1.0d0/self%centerCoeff
-!         !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
-!         !$OMP&  W_indx)
-!         ! loop through inner nodes
-!         !$OMP do
-!         do k = 1, self%number_inner_rows
-!             do p = 1, self%number_row_sections(k)
-!                 do i = self%start_inner_indx_x(p), self%end_inner_indx_x(p)
-!                     j = self%start_row_indx + k - 1
-!                     N_indx = j+1
-!                     E_indx = i+1
-!                     S_indx = j-1
-!                     W_indx = i-1
-!                     y(i,j) = self%coeffY * (x(i,N_indx) + x(i,S_indx)) + &
-!                         self%coeffX * (x(E_indx, j) + x(W_indx, j)) + x(i,j)*inv_centerCoeff
-!                 end do
-!             end do
-!         end do
-!         !$OMP end do nowait
-!         ! go through boundary conditions
-!         !$OMP do
-!         do k = 1, self%number_inner_rows
-!             j = self%start_row_indx + k - 1
-!             select case (self%start_boundary_x(1))
-!             case(1)
-!                 continue
-!             case(2)
-!                 if (j/=1 .and. j/= self%N_y) then
-                    
-!                 end if
-!             case(3)
+    subroutine AX_Mult_even(self, x, y)
+        ! Use gauss-seidel to calculate y = x^T * A * x
+        class(GS_Base_Even), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y)
+        real(real64), intent(in out) :: y(self%N_x, self%N_y)
+        integer :: N_indx, E_indx, S_indx, W_indx, k, i, j, p
+    
+        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx)
 
-!             end select
-!         end do
-!         !$OMP end do nowait
-!         !$OMP end parallel 
-!     end subroutine AX_Mult_even
+        !first do corners
+        !$OMP sections
+        !$OMP section
+        if (self%world%boundary_conditions(1,1) == 2) then
+            ! lower left corner
+            y(1,1) = 2.0d0 * x(1, 2) * self%coeffY + &
+                2.0d0 * x(2, 1) * self%coeffX + x(1,1)*self%inv_centerCoeff
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
+            ! lower right corner
+            y(self%N_x, 1) = 2.0d0 * x(self%N_x, 2) * self%coeffY + &
+                2.0d0 * x(self%N_x-1, 1) * self%coeffX + x(self%N_x, 1)*self%inv_centerCoeff
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
+            ! upper left corner
+            y(1, self%N_y) = 2.0d0 * x(1, self%N_y-1) * self%coeffY + &
+                2.0d0 * x(2, self%N_y) * self%coeffX + x(1, self%N_y)*self%inv_centerCoeff
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
+            ! upper right corner
+            y(self%N_x, self%N_y) = 2.0d0 * x(self%N_x, self%N_y-1) * self%coeffY + &
+                2.0d0 * x(self%N_x-1, self%N_y) * self%coeffX + x(self%N_x, self%N_y)*self%inv_centerCoeff
+        end if
+        !$OMP end sections nowait
 
-!     function YAX_Mult_even(self, x, y) result(res)
-!         ! Use gauss-seidel to calculate x^T * A * x
-!         class(GS_Base_Even), intent(in out) :: self
-!         real(real64), intent(in) :: x(self%N_x, self%N_y), y(self%N_x, self%N_y)
-!         integer :: O_indx, N_indx, E_indx, S_indx, W_indx, k, i, j, p
-!         real(real64) :: res, inv_centerCoeff
-!         inv_centerCoeff = 1.0d0/self%centerCoeff
-!         res = 0.0d0
-!         !$OMP parallel private(i, j, p, k, N_indx, E_indx, S_indx, &
-!         !$OMP&  W_indx) reduction(+:res)
-!         ! loop through inner nodes
-!         !$OMP do collapse(2)
-!         do k = 1, self%numberRows
-!             do p = 1, self%numberColumns
-!                 i = self%startCol + p - 1
-!                 j = self%startRow + k - 1
-!                 N_indx = self%vertIndx(1,k)
-!                 E_indx = self%horzIndx(1,p)
-!                 S_indx = self%vertIndx(2,k)
-!                 W_indx = self%horzIndx(2,p)
-!                 res = res + y(i,j) * (self%coeffY * (x(i,N_indx) + x(i,S_indx)) + &
-!                     self%coeffX * (x(E_indx, j) + x(W_indx, j)) + x(i,j)*inv_centerCoeff)
-!             end do
-!         end do
-!         !$OMP end do
-!         !$OMP end parallel 
-!     end function YAX_Mult_even
+        ! Inner Nodes
+        !$OMP do
+        do k = 1, self%number_inner_rows
+            j = self%start_row_indx + k - 1
+            N_indx = j + 1
+            S_indx = j - 1
+            do p = 1, self%number_row_sections(k)
+                do i = self%start_inner_indx_x(p, k), self%end_inner_indx_x(p,k)  
+                    E_indx = i+1
+                    W_indx = i-1
+                    y(i,j) = (x(i, N_indx) + x(i, S_indx)) * self%coeffY + &
+                        (x(E_indx, j) + x(W_indx, j)) * self%coeffX + x(i,j) * self%inv_centerCoeff
+                end do
+            end do
+        end do
+        !$OMP end do nowait
+
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
+            end if
+            do i = self%start_bottom_row_indx(p), self%end_bottom_row_indx(p)
+                y(i,1) = (x(i, 2) + x(i, S_indx)) * self%coeffY + &
+                    (x(i-1, 1) + x(i+1, 1)) * self%coeffX + x(i,1)*self%inv_centerCoeff
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            do i = self%start_top_row_indx(p), self%end_top_row_indx(p)
+                y(i,self%N_y) = (x(i, self%N_y-1) + x(i, N_indx)) * self%coeffY + &
+                    (x(i-1, self%N_y) + x(i+1, self%N_y)) * self%coeffX + x(i, self%N_y)*self%inv_centerCoeff
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            do j = self%start_left_column_indx(p), self%end_left_column_indx(p)
+                y(1,j) = (x(1, j+1) + x(1, j-1)) * self%coeffY + &
+                    (x(2, j) + x(W_indx, j)) * self%coeffX + x(1,j)*self%inv_centerCoeff
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
+            end if
+            do j = self%start_right_column_indx(p), self%end_right_column_indx(p)
+                y(self%N_x,j) = (x(self%N_x, j-1) + x(self%N_x, j+1)) * self%coeffY + &
+                (x(self%N_x-1, j) + x(E_indx, j)) * self%coeffX + x(self%N_x,j)*self%inv_centerCoeff
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+    end subroutine AX_Mult_even
+
+
+    function YAX_Mult_even(self, x, y) result(res)
+        ! Use gauss-seidel to calculate x^T * A * x
+        class(GS_Base_Even), intent(in out) :: self
+        real(real64), intent(in) :: x(self%N_x, self%N_y), y(self%N_x, self%N_y)
+        integer :: N_indx, E_indx, S_indx, W_indx, k, i, j, p
+        real(real64) :: res
+        
+        res = 0.0d0
+        !$OMP parallel private(k, p, i, j, N_indx, W_indx, E_indx, S_indx) reduction(+:res)
+
+        !first do corners
+        !$OMP sections
+        !$OMP section
+        if (self%world%boundary_conditions(1,1) == 2) then
+            ! lower left corner
+            res = res + y(1,1) * (2.0d0 * x(1, 2) * self%coeffY + &
+                2.0d0 * x(2, 1) * self%coeffX + x(1,1)*self%inv_centerCoeff)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, 1) == 2) then
+            ! lower right corner
+            res = res + y(self%N_x, 1) * (2.0d0 * x(self%N_x, 2) * self%coeffY + &
+                2.0d0 * x(self%N_x-1, 1) * self%coeffX + x(self%N_x, 1)*self%inv_centerCoeff)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(1, self%world%N_y) == 2) then
+            ! upper left corner
+            res = res + y(1, self%N_y) * (2.0d0 * x(1, self%N_y-1) * self%coeffY + &
+                2.0d0 * x(2, self%N_y) * self%coeffX + x(1, self%N_y)*self%inv_centerCoeff)
+        end if
+        !$OMP section
+        if (self%world%boundary_conditions(self%world%N_x, self%world%N_y) == 2) then
+            ! upper right corner
+            res = res + y(self%N_x, self%N_y) * (2.0d0 * x(self%N_x, self%N_y-1) * self%coeffY + &
+                2.0d0 * x(self%N_x-1, self%N_y) * self%coeffX + x(self%N_x, self%N_y)*self%inv_centerCoeff)
+        end if
+        !$OMP end sections nowait
+
+        ! Inner Nodes
+        !$OMP do
+        do k = 1, self%number_inner_rows
+            j = self%start_row_indx + k - 1
+            N_indx = j + 1
+            S_indx = j - 1
+            do p = 1, self%number_row_sections(k)
+                do i = self%start_inner_indx_x(p, k), self%end_inner_indx_x(p,k)  
+                    E_indx = i+1
+                    W_indx = i-1
+                    res = res + y(i,j) * ((x(i, N_indx) + x(i, S_indx)) * self%coeffY + &
+                        (x(E_indx, j) + x(W_indx, j)) * self%coeffX + x(i,j) * self%inv_centerCoeff)
+                end do
+            end do
+        end do
+        !$OMP end do nowait
+
+        !lower boundary
+        !$OMP do
+        do p = 1, self%number_bottom_row_sections
+            if (self%bottom_row_boundary_type(p) == 2) then
+                S_indx = 2
+            else
+                S_indx = self%N_y-1
+            end if
+            do i = self%start_bottom_row_indx(p), self%end_bottom_row_indx(p)
+                res = res + y(i,1) * ( (x(i, 2) + x(i, S_indx)) * self%coeffY + &
+                    (x(i-1, 1) + x(i+1, 1)) * self%coeffX + x(i,1)*self%inv_centerCoeff)
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! ! upper boundary
+        !$OMP do
+        do p = 1, self%number_top_row_sections
+            if (self%top_row_boundary_type(p) == 2) then
+                N_indx = self%N_y-1
+            else
+                N_indx = 2
+            end if
+            do i = self%start_top_row_indx(p), self%end_top_row_indx(p)
+                res = res + y(i,self%N_y) * ((x(i, self%N_y-1) + x(i, N_indx)) * self%coeffY + &
+                    (x(i-1, self%N_y) + x(i+1, self%N_y)) * self%coeffX + x(i, self%N_y)*self%inv_centerCoeff)
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !left boundary
+        !$OMP do
+        do p = 1, self%number_left_column_sections
+            if (self%left_column_boundary_type(p) == 2) then
+                W_indx = 2
+            else
+                W_indx = self%N_x-1
+            end if
+            do j = self%start_left_column_indx(p), self%end_left_column_indx(p)
+                res = res + y(1,j) * ((x(1, j+1) + x(1, j-1)) * self%coeffY + &
+                    (x(2, j) + x(W_indx, j)) * self%coeffX + x(1,j)*self%inv_centerCoeff)
+            end do
+        end do
+        !$OMP end do nowait
+
+        ! !right boundary
+        !$OMP do
+        do p = 1, self%number_right_column_sections
+            if (self%right_column_boundary_type(p) == 2) then
+                E_indx = self%N_x-1
+            else
+                E_indx = 2
+            end if
+            do j = self%start_right_column_indx(p), self%end_right_column_indx(p)
+                res = res + y(self%N_x,j) * ((x(self%N_x, j-1) + x(self%N_x, j+1)) * self%coeffY + &
+                (x(self%N_x-1, j) + x(E_indx, j)) * self%coeffX + x(self%N_x,j)*self%inv_centerCoeff)
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+    end function YAX_Mult_even
 
     subroutine calcResidual_even(self)
         ! Solve GS down to some tolerance
