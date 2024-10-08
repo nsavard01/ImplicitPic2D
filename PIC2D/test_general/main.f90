@@ -36,14 +36,14 @@ program main
     ! call change_global_thread(numThreads)
     
     
-    evenGridBool = .true.
-    redBlackBool = .true.
+    evenGridBool = .false.
+    redBlackBool = .false.
     Krylov_bool = .false.
     center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 3
+    numberStages = 5
     call checkNodeDivisionMG(N_x, N_y, numberStages)
     ! call change_global_N(N_x, N_y)
 
@@ -55,16 +55,16 @@ program main
     end do
 
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 4
-    numberPostSmoothOper = 4
+    numberPreSmoothOper = 2
+    numberPostSmoothOper = 2
     numberIter = 50000
     omega = 1.5d0
-    relTol = 1.d-8
+    relTol = 1.d-10
     stepTol = 1.d-6
     rho = e_charge * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(1) = 2 ! North
     NESW_wallBoundaries(2) = 2 ! East
-    NESW_wallBoundaries(3) = 1! South
+    NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
@@ -246,12 +246,12 @@ program main
     !$OMP end do
     !$OMP end parallel
 
-    
 
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
     call mg_solver%solve(stepTol, relTol, 1)
     call system_clock(endTime)
+    
 
     print *, 'Took', mg_solver%numIter, 'iterations'
     print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'

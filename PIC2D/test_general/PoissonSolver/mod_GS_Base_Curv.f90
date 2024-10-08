@@ -74,9 +74,9 @@ subroutine initialize_GS_Curv(self, world)
     !$OMP end parallel
 
     del_x_west = SUM(world%del_x(1:self%x_indx_step))
-    del_x_east = SUM(world%del_x(self%N_x-self%x_indx_step:self%N_x-1))
+    del_x_east = SUM(world%del_x(world%N_x-self%x_indx_step:world%N_x-1))
     del_y_south = SUM(world%del_y(1:self%y_indx_step))
-    del_y_north = SUM(world%del_y(self%N_y-self%y_indx_step:self%N_y-1))
+    del_y_north = SUM(world%del_y(world%N_y-self%y_indx_step:world%N_y-1))
     self%centerCoeff(1,1) = -0.5d0 / (1.0d0 / (del_x_west**2) + 1.0d0 / (del_y_south**2))
     self%centerCoeff(self%N_x, 1) = -0.5d0 / (1.0d0 / (del_x_east**2) + 1.0d0 / (del_y_south**2))
     self%centerCoeff(1, self%N_y) = -0.5d0 / (1.0d0 / (del_x_west**2) + 1.0d0 / (del_y_north**2))
