@@ -33,19 +33,19 @@ program main
     call omp_set_num_threads(numThreads)
     call omp_set_max_active_levels(numThreads)
 
-    call change_global_thread(numThreads)
+    ! call change_global_thread(numThreads)
     
     
-    evenGridBool = .false.
+    evenGridBool = .true.
     redBlackBool = .true.
     Krylov_bool = .false.
-    center_box_bool = .false.
+    center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 4
+    numberStages = 3
     call checkNodeDivisionMG(N_x, N_y, numberStages)
-    call change_global_N(N_x, N_y)
+    ! call change_global_N(N_x, N_y)
 
     allocate(random_gen(numThreads))
     call random_seed()
@@ -62,9 +62,9 @@ program main
     relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_charge * 1d15
-    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(1) = 1 ! North
     NESW_wallBoundaries(2) = 2 ! East
-    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(3) = 1! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
