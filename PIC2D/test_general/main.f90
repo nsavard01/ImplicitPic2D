@@ -1,5 +1,6 @@
 program main
     use iso_fortran_env, only: int32, real64
+    use constants
     use mod_CSRMAtrix
     use mod_pardisoSolver
     use mod_MGSolver
@@ -8,49 +9,63 @@ program main
     use mod_domain_base
     use mod_domain_uniform
     use mod_domain_curv
+    use mod_particle
+    use mod_rand_generator
     use omp_lib
     implicit none
 
-    real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 1001, N_y = 8001, numThreads = 6
+    integer(int32) :: N_x = 1001, N_y = 1001, numThreads = 6
+    type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
+    type(rand_gen), allocatable :: random_gen(:)
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
-    integer :: inner_box_first_y, inner_box_last_y, inner_box_first_x, inner_box_last_x
+    integer :: inner_box_first_y, inner_box_last_y, inner_box_first_x, inner_box_last_x, i_thread
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
-    real(real64) :: alpha, beta, R2_future, R2_init, resProduct_old, resProduct_new, solutionRes, relTol, stepTol
+    real(real64) :: relTol, stepTol, temp_real
     logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool
 
     call execute_command_line("rm -r *.dat")
     call mkl_set_num_threads(numThreads)
     call omp_set_num_threads(numThreads)
     call omp_set_max_active_levels(numThreads)
+
+    call change_global_thread(numThreads)
+    
     
     evenGridBool = .false.
-    redBlackBool = .false.
-    Krylov_bool = .true.
-    center_box_bool = .true.
+    redBlackBool = .true.
+    Krylov_bool = .false.
+    center_box_bool = .false.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 6
+    numberStages = 4
     call checkNodeDivisionMG(N_x, N_y, numberStages)
+    call change_global_N(N_x, N_y)
+
+    allocate(random_gen(numThreads))
+    call random_seed()
+    do i = 1, numThreads
+        call random_number(temp_real)
+        random_gen(i) = rand_gen(INT(temp_real * (huge(i)-1)) + 1)
+    end do
 
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 2
-    numberPostSmoothOper = 2
+    numberPreSmoothOper = 4
+    numberPostSmoothOper = 4
     numberIter = 50000
     omega = 1.5d0
     relTol = 1.d-8
     stepTol = 1.d-6
-    rho = e_const * 1d15
-    NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    rho = e_charge * 1d15
+    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -224,7 +239,7 @@ program main
             k = (j-1) * N_x + i
             if (world%boundary_conditions(i,j) /= 1) then
                 ! stageOne%sourceTerm(i,j) = -rho/eps_0
-                solver%sourceTerm(i,j) = -rho/eps_0
+                solver%sourceTerm(i,j) = -rho/epsilon_0
             end if
         end do
     end do
@@ -245,48 +260,7 @@ program main
     write(41) solver%solution
     close(41)
     end associate
-   
-    ! end associate
-    ! ! !$OMP parallel workshare
-    ! ! CG_Solver%solution = CG_Solver%GS_smoothers(1)%solution
-    ! ! !$OMP end parallel workshare
-    
-    ! ! do stageInt = 1, solver%smoothNumber-1
-    ! !     ! Restrict to next smoother
-    ! !     call solver%GS_smoothers(stageInt)%restriction(solver%GS_smoothers(stageInt)%sourceTerm, solver%GS_smoothers(stageInt+1)%sourceTerm)
-    ! ! end do
-    ! ! call solver%GS_smoothers(solver%smoothNumber)%restriction(solver%GS_smoothers(solver%smoothNumber)%sourceTerm, solver%directSolver%sourceTerm)
-    ! ! solver%directSolver%sourceTerm(solver%directSolver%matDimension - (solver%GS_smoothers(solver%smoothNumber)%N_x+1)/2 + 1:solver%directSolver%matDimension) = 1000.0d0
-    
-
-    
-    ! ! open(41,file='test.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    ! ! write(41) solver%GS_smoothers(1)%directSolver%solution
-    ! ! close(41)
-    ! ! stop
-
-    
-
-    
-    ! print *, 'took', solver%iterNumber
-    ! print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds'
-
-  
-    ! call restriction(solver, test)
-    
-    ! call prolongation(solver, test)
-
-    
-
-    
-    
-    ! call solver%restriction(directSolver%solution, test)
-    
-
-    !call solver%prolongation(solver%GS_smoothers(1)%solution, test)
-    
-    ! print *, 'Took', CG_Solver%numIter, 'CG iterations'
-    ! print *, 'Took', i-1, 'main iterations'
+ 
 
 
 
@@ -345,43 +319,135 @@ contains
 
     end subroutine checkNodeDivisionMG
 
-    ! subroutine createCurvGrid(N_x, Length, diffX, delX, evenGridBool)
-    !     ! Check to make sure N_x and N_y is divisible by however many stages in multigrid we want
-    !     integer, intent(in) :: N_x
-    !     real(real64), intent(in) :: Length, delX
-    !     real(real64), intent(in out) :: diffX(N_x-1)
-    !     logical, intent(in) :: evenGridBool
-    !     real(real64) :: grid(N_x), tempReal
-    !     grid(1) = 0.0d0
-    !     grid(N_x) = Length
-    !     if (evenGridBool) then
-    !         tempReal = Length/real(N_x-1)
-    !         do i = 2,N_x-1
-    !             grid(i) = grid(i-1) + tempReal
-    !         end do
+    ! subroutine readChargedParticleInputs(filename, irand, T_e, T_i, numThread, world, particleList)
+    !     ! Read input file for particles
+    !     type(Particle), allocatable, intent(out) :: particleList(:)
+    !     type(Domain) :: world
+    !     character(len=*), intent(in) :: filename
+    !     integer(int32), intent(in) :: numThread
+    !     integer(int32), intent(in out) :: irand(numThread)
+    !     real(real64), intent(in) :: T_e, T_i
+    !     integer(int32) :: j, io, numSpecies = 0, numParticles(100), particleIdxFactor(100), i, tempInt, distType(100), iThread
+    !     character(len=15) :: name
+    !     character(len=8) :: particleNames(100), char_i
+    !     real(real64) :: mass(100), charge(100), Ti(100), tempReal, alpha(100), v_drift(100)
+    !     logical :: boolVal
+
+    !     print *, "Reading particle inputs:"
+    !     if (.not. restartBool) then
+    !         open(10,file='../InputData/'//filename, action = 'read')
     !     else
-    !         do i = 2,N_x-1
-    !             grid(i) = Length * ((real(i)-1.0d0)/(real(N_x) - 1.0d0) - (1.0d0/(real(N_x) - 1.0d0) - delX/Length) &
-    !             * SIN(2.0d0 * pi * (i-1) / real(N_x - 1)) / SIN(2.0d0 * pi / real(N_x - 1)) )
-    !         end do
+    !         open(10,file=restartDirectory//'/InputData/'//filename, action = 'read')
     !     end if
-    !     do i = 1, N_x-1
-    !         diffX(i) = grid(i+1) - grid(i)
+    !     do j=1, 10000
+    !         read(10,*) name
+
+    !         if( name(1:9).eq.'ELECTRONS') then
+    !             read(10,*) name
+    !             read(10,*) name
+    !             read(10,'(A4)', ADVANCE = 'NO') name(1:2)
+    !             numSpecies = numSpecies + 1
+    !             read(10,*) numParticles(numSpecies), particleIdxFactor(numSpecies), alpha(numSpecies), distType(numSpecies), v_drift(numSpecies)
+    !             Ti(numSpecies) = T_e
+    !             mass(numSpecies) = m_e
+    !             charge(numSpecies) = -1.0
+    !             particleNames(numSpecies) = 'e'
+    !             read(10,*) name
+    !             read(10,*) name
+    !         endif
+
+
+    !         if(name(1:4).eq.'IONS' .or. name(1:4).eq.'Ions' .or. name(1:4).eq.'ions' ) then
+    !             do while(name(1:4).ne.'----')
+    !                 read(10,*) name
+    !             end do
+    !             read(10,'(A6)', ADVANCE = 'NO') name
+    !             do while (name(1:4).ne.'----')
+    !                 numSpecies = numSpecies + 1
+    !                 read(10,*) mass(numSpecies),charge(numSpecies), numParticles(numSpecies), particleIdxFactor(numSpecies), alpha(numSpecies), distType(numSpecies), v_drift(numSpecies)
+    !                 Ti(numSpecies) = T_i
+    !                 mass(numSpecies) = mass(numSpecies) * m_amu - charge(numSpecies) * m_e
+    !                 particleNames(numSpecies) = trim(name)
+    !                 read(10,'(A6)', ADVANCE = 'NO') name
+    !             end do
+    !         endif      
+
+    !         if (name(1:7) == 'ENDFILE') then
+    !             exit
+    !         end if
+
     !     end do
+    !     close(10)
 
-    !     if (.not. makeX) then
-    !         call execute_command_line("rm -r gridX.dat")
-    !         open(41,file='gridX.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    !         write(41) grid
-    !         close(41)
-    !     else
-    !         call execute_command_line("rm -r gridY.dat")
-    !         open(41,file='gridY.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    !         write(41) grid
-    !         close(41)
+    !     numberChargedParticles = numSpecies
+    !     print *, 'Amount charged particles:', numberChargedParticles
+    !     if (numberChargedParticles > 0) then
+    !         ! Initialize and generate particles
+    !         allocate(particleList(numberChargedParticles))
+    !         do j=1, numberChargedParticles
+    !             particleList(j) = Particle(mass(j), e * charge(j), 1.0d0, numParticles(j), numParticles(j) * particleIdxFactor(j), trim(particleNames(j)), numThread)
+    !             call particleList(j) % initialize_n_ave(n_ave, world%L_domain)
+    !             if (.not. restartBool) then
+    !                 if (j==2 .and. numberChargedParticles == 2 .and. charge(2) == -charge(1) .and. numParticles(1) == numParticles(2)) then
+    !                     ! If only ions and electrons (electrons come first) then set ion positions same as electrons for neutral start
+    !                     print *, 'Neutral charge start!'
+    !                     particleList(2)%phaseSpace(1, :, :) = particleList(1)%phaseSpace(1,:,:)
+    !                 else
+    !                     SELECT CASE(distType(j))
+    !                     CASE(0)
+    !                         call particleList(j)% initializeRandUniform(world, irand)
+    !                     CASE(1)
+    !                         call particleList(j)% initializeRandCosine(world, irand, alpha(j))
+    !                     CASE(2)
+    !                         call particleList(j)% initializeRandSine(world, irand, alpha(j))
+    !                     CASE default
+    !                         print *, 'Distribution type should be between 0 and 2!'
+    !                         stop
+    !                     END SELECT
+    !                 end if
+    !                 if (j == 1) then
+    !                     call particleList(j) % generate3DMaxwellian(Ti(j), world, irand, alpha(j), distType(j), v_drift(j))
+    !                 else
+    !                     call particleList(j) % generate3DMaxwellian(Ti(j), world, irand, 1.236d0, distType(j), v_drift(j)) ! Used for IASW case, will likely change to general later
+    !                 end if
+    !             else
+    !                 !$OMP parallel private(iThread, boolVal, char_i, io, i)
+    !                 iThread = omp_get_thread_num() + 1
+    !                 write(char_i, '(I3)'), iThread
+    !                 INQUIRE(file=restartDirectory//'/PhaseSpace/phaseSpace_'//particleList(j)%name//"_thread"//trim(adjustl(char_i))//".dat", exist = boolVal)
+    !                 if (.not. boolVal) then
+    !                     print *, restartDirectory//'/PhaseSpace/phaseSpace_'//particleList(j)%name//"_thread"//trim(adjustl(char_i))//".dat", 'Does not exist'
+    !                     stop
+    !                 end if
+    !                 open(iThread,file=restartDirectory//"/PhaseSpace/phaseSpace_"//particleList(j)%name//"_thread"//trim(adjustl(char_i))//".dat", form = 'UNFORMATTED', access = 'stream', status = 'old', IOSTAT=io)
+    !                 i = 0
+    !                 read(iThread,  IOSTAT = io) particleList(j)%phaseSpace(:, i+1, iThread)
+    !                 do while (io == 0)
+    !                     i = i + 1
+    !                     read(iThread,  IOSTAT = io) particleList(j)%phaseSpace(:, i+1, iThread)
+    !                 end do
+    !                 particleList(j)%N_p(iThread) = i
+    !                 close(iThread)
+    !                 !$OMP end parallel
+    !             end if
+    !             print *, 'Initializing ', particleList(j) % name
+    !             print *, 'Amount of macroparticles is:', SUM(particleList(j) % N_p)
+    !             print *, "Particle mass is:", particleList(j)%mass
+    !             print *, "Particle charge is:", particleList(j)%q
+    !             print *, "Particle weight is:", particleList(j)%w_p
+    !             print *, "Particle mean KE is:", particleList(j)%getKEAve()
+    !             print *, 'Distribution type:', distType(j)
+    !             print *, 'Drift velocity:', v_drift(j)
+    !         end do
     !     end if
 
-    ! end subroutine createCurvGrid    
+        
+    !     print *, "---------------"
+    !     print *, ""
+
+
+    ! end subroutine readChargedParticleInputs
+
 
 
 end program main
