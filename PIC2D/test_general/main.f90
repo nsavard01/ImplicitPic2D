@@ -12,7 +12,7 @@ program main
     implicit none
 
     real(real64), parameter :: e_const = 1.602176634d-19, eps_0 = 8.8541878188d-12, pi = 4.0d0*atan(1.0d0)
-    integer(int32) :: N_x = 1001, N_y = 8001, numThreads = 6
+    integer(int32) :: N_x = 1001, N_y = 1001, numThreads = 6
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
@@ -31,12 +31,12 @@ program main
     
     evenGridBool = .false.
     redBlackBool = .false.
-    Krylov_bool = .true.
+    Krylov_bool = .false.
     center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 6
+    numberStages = 5
     call checkNodeDivisionMG(N_x, N_y, numberStages)
 
     ! More skewed delX and delY, more smoothing operations needed
