@@ -13,4 +13,27 @@ module constants
     real(real64), parameter :: mu_0 = 1.25663706212d-6 ! m kg s^-2 A^-2
     real(real64), parameter :: pi_const = 4.0d0*atan(1.0d0) ! pi from atan
 
+    ! global constants that will be read in once and used throughout the program
+    integer, public, protected :: number_threads_global, N_x_global, N_y_global, number_charged_particles
+contains
+    ! subroutines to change global integers
+    subroutine change_global_N(N_x, N_y)
+        integer, intent(in) :: N_x, N_y
+        N_x_global = N_x
+        N_y_global = N_y
+
+    end subroutine change_global_N
+
+    subroutine change_global_thread(num_threads)
+        integer, intent(in) :: num_threads
+        number_threads_global = num_threads
+
+    end subroutine change_global_thread
+
+    subroutine change_global_numPart(num_part)
+        integer, intent(in) :: num_part
+        number_charged_particles = num_part
+
+    end subroutine change_global_numPart
+
 end module constants

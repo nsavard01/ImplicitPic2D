@@ -43,39 +43,20 @@ contains
         
         allocate(self%grid_X(self%N_x), self%grid_Y(self%N_y), &
         self%del_x(self%N_x-1), self%del_y(self%N_y-1), self%boundary_conditions(self%N_x, self%N_y))
-
-        ! self%NESW_wall_boundaries = NESW_wall_boundaries ! N, E, S, W indices
-        ! top_bound = NESW_wall_boundaries(1)
-        ! right_bound = NESW_wall_boundaries(2)
-        ! bottom_bound = NESW_wall_boundaries(3)
-        ! left_bound = NESW_wall_boundaries(4)
-
+   
         !$OMP parallel
         !$OMP workshare
         self%boundary_conditions = 0
         !$OMP end workshare
         !$OMP end parallel
-        ! self%boundary_conditions(2:self%N_x-1, self%N_y) = top_bound
-        ! self%boundary_conditions(self%N_x, 2:self%N_y-1) = right_bound
-        ! self%boundary_conditions(2:self%N_x-1, 1) = bottom_bound
-        ! self%boundary_conditions(1, 2:self%N_y-1) = left_bound
-
-
-        ! ! Upper right corner
-        ! self%boundary_conditions(self%N_x, self%N_y) = MIN(top_bound, right_bound)
-
-        ! ! lower right corner
-        ! self%boundary_conditions(self%N_x, 1) = MIN(bottom_bound, right_bound)
-
-        ! ! lower left corner
-        ! self%boundary_conditions(1, 1) = MIN(bottom_bound, left_bound)
-
-        ! ! upper left corner
-        ! self%boundary_conditions(1, self%N_y) = MIN(top_bound, left_bound)
-
-        call create_sin_grid(self%N_x, length_x, self%grid_X, self%del_x, del_x_small)
-        call create_sin_grid(self%N_y, length_y, self%grid_y, self%del_y, del_y_small)
-
+        select case (curv_grid_type_x)
+        case (0)
+            call create_sin_grid(self%N_x, length_x, self%grid_X, self%del_x, del_x_small)
+            call create_sin_grid(self%N_y, length_y, self%grid_y, self%del_y, del_y_small)
+        case (1)
+            call create_sin_grid_half(self%N_x, length_x, self%grid_X, self%del_x, del_x_small)
+            call create_sin_grid_half(self%N_y, length_y, self%grid_y, self%del_y, del_y_small)
+        end select
 
     end function constructor_domain_curv
     
@@ -153,5 +134,23 @@ contains
         end do
 
     end subroutine create_sin_grid
+
+    subroutine create_sin_grid_half(n, length, grid, del, smallest_del)
+        ! generate sinusoidal with min and max del_x at the edges of each boundary
+        integer, intent(in) :: n
+        real(real64), intent(in) :: length, smallest_del ! smallest cell size
+        real(real64), intent(in out) :: del(n-1), grid(n) ! cell sizes to place in
+        integer(int32) :: i
+        grid(1) = 0.0d0
+        grid(n) = length
+        do i = 2,n-1
+            grid(i) = length * ((real(i)-1.0d0)/(real(n) - 1.0d0) - (1.0d0/(real(n) - 1.0d0) - smallest_del/length) &
+            * SIN(pi_const * (i-1) / real(n - 1)) / SIN(pi_const / real(n - 1)) )
+        end do
+        do i = 1, n-1
+            del(i) = grid(i+1) - grid(i)
+        end do
+
+    end subroutine create_sin_grid_half
 
 end module mod_domain_curv

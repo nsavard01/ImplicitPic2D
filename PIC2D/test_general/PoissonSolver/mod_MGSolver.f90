@@ -149,7 +149,7 @@ contains
                 self%R2_current = SUM(self%MG_smoothers(1)%GS_Smoother%residual**2)
                 !$OMP end parallel workshare
                 self%R2_current = sqrt(self%R2_current)
-                print *, 'MG iter:', i, 'res:', self%R2_current
+                print *, 'MG iter:', i, 'res:', self%R2_current/initRes
                 if (self%R2_current/initRes < relTol) then
                     print *, 'Starting residual lowered'
                     exit
