@@ -14,7 +14,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 1001, N_y = 1001, numThreads = 6
+    integer(int32) :: N_x = 1001, N_y = 2001, numThreads = 6
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -37,13 +37,13 @@ program main
     
     
     evenGridBool = .false.
-    redBlackBool = .false.
+    redBlackBool = .true.
     Krylov_bool = .false.
     center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
-    numberStages = 5
+    numberStages = 4
     call checkNodeDivisionMG(N_x, N_y, numberStages)
     ! call change_global_N(N_x, N_y)
 
@@ -55,16 +55,16 @@ program main
     end do
 
     ! More skewed delX and delY, more smoothing operations needed
-    numberPreSmoothOper = 2
-    numberPostSmoothOper = 2
+    numberPreSmoothOper = 4
+    numberPostSmoothOper = 4
     numberIter = 50000
     omega = 1.5d0
-    relTol = 1.d-10
+    relTol = 1.d-8
     stepTol = 1.d-6
     rho = e_charge * 1d15
-    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(1) = 1 ! North
     NESW_wallBoundaries(2) = 2 ! East
-    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
