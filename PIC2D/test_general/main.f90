@@ -1,5 +1,5 @@
 program main
-    use iso_fortran_env, only: int32, real64
+    use iso_fortran_env, only: int32, real64, int64
     use constants
     use mod_CSRMAtrix
     use mod_pardisoSolver
@@ -14,7 +14,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 1001, N_y = 2001, numThreads = 6
+    integer(int32) :: N_x = 501, N_y = 501, numThreads = 6
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -25,15 +25,18 @@ program main
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
-    real(real64) :: relTol, stepTol, temp_real
+    real(real64) :: relTol, stepTol, temp_real, n_ave
+    real(real64), allocatable :: rho_array(:,:)
     logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool
+    integer(int32) :: num_part_per_cell = 1000
+    integer(int64) :: num_part_total
 
     call execute_command_line("rm -r *.dat")
     call mkl_set_num_threads(numThreads)
     call omp_set_num_threads(numThreads)
     call omp_set_max_active_levels(numThreads)
 
-    ! call change_global_thread(numThreads)
+    call change_global_thread(numThreads)
     
     
     evenGridBool = .false.
@@ -61,7 +64,9 @@ program main
     omega = 1.5d0
     relTol = 1.d-8
     stepTol = 1.d-6
-    rho = e_charge * 1d15
+    n_ave = 1.d15
+    rho = e_charge * n_ave
+
     NESW_wallBoundaries(1) = 1 ! North
     NESW_wallBoundaries(2) = 2 ! East
     NESW_wallBoundaries(3) = 2 ! South
@@ -88,41 +93,18 @@ program main
     delY = 0.01d0 * Width/real(N_y-1)
     if (evenGridBool) then
         world = domain_uniform(N_x, N_y, Length, Width)
+        call world%form_boundary_conditions(upperBound, rightBound, lowerBound, leftBound, inner_box_first_x, inner_box_last_x, inner_box_first_y, inner_box_last_y, center_box_bool)
+        call world%get_number_cells()
     else
         world = domain_curv(N_x, N_y, Length, &
         Width, curv_grid_type_x, curv_grid_type_y, delX, delY)
-    end if
-    mat_dimension = world%N_x * world%N_y
-    world%boundary_conditions(2:world%N_x-1, world%N_y) = upperBound
-    world%boundary_conditions(world%N_x, 2:world%N_y-1) = rightBound
-    world%boundary_conditions(2:world%N_x-1, 1) = lowerBound
-    world%boundary_conditions(1, 2:world%N_y-1) = leftBound
-
-
-    ! Upper right corner
-    world%boundary_conditions(world%N_x, world%N_y) = MIN(upperBound, rightBound)
-
-    ! lower right corner
-    world%boundary_conditions(world%N_x, 1) = MIN(lowerBound, rightBound)
-
-    ! lower left corner
-    world%boundary_conditions(1, 1) = MIN(lowerBound, leftBound)
-
-    ! upper left corner
-    world%boundary_conditions(1, world%N_y) = MIN(upperBound, leftBound)
-
-    if (center_box_bool) then
-        inner_box_first_x = 3* N_x/8
-        inner_box_last_x = 5 * N_x / 8
-        inner_box_first_y = 3 * N_y / 8
-        inner_box_last_y = 5 * N_y / 8
-        !$OMP parallel
-        !$OMP workshare
-        world%boundary_conditions(inner_box_first_x:inner_box_last_x, inner_box_first_y:inner_box_last_y) = 1
-        !$OMP end workshare
-        !$OMP end parallel
+        call world%form_boundary_conditions(upperBound, rightBound, lowerBound, leftBound, inner_box_first_x, inner_box_last_x, inner_box_first_y, inner_box_last_y, center_box_bool)
+        call world%get_number_cells()
+        call world%generate_node_volume()
     end if
 
+    allocate(rho_array(world%N_x, world%N_y))
+    
     if (Krylov_bool) then
         if (evenGridBool) then
             mg_solver = PreCondCGSolver(world%N_x, world%N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
@@ -165,73 +147,20 @@ program main
         !$OMP end do
         !$OMP end parallel
     end if
-    ! if (Krylov_bool) then
-    !     if (PCG_bool) then
-    !         solver = PreCondCGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
-    !     else
-    !         solver = BiCGSTAB_Solver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
-    !     end if
-    ! else
-    !     solver = MGSolver(N_x, N_y, numberStages, numberIter, numberPreSmoothOper, numberPostSmoothOper)
-    ! end if
-    ! select type (world)
-    ! type is (domain_uniform)
-    !     call solver%makeSmootherStages_even(world%del_x, world%del_y, world%NESW_wall_boundaries, world%boundary_conditions, omega, redBlackBool)
-    ! type is (domain_curv)
-    !     call solver%makeSmootherStages_curv(world%del_x, world%del_y, world%NESW_wall_boundaries, world%boundary_conditions, omega, redBlackBool)
-    ! end select
-    ! associate( stageOne => solver%MG_smoothers(1)%GS_smoother)
-    ! Set phi values finer grid
 
-    ! if (upperBound == 1) then
-    !     stageOne%solution(2:N_x-1, N_y) = upperPhi
-    ! end if
-    ! if (rightBound == 1) then
-    !     stageOne%solution(N_x, 2:N_y-1) = rightPhi
-    ! end if
-    ! if (lowerBound == 1) then 
-    !     stageOne%solution(2:N_x-1, 1) = lowerPhi
-    ! end if
-    ! if (leftBound == 1) then 
-    !     stageOne%solution(1, 2:N_y-1) = leftPhi
-    ! end if
-    ! if (world%boundary_conditions(1,1) == 1) then
-    !     if (lowerBound == leftBound) then
-    !         stageOne%solution(1,1) = MIN(leftPhi, lowerPhi)
-    !     else if (lowerBound == 1) then
-    !         stageOne%solution(1,1) = lowerPhi
-    !     else 
-    !         stageOne%solution(1,1) = leftPhi
-    !     end if
-    ! end if
-    ! if (world%boundary_conditions(N_x,1) == 1) then
-    !     if (lowerBound == rightBound) then
-    !         stageOne%solution(N_x,1) = MIN(rightPhi, lowerPhi)
-    !     else if (lowerBound == 1) then
-    !         stageOne%solution(N_x,1) = lowerPhi
-    !     else
-    !         stageOne%solution(N_x,1) = rightPhi
-    !     end if
-    ! end if
-    ! if (world%boundary_conditions(1, N_y) == 1) then
-    !     if (upperBound == leftBound) then
-    !         stageOne%solution(1, N_y) = MIN(leftPhi, upperPhi)
-    !     else if (upperBound == 1) then
-    !         stageOne%solution(1, N_y) = upperPhi
-    !     else
-    !         stageOne%solution(1, N_y) = leftPhi
-    !     end if
-    ! end if
-    ! if (world%boundary_conditions(N_x, N_y) == 1) then
-    !     if (upperBound == rightBound) then
-    !         stageOne%solution(N_x, N_y) = MIN(rightPhi, upperPhi)
-    !     else if (upperBound == 1) then
-    !         stageOne%solution(N_x, N_y) = upperPhi
-    !     else
-    !         stageOne%solution(N_x, N_y) = rightPhi
-    !     end if
-    ! end if
 
+    num_part_total = num_part_per_cell * world%number_total_cells
+    print *, world%number_total_cells, num_part_total, number_threads_global
+    allocate(particle_list(1))
+    particle_list(1) = Particle(mass_electron, e_charge, 1.0d0, num_part_total, num_part_total, 'e', world%N_x, world%N_y)
+    call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
+    call particle_list(1)%initialize_rand_uniform(world, random_gen)
+    call particle_list(1)%interpolation_particle_to_nodes()
+    call get_rho(rho_array, particle_list, world, 1)
+    open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    write(41) rho_array
+    close(41)
+    stop
     !$OMP parallel private(k, i, j)
     !$OMP do collapse(2)
     do j = 1, solver%N_y
@@ -318,6 +247,59 @@ contains
         close(41)
 
     end subroutine checkNodeDivisionMG
+
+    subroutine get_rho(rho, particle_list, world, number_charged_particles)
+        class(domain_base), intent(in) :: world
+        real(real64), intent(in out) :: rho(world%N_x, world%N_y)
+        integer, intent(in) :: number_charged_particles
+        type(Particle), intent(in) :: particle_list(number_charged_particles)
+        integer(int32) :: i, i_thread, j
+
+        !$OMP parallel private(i, i_thread, j)
+        !$OMP workshare
+        rho = 0.0d0
+        !$OMP end workshare
+        !$OMP barrier
+        !$OMP do 
+        do j = 1, world%N_y
+            do i = 1, number_charged_particles
+                do i_thread = 1, number_threads_global
+                    rho(:,j) = rho(:,j) + particle_list(i)%weight * particle_list(i)%work_space(:,j,i_thread)
+                end do
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+
+        select type (world)
+        type is (domain_uniform)
+            !$OMP parallel 
+            !$OMP workshare
+            rho = rho*world%node_volume
+            !$OMP end workshare
+            !$OMP workshare
+            rho(:,1) = 2.0d0 * rho(:,1)
+            !$OMP end workshare
+            !$OMP workshare
+            rho(:,world%N_y) = 2.0d0 * rho(:,world%N_y)
+            !$OMP end workshare
+            !$OMP workshare
+            rho(1,:) = 2.0d0 * rho(1,:)
+            !$OMP end workshare
+            !$OMP workshare
+            rho(world%N_x,:) = 2.0d0 * rho(world%N_x,:)
+            !$OMP end workshare
+            !$OMP end parallel      
+        type is (domain_curv)
+            !$OMP parallel 
+            !$OMP workshare
+            rho = rho*world%node_volume
+            !$OMP end workshare
+            !$OMP end parallel    
+        end select
+
+    end subroutine get_rho
+
 
     ! subroutine readChargedParticleInputs(filename, irand, T_e, T_i, numThread, world, particleList)
     !     ! Read input file for particles

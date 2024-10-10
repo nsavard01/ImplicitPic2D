@@ -12,7 +12,7 @@ module mod_domain_uniform
 
     type, extends(domain_base) :: domain_uniform
         ! store grid quantities
-        real(real64) :: del_x, del_y
+        real(real64) :: del_x, del_y, node_volume
     contains
         procedure, public, pass(self) :: get_xi_from_X => get_xi_from_X_uniform
         procedure, public, pass(self) :: get_eta_from_Y => get_eta_from_Y_uniform
@@ -72,6 +72,7 @@ contains
 
         self%del_x = length_x/real(self%N_x-1)
         self%del_y = length_y/real(self%N_y-1)
+        self%node_volume = 1.0d0 / (self%del_x * self%del_y)
         do i = 1, self%N_x
             self%grid_X(i) = self%del_x * (i-1)
         end do
@@ -86,7 +87,7 @@ contains
         class(domain_uniform), intent(in) :: self
         real(real64), intent(in) :: x
         real(real64) :: xi
-        xi = (x-self%start_X)/self%del_x
+        xi = (x-self%start_X)/self%del_x + 1.0d0
     end function get_xi_from_X_uniform
 
     function get_eta_from_Y_uniform(self, y) result(eta)
@@ -94,7 +95,7 @@ contains
         class(domain_uniform), intent(in) :: self
         real(real64), intent(in) :: y
         real(real64) :: eta
-        eta = (y-self%start_y)/self%del_y
+        eta = (y-self%start_y)/self%del_y + 1.0d0
     end function get_eta_from_Y_uniform
 
     function get_cell_del_x_uniform(self, xi_cell) result(del_x)

@@ -1,6 +1,6 @@
 FC = ifx
-BASE= -Ofast -ipo -qopenmp -qmkl -xHost #-xCORE-AVX512 -mt_mpi 
-DEBUG = -qmkl -qopenmp -g -traceback -check all -fp-stack-check -warn all #-traceback -CB -fp-stack-check -warn all -check uninit -check pointers -check output_conversion -check format -check stack -fpe0 -check arg_temp_created -g
+BASE= -Ofast -ipo -qopenmp -qmkl -xHost -heap-arrays 8192 #-xCORE-AVX512 -mt_mpi 
+DEBUG = -qmkl -qopenmp -g -traceback -check all -heap-arrays 8192 -fp-stack-check -warn all #-traceback -CB -fp-stack-check -warn all -check uninit -check pointers -check output_conversion -check format -check stack -fpe0 -check arg_temp_created -g
 OPT= $(BASE)
 
 constants_dir = Constants/
@@ -65,6 +65,8 @@ clean:
 	cd $(constants_dir); $(MAKE) clean
 	cd $(solver_dir); $(MAKE) clean
 	cd $(world_dir); $(MAKE) clean
+	cd $(particle_dir); $(MAKE) clean
+	cd $(rand_dir); $(MAKE) clean
 
 
 

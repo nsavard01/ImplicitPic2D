@@ -3,6 +3,8 @@ module mod_particle
     use iso_fortran_env, only: int32, real64, output_unit
     use constants
     use mod_domain_base
+    use mod_domain_uniform
+    use mod_domain_curv
     use mod_rand_generator
     use omp_lib
     implicit none
@@ -14,9 +16,10 @@ module mod_particle
     ! Particle contains particle properties and stored values in phase space
     type :: Particle
         character(:), allocatable :: name !name of the particle
-        integer(int32), allocatable :: number_particles_thread(:)
+        integer(int64), allocatable :: number_particles_thread(:)
         ! numToCollide saves number that can collided in nullCollision
-        integer(int32) :: max_indx ! maximum particles per thread
+        integer(int64) :: max_indx ! maximum particles per thread
+        real(real64), allocatable :: densities(:,:)
         real(real64), allocatable :: phase_space(:,:, :) !particle phase space, represents [xi_x, xi_y, v_x, v_y, v_z]
         real(real64) :: mass, charge, weight, q_over_m, q_times_weight ! mass (kg), charge(C), and weight (N/m^2 in 1D) of particles. Assume constant weight for moment
         real(real64), allocatable :: work_space(:,:,:) ! Per thread densities and general workspace over domain
@@ -24,6 +27,7 @@ module mod_particle
     contains
         procedure, public, pass(self) :: initialize_weight_from_n_ave
         procedure, public, pass(self) :: initialize_rand_uniform
+        procedure, public, pass(self) :: interpolation_particle_to_nodes
         ! procedure, public, pass(self) :: initializeRandCosine
         ! procedure, public, pass(self) :: initializeRandSine
         ! procedure, public, pass(self) :: generate_3D_Maxwellian
@@ -45,52 +49,116 @@ contains
         ! Construct particle object, sizeIncrease is fraction larger stored array compared to initial amount of particles
         ! In future, use hash function for possible k = 1 .. Nx, m amount of boundaries, p = prime number  m < p < N_x. h(k) = (k%p)%m
         real(real64), intent(in) :: mass, q, w_p
-        integer(int32), intent(in) :: N_p, finalIdx, N_x, N_y
+        integer(int64), intent(in) :: N_p, finalIdx
+        integer(int32), intent(in) :: N_x, N_y
         character(*), intent(in) :: particleName
-        integer :: numThread
-        numThread = omp_get_max_threads()
         self % name = particleName
         self % mass = mass
         self % charge = q
         self % weight = w_p
         self%q_over_m = q/mass
         self%q_times_weight = q * w_p
-        self %max_indx = finalIdx
-        self%number_particles_thread = N_p
-        allocate(self%phase_space(5,finalIdx, numThread), self%work_space(N_x, N_y, numThread))
+        self %max_indx = finalIdx / number_threads_global
+        allocate(self%number_particles_thread(number_threads_global), self%phase_space(5,self%max_indx, number_threads_global), &
+        self%work_space(N_x, N_y, number_threads_global))
+        !$OMP parallel
+        self%work_space(:,:,omp_get_thread_num()+1) = 0.0d0
+        !$OMP end parallel
+        self%number_particles_thread = N_p/number_threads_global
         
     end function particle_constructor
 
-    pure subroutine initialize_weight_from_n_ave(self, n_ave, world)
+    subroutine initialize_weight_from_n_ave(self, n_ave, world)
         ! initialize w_p based on initial average n (N/m^3) over domain
         class(Particle), intent(in out) :: self
         real(real64), intent(in) :: n_ave
         class(domain_base), intent(in) :: world
-        self % weight = n_ave * (world%end_X - world%start_X) * (world%end_Y - world%start_Y) / SUM(self % number_particles_thread)
+        integer :: i, j
+        real(real64) :: area
+
+        select type (world)
+        type is (domain_uniform)
+            area = world%number_total_cells/world%node_volume
+        type is (domain_curv)
+            area = 0
+            !$OMP parallel private(j,i) reduction(+:area)
+            !$OMP do
+            do j = 1, world%N_y-1
+                do i = 1, world%N_x-1
+                    if (world%boundary_conditions(i,j) == 0 .or. world%boundary_conditions(i+1,j) == 0 &
+                    .or. world%boundary_conditions(i,j+1) == 0 .or. world%boundary_conditions(i+1,j+1) == 0) then
+                        area = area + world%del_x(i) * world%del_y(j)
+                    end if
+                end do
+            end do
+            !$OMP end do
+            !$OMP end parallel
+        end select 
+        self%weight = n_ave * area / SUM(self % number_particles_thread)
         self%q_times_weight = self%charge * self%weight
     end subroutine initialize_weight_from_n_ave
 
-    subroutine initialize_rand_uniform(self, world, random_gen, num_threads)
+    subroutine initialize_rand_uniform(self, world, random_gen)
         ! distribute particles randomly over the domain
         class(Particle), intent(in out) :: self
         class(domain_base), intent(in) :: world
-        integer, intent(in) :: num_threads
-        type(rand_gen), intent(in out) :: random_gen(num_threads)
-        integer(int32) :: i_thread, i
-        real(real64) :: x_pos, y_pos, L_x, L_y
+        type(rand_gen), intent(in out) :: random_gen(number_threads_global)
+        integer(int32) :: i_thread, int_xi, int_eta
+        integer(int64) :: i
+        real(real64) :: x_pos, y_pos, L_x, L_y, xi, eta
         L_x = world%end_X - world%start_X
         L_y = world%end_Y - world%start_Y
-        !$OMP parallel private(i_thread, i, x_pos, y_pos)
+        !$OMP parallel private(i_thread, i, x_pos, y_pos, eta, xi, int_xi, int_eta)
         i_thread = omp_get_thread_num() + 1
         do i = 1, self%number_particles_thread(i_thread)
             x_pos = random_gen(i_thread)%get_rand_num() * L_x + world%start_X
-            self%phase_space(1,i, i_thread) = world%get_xi_from_X(x_pos)
+            xi = world%get_xi_from_X(x_pos)
+            int_xi = int(xi)
 
             y_pos = random_gen(i_thread)%get_rand_num() * L_y + world%start_Y
-            self%phase_space(2, i, i_thread) = world%get_eta_from_Y(y_pos)
+            eta = world%get_eta_from_Y(y_pos)
+            int_eta = int(eta)
+            do while (world%boundary_conditions(int_xi, int_eta) /= 0 .and. world%boundary_conditions(int_xi+1, int_eta) /= 0 &
+                .and. world%boundary_conditions(int_xi, int_eta+1) /= 0 .and. world%boundary_conditions(int_xi+1, int_eta+1) /= 0)
+                x_pos = random_gen(i_thread)%get_rand_num() * L_x + world%start_X
+                xi = world%get_xi_from_X(x_pos)
+                int_xi = int(xi)
+
+                y_pos = random_gen(i_thread)%get_rand_num() * L_y + world%start_Y
+                eta = world%get_eta_from_Y(y_pos)
+                int_eta = int(eta)
+            end do
+            
+            self%phase_space(1,i, i_thread) = xi
+            self%phase_space(2, i, i_thread) = eta
         end do
         !$OMP end parallel
     end subroutine initialize_rand_uniform
+
+    subroutine interpolation_particle_to_nodes(self)
+        ! interpolate particles to work space array
+        class(Particle), intent(in out) :: self
+        integer(int32) :: i, j, i_thread, iter
+        real(real64) :: d_i, d_j, xi, eta
+        !$OMP parallel private(iter, i,j, d_i, d_j, xi, eta)
+        i_thread = omp_get_thread_num() + 1
+        do iter = 1, self%number_particles_thread(i_thread)
+            xi = self%phase_space(1,iter,i_thread)
+            eta = self%phase_space(2,iter,i_thread)
+            i = int(xi)
+            j = int(eta)
+            d_i = xi - real(i)
+            d_j = eta - real(j)
+
+            self%work_space(i,j, i_thread) = self%work_space(i,j, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+            self%work_space(i+1,j, i_thread) = self%work_space(i+1,j, i_thread) + (d_i) * (1.0d0-d_j)
+            self%work_space(i,j+1, i_thread) = self%work_space(i,j+1, i_thread) + (1.0d0-d_i) * (d_j)
+            self%work_space(i+1,j+1, i_thread) = self%work_space(i+1,j+1, i_thread) + (d_i) * (d_j)
+        end do
+        !$OMP end parallel
+
+    end subroutine interpolation_particle_to_nodes
+
 
     ! subroutine initializeRandCosine(self, world, irand, alpha)
     !     ! Use acceptance-rejection method to distribute particles
