@@ -35,7 +35,6 @@ def sinFunc(numNodes, length, del_x):
     grid = length * ((l-1)/(numNodes-1) - (1/(numNodes-1) - del_x/length) * np.sin(2 * np.pi * (l-1) / (numNodes-1)) /np.sin(2 * np.pi / (numNodes-1)))
     return grid
 
-
 # numNodes_x = 1025
 # numNodes_y = 129
 # GSRes = np.fromfile('finalSol.dat')
@@ -59,7 +58,6 @@ Width = gridY[-1] - gridY[0]
 # plt.pcolormesh(np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F'), shading = 'nearest')
 # plt.colorbar()
 
-
 stage = 1
 
 numNodes_x = int((numNodes[0] + (2**(stage-1)-1)) / 2**(stage-1))
@@ -68,7 +66,7 @@ gridX = gridX[0:numNodes[0]:2**(stage-1)]
 gridY = gridY[0:numNodes[1]:2**(stage-1)]
 grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 plt.figure()
-plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest', vmin = 0.5e14, vmax = 1.5e15)
+plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
 plt.colorbar()
 
 

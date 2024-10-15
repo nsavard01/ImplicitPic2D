@@ -13,7 +13,7 @@ module mod_domain_curv
 
     type, extends(domain_base) :: domain_curv
         ! store grid quantities
-        real(real64), allocatable :: del_x(:), del_y(:), node_volume(:,:)
+        real(real64), allocatable :: del_x(:), del_y(:), inv_node_volume(:,:)
     contains
         procedure, public, pass(self) :: generate_node_volume => generate_node_volume_curv
         procedure, public, pass(self) :: get_xi_from_X => get_xi_from_X_curv
@@ -45,7 +45,7 @@ contains
         
         allocate(self%grid_X(self%N_x), self%grid_Y(self%N_y), &
         self%del_x(self%N_x-1), self%del_y(self%N_y-1), self%boundary_conditions(self%N_x, self%N_y), &
-        self%node_volume(self%N_x, self%N_y))
+        self%inv_node_volume(self%N_x, self%N_y))
    
         !$OMP parallel
         !$OMP workshare
@@ -83,16 +83,16 @@ contains
                 else
                     real_temp = 0.5d0
                 end if
-                self%node_volume(i,j) = real_temp * del_x * del_y
+                self%inv_node_volume(i,j) = real_temp * del_x * del_y
             end do
         end do
         !$OMP end parallel
 
         !corners
-        self%node_volume(1,1) = 0.25d0 * self%del_x(1) * self%del_y(1)
-        self%node_volume(self%N_x,1) = 0.25d0 * self%del_x(self%N_x-1) * self%del_y(1)
-        self%node_volume(1,self%N_y) = 0.25d0 * self%del_x(1) * self%del_y(self%N_y-1)
-        self%node_volume(self%N_x, self%N_y) = 0.25d0 * self%del_x(self%N_x-1) * self%del_y(self%N_y-1)
+        self%inv_node_volume(1,1) = self%del_x(1) * self%del_y(1)
+        self%inv_node_volume(self%N_x,1) = self%del_x(self%N_x-1) * self%del_y(1)
+        self%inv_node_volume(1,self%N_y) = self%del_x(1) * self%del_y(self%N_y-1)
+        self%inv_node_volume(self%N_x, self%N_y) = self%del_x(self%N_x-1) * self%del_y(self%N_y-1)
 
         do i = 2, self%N_x-1
             del_x = 0.5d0 * (self%del_x(i-1) + self%del_x(i))
@@ -103,13 +103,13 @@ contains
             else
                 del_y = self%del_y(1)
             end if
-            self%node_volume(i,1) = 0.5d0 * del_x * del_y
+            self%inv_node_volume(i,1) = del_x * del_y
 
             ! upper boundary
             if (self%boundary_conditions(i,self%N_y) /= 3) then
                 del_y = self%del_y(self%N_y-1)
             end if
-            self%node_volume(i,self%N_y) = 0.5d0 * del_x * del_y
+            self%inv_node_volume(i,self%N_y) = del_x * del_y
         end do
 
         ! left boundary
@@ -120,7 +120,7 @@ contains
             else
                 del_x = self%del_x(1)
             end if
-            self%node_volume(1,j) = 0.5d0 * del_x * del_y
+            self%inv_node_volume(1,j) = del_x * del_y
         end do
 
         do j = 2, self%N_y-1
@@ -132,17 +132,17 @@ contains
             else
                 del_x = self%del_x(1)
             end if
-            self%node_volume(1,j) = 0.5d0 * del_x * del_y
+            self%inv_node_volume(1,j) = del_x * del_y
 
             ! left boundary
             if (self%boundary_conditions(self%N_x,j) /= 3) then
                 del_x = self%del_x(self%N_x-1)
             end if
-            self%node_volume(self%N_x,j) = 0.5d0 * del_x * del_y
+            self%inv_node_volume(self%N_x,j) = del_x * del_y
         end do
         
         !$OMP parallel workshare
-        self%node_volume = 1.0d0/ self%node_volume
+        self%inv_node_volume = 1.0d0/ self%inv_node_volume
         !$OMP end parallel workshare
     end subroutine generate_node_volume_curv
     

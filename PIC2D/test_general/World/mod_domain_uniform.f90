@@ -12,7 +12,7 @@ module mod_domain_uniform
 
     type, extends(domain_base) :: domain_uniform
         ! store grid quantities
-        real(real64) :: del_x, del_y, node_volume
+        real(real64) :: del_x, del_y, inv_node_volume
     contains
         procedure, public, pass(self) :: get_xi_from_X => get_xi_from_X_uniform
         procedure, public, pass(self) :: get_eta_from_Y => get_eta_from_Y_uniform
@@ -72,7 +72,7 @@ contains
 
         self%del_x = length_x/real(self%N_x-1)
         self%del_y = length_y/real(self%N_y-1)
-        self%node_volume = 1.0d0 / (self%del_x * self%del_y)
+        self%inv_node_volume = 1.0d0 / (self%del_x * self%del_y)
         do i = 1, self%N_x
             self%grid_X(i) = self%del_x * (i-1)
         end do

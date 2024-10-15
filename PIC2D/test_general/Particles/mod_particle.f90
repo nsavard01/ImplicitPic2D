@@ -16,7 +16,7 @@ module mod_particle
     ! Particle contains particle properties and stored values in phase space
     type :: Particle
         character(:), allocatable :: name !name of the particle
-        integer(int64), allocatable :: number_particles_thread(:)
+        integer(int64), allocatable :: number_particles_thread(:), cell_indx_array(:, :), cell_count(:,:)
         ! numToCollide saves number that can collided in nullCollision
         integer(int64) :: max_indx ! maximum particles per thread
         real(real64), allocatable :: densities(:,:)
@@ -28,6 +28,8 @@ module mod_particle
         procedure, public, pass(self) :: initialize_weight_from_n_ave
         procedure, public, pass(self) :: initialize_rand_uniform
         procedure, public, pass(self) :: interpolation_particle_to_nodes
+        procedure, public, pass(self) :: interpolation_particle_to_nodes_sorted
+        procedure, public, pass(self) :: particle_sort
         ! procedure, public, pass(self) :: initializeRandCosine
         ! procedure, public, pass(self) :: initializeRandSine
         ! procedure, public, pass(self) :: generate_3D_Maxwellian
@@ -60,7 +62,8 @@ contains
         self%q_times_weight = q * w_p
         self %max_indx = finalIdx / number_threads_global
         allocate(self%number_particles_thread(number_threads_global), self%phase_space(5,self%max_indx, number_threads_global), &
-        self%work_space(N_x, N_y, number_threads_global))
+        self%work_space(N_x, N_y, number_threads_global), self%cell_indx_array((N_x-1) * (N_y-1) + 1, number_threads_global),  &
+        self%cell_count((N_x-1) * (N_y-1), number_threads_global))
         !$OMP parallel
         self%work_space(:,:,omp_get_thread_num()+1) = 0.0d0
         !$OMP end parallel
@@ -78,7 +81,7 @@ contains
 
         select type (world)
         type is (domain_uniform)
-            area = world%number_total_cells/world%node_volume
+            area = world%number_total_cells/world%inv_node_volume
         type is (domain_curv)
             area = 0
             !$OMP parallel private(j,i) reduction(+:area)
@@ -138,26 +141,129 @@ contains
     subroutine interpolation_particle_to_nodes(self)
         ! interpolate particles to work space array
         class(Particle), intent(in out) :: self
-        integer(int32) :: i, j, i_thread, iter
+        integer(int32) :: i_thread, i_cell, j_cell
+        integer(int64) :: part_num
         real(real64) :: d_i, d_j, xi, eta
-        !$OMP parallel private(iter, i,j, d_i, d_j, xi, eta)
-        i_thread = omp_get_thread_num() + 1
-        do iter = 1, self%number_particles_thread(i_thread)
-            xi = self%phase_space(1,iter,i_thread)
-            eta = self%phase_space(2,iter,i_thread)
-            i = int(xi)
-            j = int(eta)
-            d_i = xi - real(i)
-            d_j = eta - real(j)
 
-            self%work_space(i,j, i_thread) = self%work_space(i,j, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
-            self%work_space(i+1,j, i_thread) = self%work_space(i+1,j, i_thread) + (d_i) * (1.0d0-d_j)
-            self%work_space(i,j+1, i_thread) = self%work_space(i,j+1, i_thread) + (1.0d0-d_i) * (d_j)
-            self%work_space(i+1,j+1, i_thread) = self%work_space(i+1,j+1, i_thread) + (d_i) * (d_j)
+        !$OMP parallel private(part_num, i_cell,j_cell, d_i, d_j, xi, eta, i_thread)
+        i_thread = omp_get_thread_num() + 1
+        do part_num = 1, self%number_particles_thread(i_thread)
+            xi = self%phase_space(1,part_num,i_thread)
+            eta = self%phase_space(2,part_num,i_thread)
+            i_cell = int(xi)
+            j_cell = int(eta)
+            d_i = xi - real(i_cell)
+            d_j = eta - real(j_cell)
+
+            self%work_space(i_cell,j_cell, i_thread) = self%work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+            self%work_space(i_cell+1,j_cell, i_thread) = self%work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j)
+            self%work_space(i_cell,j_cell+1, i_thread) = self%work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j)
+            self%work_space(i_cell+1,j_cell+1, i_thread) = self%work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j)
         end do
         !$OMP end parallel
 
     end subroutine interpolation_particle_to_nodes
+
+
+    subroutine interpolation_particle_to_nodes_sorted(self, N_x_cells, N_y_cells)
+        ! interpolate particles to work space array
+        class(Particle), intent(in out) :: self
+        integer(int32), intent(in) :: N_x_cells, N_y_cells
+        integer(int32) :: i_thread, i_cell, j_cell
+        integer(int64) :: k, part_num
+        real(real64) :: d_i, d_j, xi, eta
+
+        ! try with ordered 
+        !$OMP parallel private(part_num, i_thread, i_cell,j_cell, d_i, d_j, xi, eta, k)
+        i_thread = omp_get_thread_num() + 1
+        do j_cell = 1, N_y_cells
+            do i_cell = 1, N_x_cells
+                k = (j_cell - 1) * N_x_cells + i_cell
+                do part_num = self%cell_indx_array(k, i_thread)+1, self%cell_indx_array(k+1, i_thread)
+                    xi = self%phase_space(1,part_num,i_thread)
+                    eta = self%phase_space(2,part_num,i_thread)
+                    d_i = xi - real(i_cell)
+                    d_j = eta - real(j_cell)
+
+                    self%work_space(i_cell,j_cell, i_thread) = self%work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+                    self%work_space(i_cell+1,j_cell, i_thread) = self%work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j)
+                    self%work_space(i_cell,j_cell+1, i_thread) = self%work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j)
+                    self%work_space(i_cell+1,j_cell+1, i_thread) = self%work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j)
+
+                end do
+            end do
+        end do
+        !$OMP end parallel
+
+    end subroutine interpolation_particle_to_nodes_sorted
+
+
+
+    subroutine particle_sort(self, N_x_cell, N_y_cell)
+        ! sort particle by cell, with each cell going j = 1-> N_y-1, i = 1->N_x-1
+        ! make sort in place so no need to 
+        class(Particle), intent(in out) :: self
+        integer(int32), intent(in) :: N_x_cell, N_y_cell
+        integer(int64) :: k, part_num, max_idx, k_max
+        integer(int32) :: i_thread, eta, xi
+        real(real64) :: temp_phase_space(5)
+        max_idx = N_x_cell * N_y_cell
+        !$OMP parallel private(k, i_thread, eta, xi, k_max, part_num, temp_phase_space)
+        i_thread = omp_get_thread_num() + 1
+        self%cell_count(:,i_thread) = 0
+        ! get number of particles per cell
+        do part_num = 1, self%number_particles_thread(i_thread)
+            xi = int(self%phase_space(1,part_num, i_thread))
+            eta = int(self%phase_space(2,part_num, i_thread))
+            k = (eta - 1) * N_x_cell + xi
+            self%cell_count(k, i_thread) = self%cell_count(k, i_thread) + 1
+        end do
+
+        ! get final cell index of each bin
+        self%cell_indx_array(1,i_thread) = self%cell_count(1,i_thread)
+        do k = 2, max_idx
+            self%cell_indx_array(k, i_thread) = self%cell_count(k, i_thread) + self%cell_indx_array(k-1, i_thread)
+        end do
+        self%cell_indx_array(max_idx+1, i_thread) = self%number_particles_thread(i_thread)
+
+        ! order particles
+        do k_max = max_idx, 2, -1
+            do while (self%cell_count(k_max, i_thread) > 0)
+                part_num = self%cell_indx_array(k_max,i_thread)
+                ! find current highest cell indx
+                xi = int(self%phase_space(1,part_num, i_thread))
+                eta = int(self%phase_space(2,part_num, i_thread))
+                k = (eta - 1) * N_x_cell + xi
+                temp_phase_space = self%phase_space(:,self%cell_indx_array(k,i_thread), i_thread)
+                ! put last index in current place and then reduce that section by 1
+                self%phase_space(:,self%cell_indx_array(k,i_thread), i_thread) = self%phase_space(:,part_num, i_thread)
+
+                ! place temp_phase_space in current place
+                self%phase_space(:,part_num, i_thread) = temp_phase_space
+                self%cell_indx_array(k,i_thread) = self%cell_indx_array(k,i_thread)-1
+                self%cell_count(k, i_thread) = self%cell_count(k,i_thread) - 1
+            end do
+        end do
+        
+
+        do part_num = 2, self%number_particles_thread(i_thread)
+            xi = int(self%phase_space(1, part_num, i_thread))
+            eta = int(self%phase_space(2, part_num, i_thread))
+            k_max = (eta - 1) * N_x_cell + xi
+
+            k = (int(self%phase_space(2, part_num-1, i_thread)) - 1) * N_x_cell + int(self%phase_space(1, part_num-1, i_thread))
+            if (k_max /= k) then
+                if (self%cell_indx_array(k_max, i_thread)+1 /= part_num) then
+                    print *, 'issue with start cell indx array'
+                    stop
+                end if
+            end if
+        end do
+
+        !$OMP end parallel
+
+
+    end subroutine particle_sort
 
 
     ! subroutine initializeRandCosine(self, world, irand, alpha)
