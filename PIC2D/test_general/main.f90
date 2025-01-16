@@ -41,7 +41,7 @@ program main
     
     
     evenGridBool = .true.
-    redBlackBool = .false.
+    redBlackBool = .true.
     Krylov_bool = .false.
     center_box_bool = .true.
     curv_grid_type_x = 0
@@ -69,12 +69,12 @@ program main
     rho = e_charge * n_ave
 
     NESW_wallBoundaries(1) = 2 ! North
-    NESW_wallBoundaries(2) = 2 ! East
-    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(2) = 1 ! East
+    NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
-    NESW_phiValues(2) = 0.0d0
+    NESW_phiValues(2) = 1000.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
     innerPhi = 1000.0d0
@@ -300,7 +300,7 @@ contains
                         end if
                     end do
                 else 
-                    E_field(2, 2, j) = 0.5d0 * (phi(1,j-1) - phi(1, j+1))/world%del_y
+                    E_field(2, 1, j) = 0.5d0 * (phi(1,j-1) - phi(1, j+1))/world%del_y
                     ! Only do periodic in x since neumann stays at 0
                     if (world%boundary_conditions(start_indx-1, j) == 3) then
                         E_field(1, 1,j) = 0.5d0 * (phi(world%N_x-1,j) - phi(2, j))/world%del_x
@@ -412,7 +412,67 @@ contains
             
         end if
         !$OMP section
-        
+        ! Do highest row
+        if (first_smoother%end_row_indx < world%N_y-1) then
+            ! highest row not along j = N_y-1 boundary, so only dirichlet
+            ! go through entire row and check if south node is non-dirichlet, in which case assign E_y
+            j = first_smoother%end_row_indx + 1
+            do i = 1, world%N_x
+                if (world%boundary_conditions(i, j-1) /= 1) then
+                    E_field(2,i, j) = (phi(i,j-1) - phi(i, j))/world%del_y
+                end if
+            end do
+        else
+            ! Go along top row
+            end_indx = 1
+            j = world%N_y
+            do p = 1, first_smoother%number_bottom_row_sections  
+                start_indx = first_smoother%start_bottom_row_indx(p)
+                
+                ! Left side boundary
+                if (world%boundary_conditions(start_indx-1, j) == 1) then
+                    ! Dirichlet to left
+                    E_field(1, start_indx-1,j) = (phi(start_indx-1,j) - phi(start_indx, j))/world%del_x
+    
+                    ! Go backwards until latest end_indx and get E_y on dirichlet boundary
+                    do i = start_indx - 1, end_indx, -1
+                        if (world%boundary_conditions(i, j-1) /= 1) then
+                            E_field(2, i, j) = (phi(i,j-1) - phi(i, j))/world%del_y
+                        end if
+                    end do
+                end if 
+    
+                end_indx = first_smoother%end_bottom_row_indx(p)
+                ! Inner Nodes
+                do i = start_indx, end_indx 
+                    E_field(1, i,j) = 0.5d0 * (phi(i-1,j) - phi(i+1, j))/world%del_x
+                    if (world%boundary_conditions(i, j) == 3) then
+                        E_field(2, i,j) = 0.5d0 * (phi(i,world%N_y-1) - phi(i, 2))/world%del_y
+                    end if
+                end do
+                ! right-most side boundary
+                if (world%boundary_conditions(end_indx+1, j) == 1) then
+                    ! Dirichlet to right
+                    E_field(1, end_indx+1,j) = (phi(end_indx,j) - phi(end_indx+1, j))/world%del_x
+                    if (world%boundary_conditions(end_indx+1, j-1) /= 1) then
+                        E_field(2,end_indx+1, j) = (phi(end_indx+1,j-1) - phi(end_indx+1, j))/world%del_y
+                    end if
+                end if 
+
+                end_indx = end_indx + 2
+                
+            end do
+
+            ! if didn't get to end of row, need to still evaluate E_y along dirichlet edge to the right
+            if (end_indx <= world%N_x) then
+                do i = end_indx, world%N_x
+                    if (world%boundary_conditions(i, j-1) /= 1) then
+                        E_field(2,i, j) = (phi(i,j-1) - phi(i, j))/world%del_y
+                    end if
+                end do
+            end if
+            
+        end if
         !$OMP end sections nowait
         !$OMP end parallel 
         end associate
