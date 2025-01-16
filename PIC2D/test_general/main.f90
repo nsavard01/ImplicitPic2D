@@ -15,11 +15,12 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 1001, N_y = 1001, numThreads = 6
+    integer(int32) :: N_x = 151, N_y = 151, numThreads = 6
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
     type(rand_gen), allocatable :: random_gen(:)
+    real(real64), allocatable :: E_Field(:, :, :)
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
     integer :: inner_box_first_y, inner_box_last_y, inner_box_first_x, inner_box_last_x, i_thread
@@ -64,7 +65,7 @@ program main
     omega = 1.5d0
     relTol = 1.d-8
     stepTol = 1.d-6
-    n_ave = 1.d15
+    n_ave = 1.d12
     rho = e_charge * n_ave
 
     NESW_wallBoundaries(1) = 2 ! North
@@ -181,6 +182,22 @@ program main
     call system_clock(startTime)
     call mg_solver%solve(stepTol, relTol, 1)
     call system_clock(endTime)
+
+    ! get E-field
+    allocate(E_Field(2,N_x, N_y))
+    E_field = 0.0d0
+    select type (world)
+    type is (domain_uniform)
+        call get_electric_field(E_Field, solver, world)
+        open(41,file='E_x.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+        write(41) E_Field(1,:,:)
+        close(41)
+
+        open(41,file='E_y.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+        write(41) E_Field(2,:,:)
+        close(41)
+    end select
+
     
 
     print *, 'Took', mg_solver%numIter, 'iterations'
@@ -189,6 +206,8 @@ program main
     open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) solver%solution
     close(41)
+
+    
     end associate
  
 
@@ -248,6 +267,143 @@ contains
         close(41)
 
     end subroutine checkNodeDivisionMG
+
+    subroutine get_electric_field(E_field, first_smoother, world)
+        type(domain_uniform), intent(in) :: world
+        real(real64), intent(in out) :: E_field(2,world%N_x, world%N_y)
+        class(GS_Base), intent(in) :: first_smoother
+        integer(int32) :: i, i_thread, j, p, k, part_num, start_indx, end_indx
+
+        associate(phi => first_smoother%solution)
+        !$OMP parallel private(k, p, i, j, part_num, i_thread, start_indx, end_indx)
+
+        ! Inner Nodes
+        !$OMP do
+        do k = 1, first_smoother%number_inner_rows
+            j = first_smoother%start_row_indx + k - 1
+            end_indx = 2
+            do p = 1, first_smoother%number_row_sections(k)
+                start_indx = first_smoother%start_inner_indx_x(p, k)
+                
+
+                ! Left side boundary
+                if (world%boundary_conditions(start_indx-1, j) == 1) then
+                    ! Dirichlet to left
+                    E_field(1, start_indx-1,j) = (phi(start_indx-1,j) - phi(start_indx, j))/world%del_x
+
+                    ! Go backwards until latest end_indx and get E_y on dirichlet boundary
+                    do i = start_indx - 1, end_indx, -1
+                        if (world%boundary_conditions(i, j+1) /= 1) then
+                            E_field(2, i, j) = (phi(i,j) - phi(i, j+1))/world%del_y
+                        else
+                            E_field(2, i, j) = (phi(i,j-1) - phi(i, j))/world%del_y
+                        end if
+                    end do
+                else 
+                    E_field(2, 2, j) = 0.5d0 * (phi(1,j-1) - phi(1, j+1))/world%del_y
+                    ! Only do periodic in x since neumann stays at 0
+                    if (world%boundary_conditions(start_indx-1, j) == 3) then
+                        E_field(1, 1,j) = 0.5d0 * (phi(world%N_x-1,j) - phi(2, j))/world%del_x
+                        E_field(1, world%N_x, j) = E_field(1, 1, j)
+                    end if
+                end if 
+
+                end_indx = first_smoother%end_inner_indx_x(p,k)
+                ! Inner Nodes
+                do i = start_indx, end_indx 
+                    E_field(1, i,j) = 0.5d0 * (phi(i-1,j) - phi(i+1, j))/world%del_x
+                    E_field(2, i,j) = 0.5d0 * (phi(i,j-1) - phi(i, j+1))/world%del_y
+                end do
+
+                ! right-most side boundary
+                if (world%boundary_conditions(end_indx+1, j) == 1) then
+                    ! Dirichlet to right
+                    E_field(1, end_indx+1,j) = (phi(end_indx,j) - phi(end_indx+1, j))/world%del_x
+                    if (world%boundary_conditions(end_indx+1, j+1) /= 1) then
+                        E_field(2,end_indx+1, j) = (phi(end_indx+1,j) - phi(end_indx+1, j+1))/world%del_y
+                    else
+                        E_field(2, end_indx+1, j) = (phi(end_indx+1,j-1) - phi(end_indx+1, j))/world%del_y
+                    end if
+                else
+                    E_field(2, world%N_x, j) = 0.5d0 * (phi(world%N_x,j-1) - phi(world%N_x, j+1))/world%del_y
+                end if 
+
+                ! reset latest dirichlet end point for left E_y sweep on next loop
+                end_indx = end_indx + 2
+            end do
+
+            ! if didn't get to end of row, need to still evaluate E_y along dirichlet edge to the right
+            if (end_indx < world%N_x) then
+                do i = end_indx, world%N_x-1
+                    if (world%boundary_conditions(i, j+1) /= 1) then
+                        E_field(2,i, j) = (phi(i,j) - phi(i, j+1))/world%del_y
+                    else
+                        E_field(2, i, j) = (phi(i,j-1) - phi(i, j))/world%del_y
+                    end if
+                end do
+            end if
+
+            
+        end do
+        !$OMP end do nowait
+
+        ! !lower boundary
+        ! !$OMP do
+        ! do p = 1, first_smoother%number_bottom_row_sections
+        !     do i = first_smoother%start_bottom_row_indx(p), first_smoother%end_bottom_row_indx(p)
+        !         E_field(1, i,1) = 0.5d0 * (first_smoother%solution(i-1,1) - first_smoother%solution(i+1, 1))/world%del_x
+        !     end do
+        !     if (first_smoother%bottom_row_boundary_type(p) == 3) then
+        !         do i = first_smoother%start_bottom_row_indx(p), first_smoother%end_bottom_row_indx(p)
+        !             E_field(2, i,1) = 0.5d0 * (first_smoother%solution(i,world%N_y-1) - first_smoother%solution(i, 2))/world%del_y
+        !         end do
+        !     end if
+
+        ! end do
+        ! !$OMP end do nowait
+
+        ! ! ! upper boundary
+        ! !$OMP do
+        ! do p = 1, first_smoother%number_top_row_sections
+        !     do part_num = 1, number_charged_particles
+        !         do i_thread = 1, number_threads_global
+        !             do i = first_smoother%start_top_row_indx(p), first_smoother%end_top_row_indx(p)
+        !                 first_smoother%sourceTerm(i,world%N_y) = first_smoother%sourceTerm(i,world%N_y) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(i,world%N_y,i_thread) * world%inv_node_volume*inv_epsilon_0
+        !             end do
+        !         end do
+        !     end do
+        ! end do
+        ! !$OMP end do nowait
+
+        ! ! left boundary
+        ! !$OMP do
+        ! do p = 1, first_smoother%number_left_column_sections
+        !     do part_num = 1, number_charged_particles
+        !         do i_thread = 1, number_threads_global
+        !             do j = first_smoother%start_left_column_indx(p), first_smoother%end_left_column_indx(p)
+        !                 first_smoother%sourceTerm(1,j) = first_smoother%sourceTerm(1,j) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(1,j,i_thread) * world%inv_node_volume*inv_epsilon_0
+        !             end do
+        !         end do
+        !     end do
+        ! end do
+        ! !$OMP end do nowait
+
+        ! ! right boundary
+        ! !$OMP do
+        ! do p = 1, first_smoother%number_right_column_sections
+        !     do part_num = 1, number_charged_particles
+        !         do i_thread = 1, number_threads_global
+        !             do j = first_smoother%start_right_column_indx(p), first_smoother%end_right_column_indx(p)
+        !                 first_smoother%sourceTerm(world%N_x,j) = first_smoother%sourceTerm(world%N_x,j) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(world%N_x,j,i_thread) * world%inv_node_volume*inv_epsilon_0
+        !             end do
+        !         end do
+        !     end do
+        ! end do
+        ! !$OMP end do
+        !$OMP end parallel 
+        end associate
+
+    end subroutine get_electric_field
 
     subroutine get_poisson_source_term(first_smoother, particle_list, number_charged_particles, world)
         class(domain_base), intent(in) :: world
