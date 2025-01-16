@@ -45,6 +45,18 @@ def sinFunc(numNodes, length, del_x):
 # plt.pcolormesh(grid2DX, grid2DY, np.reshape(GSRes, (numNodes_x, numNodes_y), order = 'F'))
 # plt.colorbar()
 #
+def format_coord(x, y):
+    xarr = X[0,:]
+    yarr = Y[:,0]
+    if ((x > xarr.min()) & (x <= xarr.max()) &
+        (y > yarr.min()) & (y <= yarr.max())):
+        col = np.searchsorted(xarr, x)-1
+        row = np.searchsorted(yarr, y)-1
+        z = Z[row, col]
+        return f'x={x:1.4f}, y={y:1.4f}, z={z:1.4f}   [{row},{col}]'
+    else:
+        return f'x={x:1.4f}, y={y:1.4f}'
+
 
 numNodes = np.fromfile('NumNodes.dat', dtype=int)
 gridX = np.fromfile('gridX.dat')
@@ -70,6 +82,7 @@ grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 plt.figure()
 plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
 plt.colorbar()
+
 
 plt.figure()
 plt.pcolormesh(grid2DX, grid2DY, np.reshape(E_x, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')

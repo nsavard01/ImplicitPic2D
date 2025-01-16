@@ -281,7 +281,7 @@ contains
         !$OMP do
         do k = 1, first_smoother%number_inner_rows
             j = first_smoother%start_row_indx + k - 1
-            end_indx = 2
+            end_indx = 1
             do p = 1, first_smoother%number_row_sections(k)
                 start_indx = first_smoother%start_inner_indx_x(p, k)
                 
@@ -333,8 +333,8 @@ contains
             end do
 
             ! if didn't get to end of row, need to still evaluate E_y along dirichlet edge to the right
-            if (end_indx < world%N_x) then
-                do i = end_indx, world%N_x-1
+            if (end_indx <= world%N_x) then
+                do i = end_indx, world%N_x
                     if (world%boundary_conditions(i, j+1) /= 1) then
                         E_field(2,i, j) = (phi(i,j) - phi(i, j+1))/world%del_y
                     else
@@ -347,59 +347,73 @@ contains
         end do
         !$OMP end do nowait
 
-        ! !lower boundary
-        ! !$OMP do
-        ! do p = 1, first_smoother%number_bottom_row_sections
-        !     do i = first_smoother%start_bottom_row_indx(p), first_smoother%end_bottom_row_indx(p)
-        !         E_field(1, i,1) = 0.5d0 * (first_smoother%solution(i-1,1) - first_smoother%solution(i+1, 1))/world%del_x
-        !     end do
-        !     if (first_smoother%bottom_row_boundary_type(p) == 3) then
-        !         do i = first_smoother%start_bottom_row_indx(p), first_smoother%end_bottom_row_indx(p)
-        !             E_field(2, i,1) = 0.5d0 * (first_smoother%solution(i,world%N_y-1) - first_smoother%solution(i, 2))/world%del_y
-        !         end do
-        !     end if
+        ! go through lowest and highest row without plasma nodes
+        !$OMP sections
+        !$OMP section
+        ! Do lowest row
+        if (first_smoother%start_row_indx > 2) then
+            ! lowest row not along j = 1 boundary, so only dirichlet
+            ! go through entire row and check if north node is non-dirichlet, in which case assign E_y
+            j = first_smoother%start_row_indx - 1
+            do i = 1, world%N_x
+                if (world%boundary_conditions(i, j+1) /= 1) then
+                    E_field(2,i, j) = (phi(i,j) - phi(i, j+1))/world%del_y
+                end if
+            end do
+        else
+            ! Go along bottom row
+            end_indx = 1
+            j = 1
+            do p = 1, first_smoother%number_bottom_row_sections  
+                start_indx = first_smoother%start_bottom_row_indx(p)
+                
+                ! Left side boundary
+                if (world%boundary_conditions(start_indx-1, j) == 1) then
+                    ! Dirichlet to left
+                    E_field(1, start_indx-1,j) = (phi(start_indx-1,j) - phi(start_indx, j))/world%del_x
+    
+                    ! Go backwards until latest end_indx and get E_y on dirichlet boundary
+                    do i = start_indx - 1, end_indx, -1
+                        if (world%boundary_conditions(i, j+1) /= 1) then
+                            E_field(2, i, j) = (phi(i,j) - phi(i, j+1))/world%del_y
+                        end if
+                    end do
+                end if 
+    
+                end_indx = first_smoother%end_bottom_row_indx(p)
+                ! Inner Nodes
+                do i = start_indx, end_indx 
+                    E_field(1, i,j) = 0.5d0 * (phi(i-1,j) - phi(i+1, j))/world%del_x
+                    if (world%boundary_conditions(i, j) == 3) then
+                        E_field(2, i,j) = 0.5d0 * (phi(i,world%N_y-1) - phi(i, 2))/world%del_y
+                    end if
+                end do
+                ! right-most side boundary
+                if (world%boundary_conditions(end_indx+1, j) == 1) then
+                    ! Dirichlet to right
+                    E_field(1, end_indx+1,j) = (phi(end_indx,j) - phi(end_indx+1, j))/world%del_x
+                    if (world%boundary_conditions(end_indx+1, j+1) /= 1) then
+                        E_field(2,end_indx+1, j) = (phi(end_indx+1,j) - phi(end_indx+1, j+1))/world%del_y
+                    end if
+                end if 
 
-        ! end do
-        ! !$OMP end do nowait
+                end_indx = end_indx + 2
+                
+            end do
 
-        ! ! ! upper boundary
-        ! !$OMP do
-        ! do p = 1, first_smoother%number_top_row_sections
-        !     do part_num = 1, number_charged_particles
-        !         do i_thread = 1, number_threads_global
-        !             do i = first_smoother%start_top_row_indx(p), first_smoother%end_top_row_indx(p)
-        !                 first_smoother%sourceTerm(i,world%N_y) = first_smoother%sourceTerm(i,world%N_y) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(i,world%N_y,i_thread) * world%inv_node_volume*inv_epsilon_0
-        !             end do
-        !         end do
-        !     end do
-        ! end do
-        ! !$OMP end do nowait
-
-        ! ! left boundary
-        ! !$OMP do
-        ! do p = 1, first_smoother%number_left_column_sections
-        !     do part_num = 1, number_charged_particles
-        !         do i_thread = 1, number_threads_global
-        !             do j = first_smoother%start_left_column_indx(p), first_smoother%end_left_column_indx(p)
-        !                 first_smoother%sourceTerm(1,j) = first_smoother%sourceTerm(1,j) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(1,j,i_thread) * world%inv_node_volume*inv_epsilon_0
-        !             end do
-        !         end do
-        !     end do
-        ! end do
-        ! !$OMP end do nowait
-
-        ! ! right boundary
-        ! !$OMP do
-        ! do p = 1, first_smoother%number_right_column_sections
-        !     do part_num = 1, number_charged_particles
-        !         do i_thread = 1, number_threads_global
-        !             do j = first_smoother%start_right_column_indx(p), first_smoother%end_right_column_indx(p)
-        !                 first_smoother%sourceTerm(world%N_x,j) = first_smoother%sourceTerm(world%N_x,j) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(world%N_x,j,i_thread) * world%inv_node_volume*inv_epsilon_0
-        !             end do
-        !         end do
-        !     end do
-        ! end do
-        ! !$OMP end do
+            ! if didn't get to end of row, need to still evaluate E_y along dirichlet edge to the right
+            if (end_indx <= world%N_x) then
+                do i = end_indx, world%N_x
+                    if (world%boundary_conditions(i, j+1) /= 1) then
+                        E_field(2,i, j) = (phi(i,j) - phi(i, j+1))/world%del_y
+                    end if
+                end do
+            end if
+            
+        end if
+        !$OMP section
+        
+        !$OMP end sections nowait
         !$OMP end parallel 
         end associate
 
