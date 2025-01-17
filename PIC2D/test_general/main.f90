@@ -19,7 +19,6 @@ program main
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
-    type(rand_gen), allocatable :: random_gen(:)
     real(real64), allocatable :: E_Field(:, :, :)
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
@@ -27,7 +26,7 @@ program main
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
-    real(real64) :: relTol, stepTol, temp_real, n_ave
+    real(real64) :: relTol, stepTol, temp_real, n_ave, del_t
     logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool
     integer(int32) :: num_part_per_cell = 100
     integer(int64) :: num_part_total
@@ -51,12 +50,7 @@ program main
     call checkNodeDivisionMG(N_x, N_y, numberStages)
     ! call change_global_N(N_x, N_y)
 
-    allocate(random_gen(numThreads))
-    call random_seed()
-    do i = 1, numThreads
-        call random_number(temp_real)
-        random_gen(i) = rand_gen(INT(temp_real * (huge(i)-1)) + 1)
-    end do
+    call initialize_rand_PCG(numThreads, .true.)
 
     ! More skewed delX and delY, more smoothing operations needed
     numberPreSmoothOper = 2
@@ -152,11 +146,10 @@ program main
     allocate(particle_list(1))
     particle_list(1) = Particle(mass_electron, e_charge, 1.0d0, num_part_total, num_part_total, 'e', world%N_x, world%N_y)
     call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
-    call particle_list(1)%initialize_rand_uniform(world, random_gen)
+    call particle_list(1)%initialize_rand_uniform(world)
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
-    call particle_list(1)%particle_sort(world%N_x_cells, world%N_y_cells)
-    call particle_list(1)%interpolation_particle_to_nodes_sorted(world%N_x_cells, world%N_y_cells)
+    call particle_list(1)%interpolation_particle_to_nodes()
     call system_clock(endTime)
 
     print *, 'particle interpolation took', real(endTime - startTime)/real(timingRate), 'seconds'
@@ -197,6 +190,8 @@ program main
         write(41) E_Field(2,:,:)
         close(41)
     end select
+
+    
 
     
 
@@ -723,6 +718,62 @@ contains
         end select
 
     end subroutine get_poisson_source_term
+
+
+    subroutine push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
+        type(domain_uniform), intent(in) :: world
+        real(real64), intent(in) :: E_field(2,world%N_x,world%N_y), del_t
+        integer(int32), intent(in) :: number_charged_particles
+        type(Particle), intent(in out) :: particle_list(number_charged_particles)
+        real(real64) :: v_part(2), loc_i, loc_j, q_over_m, i_thread, d_i, d_j, E_part(2),&
+            E_SE(2), E_SW(2), E_NW(2), E_NE(2), inv_del_x, inv_del_y
+        integer(int32) :: part_idx, corner_i, corner_j
+        integer(int64) :: part_num
+
+        inv_del_x = 1.0d0 / world%del_x
+        inv_del_y = 1.0d0 / world%del_y
+        !$OMP parallel private(i_thread, q_over_m, d_i, d_j, E_part, part_idx, part_num, &
+        !$OMP v_part, loc_i, loc_j, E_SE, E_SW, E_NW, E_NE, corner_i, corner_j)
+        i_thread = omp_get_thread_num() + 1
+        do part_idx = 1, number_charged_particles
+            q_over_m = particle_list(part_idx)%q_over_m
+            do part_num = 1, particle_list(part_idx)%number_particles_thread(i_thread)
+                !get particle location and velocity in 2D
+                loc_i = particle_list(part_idx)%logical_position(1, part_num, i_thread)
+                loc_j = particle_list(part_idx)%logical_position(2, part_num, i_thread)
+                v_part = particle_list(part_idx)%velocity(3:4, part_num, i_thread)
+                corner_i = int(loc_i)
+                corner_j = int(loc_j)
+                d_i = loc_i - corner_i
+                d_j = loc_j - corner_j
+
+                ! first find E_x and E_y on the nodes
+                E_SW = E_Field(:, corner_i, corner_j)
+                E_SE = E_Field(:, corner_i+1, corner_j)
+                E_NW = E_Field(:, corner_i, corner_j+1)
+                E_NE = E_Field(:, corner_i+1, corner_j+1)
+
+                ! interpolate to particle position
+                E_part = E_SW * (1.0d0 - d_i) * (1.0d0 - d_j) + E_SE * (d_i) * (1.0d0-d_j) + &
+                    E_NW * (1.0d0-d_i) * (d_j) + E_NE * (d_i) * (d_j)
+                
+                ! solve for new velocity and position
+                v_part = v_part + q_over_m * E_part * del_t
+                loc_i = loc_i + v_part(1) * del_t * inv_del_x
+                loc_j = loc_j + v_part(2) * del_t * inv_del_y
+
+                ! store into particle array
+                particle_list(part_idx)%logical_position(1, part_num, i_thread) = loc_i
+                particle_list(part_idx)%logical_position(2, part_num, i_thread) = loc_j
+                particle_list(part_idx)%velocity(3:4, part_num, i_thread) = v_part
+                
+            end do
+
+        end do
+
+        !$OMP end parallel
+
+    end subroutine push_particles_uniform
 
 
     ! subroutine readChargedParticleInputs(filename, irand, T_e, T_i, numThread, world, particleList)

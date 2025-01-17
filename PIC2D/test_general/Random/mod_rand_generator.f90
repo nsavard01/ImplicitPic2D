@@ -1,46 +1,45 @@
 module mod_rand_generator
 
     use iso_fortran_env, only: int32, real64
+    use iso_c_binding
+    use omp_lib
     implicit none
     ! type which contains internal state random number generator, can easily be threaded
-    ! based on ran from numberical recipes f90
+    ! Uses PCG
 
-    private
-    public :: rand_gen
-    integer(int32), parameter :: IA=16807,IM=2147483647,IQ=127773,IR=2836
-    real(real64), parameter :: am = 1.0d0/IM
+    public
+    integer(c_int64_t), protected :: state_PCG
+    ! thread private creates private state for each thread
+    !$OMP threadprivate(state_PCG)
 
-    type :: rand_gen
-        integer :: states(2) ! contiguous is faster
-
-    contains
-        procedure, public, pass(self) :: get_rand_num
-    end type
-
-    interface rand_gen
-        module procedure :: rand_gen_constructor
-    end interface rand_gen
+    interface 
+        ! Interface for PCG generator run using C
+        real(c_double) function pcg32_random_r(state) bind(c)
+        use iso_c_binding
+        integer(c_int64_t) :: state
+        end function
+    end interface
 
 contains
 
-    type(rand_gen) function rand_gen_constructor(int_random) result(self)
-        ! input integer for initialization, presumably randomly generated
-        integer(int32), intent(in) :: int_random
-        self%states(2) = ior(ieor(888889999, abs(int_random)), 1)
-        self%states(1) = ieor(777755555,abs(int_random))
-    end function rand_gen_constructor
+    subroutine initialize_rand_PCG(num_thread, pre_determined_bool)
+        integer(int32), intent(in) :: num_thread
+        logical, intent(in) :: pre_determined_bool
+        real(real64) :: rando(num_thread)
+        integer(int32) :: i, i_thread
 
-    function get_rand_num(self) result(res)
-        class(rand_gen), intent(in out) :: self
-        integer :: k
-        real(real64) :: res
-        self%states(1)=ieor(self%states(1),ishft(self%states(1),13))
-        self%states(1)=ieor(self%states(1),ishft(self%states(1),-17))
-        self%states(1)=ieor(self%states(1),ishft(self%states(1),5))
-        k=self%states(2)/IQ 
-        self%states(2)=IA*(self%states(2)-k*IQ)-IR*k
-        if (self%states(2) < 0) self%states(2)=self%states(2)+IM
-        res=am*ior(iand(IM,ieor(self%states(1),self%states(2))),1)
-    end function get_rand_num
+       
+        print *, 'Initializing random number generator'
+        if (.not. pre_determined_bool) call random_seed() ! Having seeding be randomly generated
+        do i = 1, num_thread
+            call random_number(rando(i))
+        end do
+        
+        !$OMP parallel private(i_thread)
+        i_thread = omp_get_thread_num() + 1
+        state_PCG = INT((rando(i_thread)-0.5d0) * 2 * (huge(state_PCG-1)), kind = c_int64_t)
+        !$OMP end parallel
+
+    end subroutine initialize_rand_PCG
 
 end module mod_rand_generator

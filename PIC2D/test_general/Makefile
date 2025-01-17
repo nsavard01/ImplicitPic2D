@@ -8,7 +8,7 @@ OBJ_constants = constants.o
 constants_obj_list = $(addprefix $(constants_dir), $(OBJ_constants))
 
 rand_dir = Random/
-OBJ_rand = mod_rand_generator.o
+OBJ_rand = mod_rand_generator.o PCG_func.o
 rand_obj_list = $(addprefix $(rand_dir), $(OBJ_rand))
 
 world_dir = World/
