@@ -11,12 +11,11 @@ module mod_particle
 
     private
     public :: Particle
-    integer(int32), protected, public :: number_charged_particles
 
     ! Particle contains particle properties and stored values in phase space
     type :: Particle
         character(:), allocatable :: name !name of the particle
-        integer(int64), allocatable :: number_particles_thread(:), cell_indx_array(:, :), cell_count(:,:)
+        integer(int64), allocatable :: number_particles_thread(:), number_deletes_thread(:)
         ! numToCollide saves number that can collided in nullCollision
         integer(int64) :: max_indx ! maximum particles per thread
         real(real64), allocatable :: densities(:,:)
@@ -28,12 +27,12 @@ module mod_particle
         procedure, public, pass(self) :: initialize_weight_from_n_ave
         procedure, public, pass(self) :: initialize_rand_uniform
         procedure, public, pass(self) :: interpolation_particle_to_nodes
-        procedure, public, pass(self) :: interpolation_particle_to_nodes_sorted
+        ! procedure, public, pass(self) :: interpolation_particle_to_nodes_sorted
         ! procedure, public, pass(self) :: particle_sort
         ! procedure, public, pass(self) :: initializeRandCosine
         ! procedure, public, pass(self) :: initializeRandSine
-        ! procedure, public, pass(self) :: initialize_maxwellian_temperature
-        ! procedure, public, pass(self) :: getKEAve
+        procedure, public, pass(self) :: initialize_maxwellian_temperature
+        procedure, public, pass(self) :: getKEAve
         ! procedure, public, pass(self) :: getTotalKE
         ! procedure, public, pass(self) :: getTotalMomentum
         ! procedure, public, pass(self) :: writePhaseSpace
@@ -62,8 +61,7 @@ contains
         self%q_times_weight = q * w_p
         self %max_indx = finalIdx / number_threads_global
         allocate(self%number_particles_thread(number_threads_global), self%logical_position(2,self%max_indx, number_threads_global), &
-        self%velocity(3,self%max_indx, number_threads_global), self%work_space(N_x, N_y, number_threads_global), self%cell_indx_array((N_x-1) * (N_y-1) + 1, number_threads_global),  &
-        self%cell_count((N_x-1) * (N_y-1), number_threads_global))
+        self%velocity(3,self%max_indx, number_threads_global), self%work_space(N_x, N_y, number_threads_global), self%number_deletes_thread(number_threads_global))
         !$OMP parallel
         self%work_space(:,:,omp_get_thread_num()+1) = 0.0d0
         !$OMP end parallel
@@ -164,37 +162,37 @@ contains
     end subroutine interpolation_particle_to_nodes
 
 
-    subroutine interpolation_particle_to_nodes_sorted(self, N_x_cells, N_y_cells)
-        ! interpolate particles to work space array
-        class(Particle), intent(in out) :: self
-        integer(int32), intent(in) :: N_x_cells, N_y_cells
-        integer(int32) :: i_thread, i_cell, j_cell
-        integer(int64) :: k, part_num
-        real(real64) :: d_i, d_j, xi, eta
+    ! subroutine interpolation_particle_to_nodes_sorted(self, N_x_cells, N_y_cells)
+    !     ! interpolate particles to work space array
+    !     class(Particle), intent(in out) :: self
+    !     integer(int32), intent(in) :: N_x_cells, N_y_cells
+    !     integer(int32) :: i_thread, i_cell, j_cell
+    !     integer(int64) :: k, part_num
+    !     real(real64) :: d_i, d_j, xi, eta
 
-        ! try with ordered 
-        !$OMP parallel private(part_num, i_thread, i_cell,j_cell, d_i, d_j, xi, eta, k)
-        i_thread = omp_get_thread_num() + 1
-        do j_cell = 1, N_y_cells
-            do i_cell = 1, N_x_cells
-                k = (j_cell - 1) * N_x_cells + i_cell
-                do part_num = self%cell_indx_array(k, i_thread)+1, self%cell_indx_array(k+1, i_thread)
-                    xi = self%logical_position(1,part_num,i_thread)
-                    eta = self%logical_position(2,part_num,i_thread)
-                    d_i = xi - real(i_cell)
-                    d_j = eta - real(j_cell)
+    !     ! try with ordered 
+    !     !$OMP parallel private(part_num, i_thread, i_cell,j_cell, d_i, d_j, xi, eta, k)
+    !     i_thread = omp_get_thread_num() + 1
+    !     do j_cell = 1, N_y_cells
+    !         do i_cell = 1, N_x_cells
+    !             k = (j_cell - 1) * N_x_cells + i_cell
+    !             do part_num = self%cell_indx_array(k, i_thread)+1, self%cell_indx_array(k+1, i_thread)
+    !                 xi = self%logical_position(1,part_num,i_thread)
+    !                 eta = self%logical_position(2,part_num,i_thread)
+    !                 d_i = xi - real(i_cell)
+    !                 d_j = eta - real(j_cell)
 
-                    self%work_space(i_cell,j_cell, i_thread) = self%work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
-                    self%work_space(i_cell+1,j_cell, i_thread) = self%work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j)
-                    self%work_space(i_cell,j_cell+1, i_thread) = self%work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j)
-                    self%work_space(i_cell+1,j_cell+1, i_thread) = self%work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j)
+    !                 self%work_space(i_cell,j_cell, i_thread) = self%work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+    !                 self%work_space(i_cell+1,j_cell, i_thread) = self%work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j)
+    !                 self%work_space(i_cell,j_cell+1, i_thread) = self%work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j)
+    !                 self%work_space(i_cell+1,j_cell+1, i_thread) = self%work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j)
 
-                end do
-            end do
-        end do
-        !$OMP end parallel
+    !             end do
+    !         end do
+    !     end do
+    !     !$OMP end parallel
 
-    end subroutine interpolation_particle_to_nodes_sorted
+    ! end subroutine interpolation_particle_to_nodes_sorted
 
 
 
@@ -324,57 +322,41 @@ contains
     ! ------------------------ Generating and initializing velocity with Maxwellian --------------------------
 
 
-    ! subroutine initialize_maxwellian_temperature(self, T, world, irand)
-    !     ! random velocity generator for the particle for temperature T (eV)
-    !     ! Use box-muller method for random guassian variable
-    !     class(Particle), intent(in out) :: self
-    !     class(Domain), intent(in) :: world
-    !     real(real64), intent(in) :: T, alpha, v_drift
-    !     integer(int32), intent(in) :: distType
-    !     type(rand_gen), intent(in out) :: random_gen(:)
-    !     integer(int32) :: iThread, i
-    !     integer(int32) :: irand_thread
-    !     real(real64) :: U1, U2, U3, U4, v_therm, v_extra, x_pos
-    !     v_therm = SQRT(T*e/self%mass)
-    !     !$OMP PARALLEL PRIVATE(iThread, i, U1, U2, U3, U4, irand_thread, v_extra, x_pos)
-    !     iThread = omp_get_thread_num() + 1
-    !     irand_thread = irand(iThread)
-    !     do i = 1, self%N_p(iThread)
-    !         U1 = ran2(irand_thread)
-    !         U2 = ran2(irand_thread)
-    !         U3 = ran2(irand_thread)
-    !         U4 = ran2(irand_thread)
-    !         SELECT CASE (distType)
-    !         CASE(0)
-    !             v_extra = v_drift
-    !         CASE(1)
-    !             x_pos = world%getXFromL(self%phaseSpace(1, i, iThread))/world%L_domain
-    !             v_extra = v_drift * (1.0d0 + alpha * COS(2 * pi * x_pos))
-    !         CASE(2)
-    !             x_pos = world%getXFromL(self%phaseSpace(1, i, iThread))/world%L_domain
-    !             v_extra = v_drift * (1.0d0 - alpha * SIN(2 * pi * x_pos)) 
-    !         END SELECT
-    !         self%phaseSpace(2, i, iThread) = v_therm * SQRT(-2.0d0 * LOG(U1)) * COS(2.0d0 * pi * U2) + v_extra
-    !         self%phaseSpace(3, i, iThread) = v_therm * SQRT(-2.0d0 * LOG(U1)) * SIN(2.0d0 * pi * U2)
-    !         self%phaseSpace(4, i, iThread) = v_therm * SQRT(-2.0d0 * LOG(U3)) * SIN(2.0d0 * pi * U4)
+    subroutine initialize_maxwellian_temperature(self, T)
+        ! random velocity generator for the particle for temperature T (eV)
+        ! Use box-muller method for random guassian variable
+        class(Particle), intent(in out) :: self
+        real(real64), intent(in) :: T
+        integer(int32) :: iThread, i
+        real(real64) :: U1, U2, U3, U4, v_therm
+        v_therm = SQRT(T*e_charge/self%mass)
+        !$OMP PARALLEL PRIVATE(iThread, i, U1, U2, U3, U4)
+        iThread = omp_get_thread_num() + 1
+        do i = 1, self%number_particles_thread(iThread)
+            U1 = pcg32_random_r(state_PCG)
+            U2 = pcg32_random_r(state_PCG)
+            U3 = pcg32_random_r(state_PCG)
+            U4 = pcg32_random_r(state_PCG)
+            self%velocity(1, i, iThread) = v_therm * SQRT(-2.0d0 * LOG(U1)) * COS(2.0d0 * pi_const * U2)
+            self%velocity(2, i, iThread) = v_therm * SQRT(-2.0d0 * LOG(U1)) * SIN(2.0d0 * pi_const * U2)
+            self%velocity(3, i, iThread) = v_therm * SQRT(-2.0d0 * LOG(U3)) * SIN(2.0d0 * pi_const * U4)
             
-    !     end do
-    !     irand(iThread) = irand_thread
-    !     !$OMP END PARALLEL
-    ! end subroutine initialize_maxwellian_temperature
+        end do
+        !$OMP END PARALLEL
+    end subroutine initialize_maxwellian_temperature
 
-    ! function getKEAve(self) result(res)
-    !     ! calculate average kinetic energy (temperature) in eV
-    !     class(Particle), intent(in) :: self
-    !     integer(int32) :: i_thread
-    !     real(real64) :: res
-    !     res = 0.0d0
-    !     !$OMP parallel private(iThread) reduction(+:res)
-    !     iThread = omp_get_thread_num() + 1
-    !     res = res + SUM(self%phaseSpace(2:4, 1:self%N_p(iThread), iThread)**2) 
-    !     !$OMP end parallel
-    !     res = res * self % mass * 0.5d0 / e / SUM(self%N_p)
-    ! end function getKEAve
+    function getKEAve(self) result(res)
+        ! calculate average kinetic energy (temperature) in eV
+        class(Particle), intent(in) :: self
+        integer(int32) :: i_thread
+        real(real64) :: res
+        res = 0.0d0
+        !$OMP parallel private(i_thread) reduction(+:res)
+        i_thread = omp_get_thread_num() + 1
+        res = res + SUM(self%velocity(:, 1:self%number_particles_thread(i_thread), i_thread)**2) 
+        !$OMP end parallel
+        res = res * self % mass * 0.5d0 / e_charge / SUM(self%number_particles_thread)
+    end function getKEAve
 
     ! function getTotalMomentum(self) result(res)
     !     ! Get total momentum in domain
