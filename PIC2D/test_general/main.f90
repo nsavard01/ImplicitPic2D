@@ -216,13 +216,13 @@ program main
         close(41)
 
         print *, 'Doing particle push'
-        print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread(:,:,:,1))
+        print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread)
         call system_clock(startTime)
         call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
         ! call delete_particles_uniform(particle_list, number_charged_particles)
         call system_clock(endTime)
         print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds for particle push'
-        print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread(:,:,:,2))
+        print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread) + sum(particle_list(1)%number_particles_resort)
     end select
 
     
@@ -764,8 +764,8 @@ contains
         real(real64) :: v_part(2), loc_i, loc_j, q_over_m, d_i, d_j, E_part(2),&
             E_SE(2), E_SW(2), E_NW(2), E_NE(2), inv_del_x, inv_del_y, &
             v_xi, v_eta, del_t_i, del_t_j, loc_i_new, loc_j_new, i_cell_real, j_cell_real, v_z
-        integer(int32) :: i_thread, part_idx, i_cell, j_cell, wall_i, wall_j, N_x_cell, N_y_cell, copy_idx, number_particles_copy, number_particles
-        integer(int64) :: part_num, delete_idx, cell_end_indx, cell_start_indx
+        integer(int32) :: i_thread, part_idx, i_cell, j_cell, wall_i, wall_j, N_x_cell, N_y_cell, number_particles, delete_idx
+        integer(int64) :: part_num, cell_end_indx, cell_start_indx, number_particles_copy
         logical :: delete_bool
 
         N_x_cell = world%N_x - 1
@@ -775,11 +775,11 @@ contains
         !$OMP parallel private(i_thread, q_over_m, d_i, d_j, E_part, part_idx, part_num, &
         !$OMP v_part, loc_i, loc_j, E_SE, E_SW, E_NW, E_NE, i_cell, j_cell, delete_idx, &
         !$OMP v_xi, v_eta, wall_i, wall_j, del_t_i, del_t_j, loc_i_new, loc_j_new, &
-        !$OMP i_cell_real, j_cell_real, delete_bool, cell_end_indx, cell_start_indx, copy_idx, number_particles_copy, v_z)
+        !$OMP i_cell_real, j_cell_real, delete_bool, cell_end_indx, cell_start_indx, number_particles_copy, v_z)
         i_thread = omp_get_thread_num() + 1
         do part_idx = 1, number_charged_particles
             q_over_m = particle_list(part_idx)%q_over_m
-            copy_idx = 3 - particle_list(part_idx)%array_idx 
+            number_particles_copy = 0
             do j_cell = 1, N_y_cell
                 j_cell_real = real(j_cell, kind = 8)
                 do i_cell = 1, N_x_cell
@@ -788,14 +788,15 @@ contains
                     E_SE = E_Field(:, i_cell+1, j_cell)
                     E_NW = E_Field(:, i_cell, j_cell+1)
                     E_NE = E_Field(:, i_cell+1, j_cell+1)
+                    delete_idx = 0
                     cell_start_indx = particle_list(part_idx)%cell_starting_indx(i_cell, j_cell)
                     cell_end_indx = particle_list(part_idx)%cell_ending_indx(i_cell, j_cell)
-                    number_particles = particle_list(part_idx)%number_particles_cell_thread(i_cell, j_cell, i_thread, particle_list(part_idx)%array_idx)
+                    number_particles = particle_list(part_idx)%number_particles_cell_thread(i_cell, j_cell, i_thread)
                     do part_num = cell_start_indx, cell_start_indx + number_particles - 1
-                        loc_i = particle_list(part_idx)%logical_position(1, part_num, i_thread, particle_list(part_idx)%array_idx)
-                        loc_j = particle_list(part_idx)%logical_position(2, part_num, i_thread, particle_list(part_idx)%array_idx)
-                        v_part = particle_list(part_idx)%velocity(3:4, part_num, i_thread, particle_list(part_idx)%array_idx)
-                        v_z = particle_list(part_idx)%velocity(5, part_num, i_thread, particle_list(part_idx)%array_idx)
+                        loc_i = particle_list(part_idx)%logical_position(1, part_num, i_thread)
+                        loc_j = particle_list(part_idx)%logical_position(2, part_num, i_thread)
+                        v_part = particle_list(part_idx)%velocity(3:4, part_num, i_thread)
+                        v_z = particle_list(part_idx)%velocity(5, part_num, i_thread)
                         d_i = loc_i - i_cell_real
                         d_j = loc_j - j_cell_real
                         E_part = E_SW * (1.0d0 - d_i) * (1.0d0 - d_j) + E_SE * (d_i) * (1.0d0-d_j) + &
@@ -810,13 +811,13 @@ contains
 
                         if (int(loc_i_new) == i_cell .and. int(loc_j_new) == j_cell) then
                             ! stays in cell, put at beginning of cell array slice
-                            particle_list(part_idx)%number_particles_cell_thread(i_cell, j_cell, i_thread, copy_idx) = particle_list(part_idx)%number_particles_cell_thread(i_cell, j_cell, i_thread, copy_idx) + 1
-                            number_particles_copy = particle_list(part_idx)%number_particles_cell_thread(i_cell, j_cell, i_thread, copy_idx)
-                            particle_list(part_idx)%logical_position(1, number_particles_copy, i_thread, copy_idx) = loc_i_new
-                            particle_list(part_idx)%logical_position(2, number_particles_copy, i_thread, copy_idx) = loc_j_new
-                            particle_list(part_idx)%velocity(3:4, number_particles_copy, i_thread, copy_idx) = v_part
-                            particle_list(part_idx)%velocity(5, number_particles_copy, i_thread, copy_idx) = v_z
+                            particle_list(part_idx)%logical_position(1, part_num - delete_idx, i_thread) = loc_i_new
+                            particle_list(part_idx)%logical_position(2, part_num - delete_idx, i_thread) = loc_j_new
+                            particle_list(part_idx)%velocity(3:4, part_num - delete_idx, i_thread) = v_part
+                            particle_list(part_idx)%velocity(5, part_num - delete_idx, i_thread) = v_z
                         else
+                            delete_idx = delete_idx + 1
+                            delete_bool = .false.
                             if (loc_i_new > world%N_x) then
                                 ! backtrack to wall position where it left
                                 wall_i = world%N_x
@@ -921,22 +922,21 @@ contains
 
                                 if (.not. delete_bool) then
                                     ! leaving cell, place at end of cell array slice
-                                    wall_i = int(loc_i_new)
-                                    wall_j = int(loc_j_new)
-                                    particle_list(part_idx)%number_particles_cell_thread(wall_i, wall_j, i_thread, copy_idx) = particle_list(part_idx)%number_particles_cell_thread(wall_i, wall_j, i_thread, copy_idx) + 1
-                                    number_particles_copy = particle_list(part_idx)%number_particles_cell_thread(wall_i, wall_j, i_thread, copy_idx)
-                                    particle_list(part_idx)%logical_position(1, number_particles_copy, i_thread, copy_idx) = loc_i_new
-                                    particle_list(part_idx)%logical_position(2, number_particles_copy, i_thread, copy_idx) = loc_j_new
-                                    particle_list(part_idx)%velocity(3:4, number_particles_copy, i_thread, copy_idx) = v_part
-                                    particle_list(part_idx)%velocity(5, number_particles_copy, i_thread, copy_idx) = v_z
+                                    number_particles_copy = number_particles_copy + 1
+                                    particle_list(part_idx)%logical_position_copy(1, number_particles_copy, i_thread) = loc_i_new
+                                    particle_list(part_idx)%logical_position_copy(2, number_particles_copy, i_thread) = loc_j_new
+                                    particle_list(part_idx)%velocity_copy(3:4, number_particles_copy, i_thread) = v_part
+                                    particle_list(part_idx)%velocity_copy(5, number_particles_copy, i_thread) = v_z
                                 end if
                             end if
                             
                         end if
 
                     end do
+                    particle_list(part_idx)%number_particles_cell_thread(i_cell, j_cell, i_thread) = number_particles - delete_idx
                 end do
             end do
+            particle_list(part_idx)%number_particles_resort(i_thread) = number_particles_copy
         end do
 
         !$OMP end parallel

@@ -16,16 +16,15 @@ module mod_particle
     type :: Particle
         character(:), allocatable :: name !name of the particle
         ! numToCollide saves number that can collided in nullCollision
-        integer(int64) :: max_indx ! maximum particles per thread
+        integer(int64) :: max_indx, max_indx_resort ! maximum particles per thread
 
         ! sort logical position into cells
 
         integer(int64), allocatable :: cell_starting_indx(:,:), cell_ending_indx(:,:), total_number_particles_thread(:)! starting/ending index (or particle number) for particle in cell per thread [i index, j index, thread #]
         ! We assume for the moment that particles will be equally spread through each thread, so starting/ending index is the same for all threads
-        integer(int32), allocatable :: number_particles_cell_thread(:,:,:, :)  ! total number of particles in a cell for a particular thread [i index, j index, thread #]
-        integer(int32) :: array_idx ! for switching between copies of arrays
+        integer(int32), allocatable :: number_particles_cell_thread(:,:,:), number_particles_resort(:)  ! total number of particles in a cell for a particular thread [i index, j index, thread #]
         real(real64), allocatable :: densities(:,:)
-        real(real64), allocatable :: logical_position(:,:, :, :), velocity(:,:,:, :) !particle phase space, represents [# particle]
+        real(real64), allocatable :: logical_position(:,:, :), logical_position_copy(:,:,:), velocity(:,:,:), velocity_copy(:,:,:) !particle phase space, represents [# particle]
         real(real64) :: mass, charge, weight, q_over_m, q_times_weight ! mass (kg), charge(C), and weight (N/m^2 in 1D) of particles. Assume constant weight for moment
         real(real64), allocatable :: work_space(:,:,:) ! Per thread densities and general workspace over domain
 
@@ -65,18 +64,20 @@ contains
         self % mass = mass
         self % charge = q
         self % weight = w_p
-        self%array_idx = 1
         self%q_over_m = q/mass
         self%q_times_weight = q * w_p
         self %max_indx = finalIdx / number_threads_global
-        allocate(self%total_number_particles_thread(number_threads_global), self%logical_position(2,self%max_indx, number_threads_global, 2), &
-        self%velocity(3,self%max_indx, number_threads_global, 2), self%work_space(N_x, N_y, number_threads_global))
+        self%max_indx_resort = N_p / number_threads_global
+        allocate(self%total_number_particles_thread(number_threads_global), self%logical_position(2,self%max_indx, number_threads_global), &
+        self%velocity(3,self%max_indx, number_threads_global), self%work_space(N_x, N_y, number_threads_global))
+        allocate(self%number_particles_resort(number_threads_global), self%logical_position_copy(2,self%max_indx_resort, number_threads_global), &
+        self%velocity_copy(3,self%max_indx_resort, number_threads_global))
         !$OMP parallel
         self%work_space(:,:,omp_get_thread_num()+1) = 0.0d0
         !$OMP end parallel
         self%total_number_particles_thread = N_p/number_threads_global
         allocate(self%cell_starting_indx(N_x-1, N_y-1), self%cell_ending_indx(N_x-1, N_y-1), &
-        self%number_particles_cell_thread(N_x-1, N_y-1, number_threads_global, 2))
+        self%number_particles_cell_thread(N_x-1, N_y-1, number_threads_global))
         num_cells = (N_x-1) * (N_y-1)
         part_num_separation = self%max_indx / num_cells
         leftOver_number = self%max_indx - part_num_separation * num_cells
@@ -161,11 +162,11 @@ contains
             end do
             
             
-            cell_part_number = self%number_particles_cell_thread(int_xi, int_eta, i_thread, 1)
+            cell_part_number = self%number_particles_cell_thread(int_xi, int_eta, i_thread)
             start_cell_indx = self%cell_starting_indx(int_xi, int_eta)
-            self%logical_position(1, start_cell_indx + cell_part_number, i_thread, 1) = xi
-            self%logical_position(2, start_cell_indx + cell_part_number, i_thread, 1) = eta
-            self%number_particles_cell_thread(int_xi, int_eta, i_thread,1) = self%number_particles_cell_thread(int_xi, int_eta, i_thread,1) + 1
+            self%logical_position(1, start_cell_indx + cell_part_number, i_thread) = xi
+            self%logical_position(2, start_cell_indx + cell_part_number, i_thread) = eta
+            self%number_particles_cell_thread(int_xi, int_eta, i_thread) = self%number_particles_cell_thread(int_xi, int_eta, i_thread) + 1
         end do
         !$OMP end parallel
     end subroutine initialize_rand_uniform
@@ -186,9 +187,9 @@ contains
             j_cell_real = real(j_cell, kind = 8)
             do i_cell = 1, N_x_cell
                 i_cell_real = real(i_cell, kind = 8)
-                do part_num = self%cell_starting_indx(i_cell, j_cell), self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread, self%array_idx) - 1
-                    xi = self%logical_position(1,part_num,i_thread, self%array_idx)
-                    eta = self%logical_position(2,part_num,i_thread, self%array_idx)
+                do part_num = self%cell_starting_indx(i_cell, j_cell), self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread) - 1
+                    xi = self%logical_position(1,part_num,i_thread)
+                    eta = self%logical_position(2,part_num,i_thread)
                     d_i = xi - i_cell_real
                     d_j = eta - j_cell_real
 
@@ -388,14 +389,14 @@ contains
         iThread = omp_get_thread_num() + 1
         do j_cell = 1, N_y_cell
             do i_cell = 1, N_x_cell
-                do part_num = self%cell_starting_indx(i_cell, j_cell), self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, iThread, self%array_idx) - 1
+                do part_num = self%cell_starting_indx(i_cell, j_cell), self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, iThread) - 1
                     U1 = pcg32_random_r(state_PCG)
                     U2 = pcg32_random_r(state_PCG)
                     U3 = pcg32_random_r(state_PCG)
                     U4 = pcg32_random_r(state_PCG)
-                    self%velocity(1, part_num, iThread, self%array_idx) = v_therm * SQRT(-2.0d0 * LOG(U1)) * COS(2.0d0 * pi_const * U2)
-                    self%velocity(2, part_num, iThread, self%array_idx) = v_therm * SQRT(-2.0d0 * LOG(U1)) * SIN(2.0d0 * pi_const * U2)
-                    self%velocity(3, part_num, iThread, self%array_idx) = v_therm * SQRT(-2.0d0 * LOG(U3)) * SIN(2.0d0 * pi_const * U4)
+                    self%velocity(1, part_num, iThread) = v_therm * SQRT(-2.0d0 * LOG(U1)) * COS(2.0d0 * pi_const * U2)
+                    self%velocity(2, part_num, iThread) = v_therm * SQRT(-2.0d0 * LOG(U1)) * SIN(2.0d0 * pi_const * U2)
+                    self%velocity(3, part_num, iThread) = v_therm * SQRT(-2.0d0 * LOG(U3)) * SIN(2.0d0 * pi_const * U4)
                 end do
             end do
         end do
@@ -414,7 +415,7 @@ contains
         i_thread = omp_get_thread_num() + 1
         do j_cell = 1, N_y_cell
             do i_cell = 1, N_x_cell
-                res = res + SUM(self%velocity(:, self%cell_starting_indx(i_cell, j_cell):self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread, self%array_idx) - 1, i_thread, self%array_idx)**2) 
+                res = res + SUM(self%velocity(:, self%cell_starting_indx(i_cell, j_cell):self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread) - 1, i_thread)**2) 
             end do
         end do
         
