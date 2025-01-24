@@ -15,7 +15,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 501, N_y = 501, numThreads = 6
+    integer(int32) :: N_x = 601, N_y = 501, numThreads = 6
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -214,13 +214,13 @@ program main
         close(41)
 
         print *, 'Doing particle push'
-        print *, 'amount total particles', particle_list(1)%number_particles_thread
+        print *, 'amount total particles', sum(particle_list(1)%number_particles_thread)
         call system_clock(startTime)
         call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
         ! call delete_particles_uniform(particle_list, number_charged_particles)
         call system_clock(endTime)
         print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds for particle push'
-        print *, 'amount total particles', particle_list(1)%number_particles_thread
+        print *, 'amount total particles', sum(particle_list(1)%number_particles_thread)
     end select
 
     
