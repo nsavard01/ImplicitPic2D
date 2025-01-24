@@ -79,6 +79,8 @@ numNodes_y = int((numNodes[1] + (2**(stage-1)-1)) / 2**(stage-1))
 gridX = gridX[0:numNodes[0]:2**(stage-1)]
 gridY = gridY[0:numNodes[1]:2**(stage-1)]
 grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
+
+
 plt.figure()
 plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
 plt.colorbar()
