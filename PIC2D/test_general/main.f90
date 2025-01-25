@@ -218,6 +218,8 @@ program main
         call system_clock(startTime)
         call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
         ! call delete_particles_uniform(particle_list, number_charged_particles)
+        ! separating interpolation and push is good actually
+        call particle_list(1)%interpolation_particle_to_nodes()
         call system_clock(endTime)
         print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds for particle push'
         print *, 'amount total particles', sum(particle_list(1)%number_particles_thread)
