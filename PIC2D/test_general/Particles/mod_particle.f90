@@ -256,6 +256,7 @@ contains
                         self%logical_position(2, part_num - delete_idx, i_thread) = loc_j_new
                         self%velocity(3:4, part_num - delete_idx, i_thread) = v_part
                         self%velocity(5, part_num - delete_idx, i_thread) = v_z
+                        
                     else
 
                         ! Place current particle within unsorted array
