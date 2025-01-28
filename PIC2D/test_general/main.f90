@@ -147,7 +147,7 @@ program main
     T_e = 2.0d0
     call change_global_numPart(1)
     allocate(particle_list(number_charged_particles))
-    particle_list(1) = Particle(mass_electron, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world%N_x, world%N_y)
+    particle_list(1) = Particle(mass_electron, e_charge, 1.0d0, num_part_total, 3*num_part_total, 'e', world%N_x, world%N_y)
     call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(1)%initialize_rand_uniform(world)
     call particle_list(1)%initialize_maxwellian_temperature(T_e)
@@ -222,7 +222,8 @@ program main
         ! call delete_particles_uniform(particle_list, number_charged_particles)
         call system_clock(endTime)
         print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds for particle push'
-        print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread) + sum(particle_list(1)%number_particles_resort)
+        print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread)
+        print *, sum(particle_list(1)%number_particles_resort_thread)
     end select
 
     
@@ -761,187 +762,18 @@ contains
         real(real64), intent(in) :: E_field(2,world%N_x,world%N_y), del_t
         integer(int32), intent(in) :: number_charged_particles
         type(Particle), intent(in out) :: particle_list(number_charged_particles)
-        real(real64) :: v_part(2), loc_i, loc_j, q_over_m, d_i, d_j, E_part(2),&
-            E_SE(2), E_SW(2), E_NW(2), E_NE(2), inv_del_x, inv_del_y, &
-            v_xi, v_eta, del_t_i, del_t_j, loc_i_new, loc_j_new, i_cell_real, j_cell_real, v_z
-        integer(int32) :: i_thread, part_idx, i_cell, j_cell, wall_i, wall_j, N_x_cell, N_y_cell, number_particles, delete_idx
-        integer(int64) :: part_num, cell_end_indx, cell_start_indx, number_particles_copy
-        logical :: delete_bool
+        integer(int32) :: i_thread, part_idx
 
-        N_x_cell = world%N_x - 1
-        N_y_cell = world%N_y - 1
-        inv_del_x = 1.0d0 / world%del_x
-        inv_del_y = 1.0d0 / world%del_y
-        !$OMP parallel private(i_thread, q_over_m, d_i, d_j, E_part, part_idx, part_num, &
-        !$OMP v_part, loc_i, loc_j, E_SE, E_SW, E_NW, E_NE, i_cell, j_cell, delete_idx, &
-        !$OMP v_xi, v_eta, wall_i, wall_j, del_t_i, del_t_j, loc_i_new, loc_j_new, &
-        !$OMP i_cell_real, j_cell_real, delete_bool, cell_end_indx, cell_start_indx, number_particles_copy, v_z)
+        !$OMP parallel private(i_thread, part_idx)
         i_thread = omp_get_thread_num() + 1
         do part_idx = 1, number_charged_particles
-            q_over_m = particle_list(part_idx)%q_over_m
-            number_particles_copy = 0
-            do j_cell = 1, N_y_cell
-                j_cell_real = real(j_cell, kind = 8)
-                do i_cell = 1, N_x_cell
-                    i_cell_real = real(i_cell, kind = 8)
-                    E_SW = E_Field(:, i_cell, j_cell)
-                    E_SE = E_Field(:, i_cell+1, j_cell)
-                    E_NW = E_Field(:, i_cell, j_cell+1)
-                    E_NE = E_Field(:, i_cell+1, j_cell+1)
-                    delete_idx = 0
-                    cell_start_indx = particle_list(part_idx)%cell_starting_indx(i_cell, j_cell)
-                    cell_end_indx = particle_list(part_idx)%cell_ending_indx(i_cell, j_cell)
-                    number_particles = particle_list(part_idx)%number_particles_cell_thread(i_cell, j_cell, i_thread)
-                    do part_num = cell_start_indx, cell_start_indx + number_particles - 1
-                        loc_i = particle_list(part_idx)%logical_position(1, part_num, i_thread)
-                        loc_j = particle_list(part_idx)%logical_position(2, part_num, i_thread)
-                        v_part = particle_list(part_idx)%velocity(3:4, part_num, i_thread)
-                        v_z = particle_list(part_idx)%velocity(5, part_num, i_thread)
-                        d_i = loc_i - i_cell_real
-                        d_j = loc_j - j_cell_real
-                        E_part = E_SW * (1.0d0 - d_i) * (1.0d0 - d_j) + E_SE * (d_i) * (1.0d0-d_j) + &
-                        E_NW * (1.0d0-d_i) * (d_j) + E_NE * (d_i) * (d_j)
-                
-                        ! solve for new velocity and position
-                        v_part = v_part + q_over_m * E_part * del_t
-                        v_xi = v_part(1) * inv_del_x
-                        v_eta = v_part(2) * inv_del_y
-                        loc_i_new = loc_i + v_xi * del_t
-                        loc_j_new = loc_j + v_eta * del_t
-
-                        if (int(loc_i_new) == i_cell .and. int(loc_j_new) == j_cell) then
-                            ! stays in cell, put at beginning of cell array slice
-                            particle_list(part_idx)%logical_position(1, part_num - delete_idx, i_thread) = loc_i_new
-                            particle_list(part_idx)%logical_position(2, part_num - delete_idx, i_thread) = loc_j_new
-                            particle_list(part_idx)%velocity(3:4, part_num - delete_idx, i_thread) = v_part
-                            particle_list(part_idx)%velocity(5, part_num - delete_idx, i_thread) = v_z
-                        else
-                            delete_idx = delete_idx + 1
-                            delete_bool = .false.
-                            if (loc_i_new > world%N_x) then
-                                ! backtrack to wall position where it left
-                                wall_i = world%N_x
-                                del_t_i = (loc_i_new - real(wall_i, kind = 8))/v_xi
-            
-                                ! get boundary j indices for particle
-                                wall_j = max(min(int(loc_j_new - v_eta * del_t_i), world%N_y-1), 1)
-                                delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
-                                if (.not. delete_bool) then
-                                    if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i, wall_j+1) == 2) then
-                                        ! Neumann boundary
-                                        loc_i_new = 2.0d0 * real(wall_i, kind = 8) - loc_i_new
-                                        v_xi = -v_xi
-                                        v_part(1) = -v_part(1)
-                                    else
-                                        loc_i_new = loc_i_new - real(world%N_x, kind = 8) + 1.0d0
-                                    end if
-                                end if
-                            else if (loc_i_new < 1) then
-                                ! backtrack to wall position where it left
-                                wall_i = 1
-                                del_t_i = (loc_i_new - real(wall_i, kind = 8))/v_xi
-            
-                                ! get boundary j indices for particle
-                                wall_j = max(min(int(loc_j_new - v_eta * del_t_i), world%N_y-1), 1)
-                                delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
-                                if (.not. delete_bool) then
-                                    if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i, wall_j+1) == 2) then
-                                        ! Neumann boundary
-                                        loc_i_new = 2.0d0 - loc_i_new
-                                        v_xi = -v_xi
-                                        v_part(1) = -v_part(1)
-                                    else
-                                        loc_i_new = real(world%N_x, kind = 8) - 1.0d0 + loc_i_new
-                                    end if
-                                end if
-                            end if
-            
-            
-                            ! take care of any issue with particle outside eta boundary
-                            ! it is possible for particle to be outside both x and y, so proceed if not deleted at left-right boundary
-                            if (.not. delete_bool .and. loc_j_new > world%N_y) then
-                                ! backtrack to wall position where it left
-                                wall_j = world%N_y
-                                del_t_j = (loc_j_new - real(wall_j, kind = 8))/v_eta
-            
-                                ! get boundary i indices for particle
-                                wall_i = max(min(int(loc_i_new - v_xi * del_t_j), world%N_x-1), 1)
-                                delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-                                if (.not. delete_bool) then
-                                    if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i+1, wall_j) == 2) then
-                                        ! Neumann boundary
-                                        loc_j_new = 2.0d0 * real(wall_j, kind = 8) - loc_j_new
-                                        v_eta = -v_eta
-                                        v_part(2) = -v_part(2)
-                                    else
-                                        loc_j_new = loc_j_new - real(world%N_y, kind = 8) + 1.0d0
-                                    end if
-                                end if
-                            else if (.not. delete_bool .and. loc_j_new < 1) then
-                                ! backtrack to wall position where it left
-                                wall_j = 1
-                                del_t_j = (loc_j_new - real(wall_j, kind = 8))/v_eta
-            
-                                ! get boundary i indices for particle
-                                wall_i = max(min(int(loc_i_new - v_xi * del_t_j), world%N_x-1), 1)
-                                delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-                                if (.not. delete_bool) then
-                                    if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i+1, wall_j) == 2) then
-                                        ! Neumann boundary
-                                        loc_j_new = 2.0d0- loc_j_new
-                                        v_eta = -v_eta
-                                        v_part(2) = -v_part(2)
-                                    else
-                                        loc_j_new = real(world%N_y, kind = 8) - 1.0d0 + loc_j_new
-                                    end if
-                                end if
-                            end if
-        
-                            if (.not. delete_bool) then
-                                ! particle pushed back into domain from boundary
-                                wall_i = int(loc_i_new) + (1 - INT(SIGN(1.0d0, v_xi)))/2
-                                wall_j = int(loc_j_new) + (1 - INT(SIGN(1.0d0, v_eta)))/2
-                        
-                                ! We'll assume that particle doesn't go across many cells, so likelihood of passing dirichlet boundary and ending up in cell surrounded by plasma nodes is low
-                                ! corner node (wall_i, wall_j) needs to be dirichlet for particle to have chance of passing dirichlet wall
-                                if (world%boundary_conditions(wall_i, wall_j) == 1) then
-                                    ! Find time to each wall it could have passed through
-                                    del_t_i = (loc_i_new - wall_i)/v_xi
-                                    del_t_j = (loc_j_new - wall_j)/v_eta
-        
-                                    if (del_t_i < del_t_j) then
-                                        ! hits along left-right wall, check other j-th index node
-                                        wall_j = int(loc_j_new)
-                                        delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
-                                    else
-                                        ! hits along up-down wall, check other i-th index node
-                                        wall_i = int(loc_i_new)
-                                        delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-                                    end if
-                                end if
-
-                                if (.not. delete_bool) then
-                                    ! leaving cell, place at end of cell array slice
-                                    number_particles_copy = number_particles_copy + 1
-                                    particle_list(part_idx)%logical_position_copy(1, number_particles_copy, i_thread) = loc_i_new
-                                    particle_list(part_idx)%logical_position_copy(2, number_particles_copy, i_thread) = loc_j_new
-                                    particle_list(part_idx)%velocity_copy(3:4, number_particles_copy, i_thread) = v_part
-                                    particle_list(part_idx)%velocity_copy(5, number_particles_copy, i_thread) = v_z
-                                end if
-                            end if
-                            
-                        end if
-
-                    end do
-                    particle_list(part_idx)%number_particles_cell_thread(i_cell, j_cell, i_thread) = number_particles - delete_idx
-                end do
-            end do
-            particle_list(part_idx)%number_particles_resort(i_thread) = number_particles_copy
+            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread)
+            call particle_list(part_idx)%particle_resort(world, i_thread)
         end do
-
         !$OMP end parallel
 
     end subroutine push_particles_uniform
+
 
 
     ! subroutine readChargedParticleInputs(filename, irand, T_e, T_i, numThread, world, particleList)
