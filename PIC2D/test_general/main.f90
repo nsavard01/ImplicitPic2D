@@ -781,7 +781,7 @@ contains
                 !get particle location and velocity in 2D
                 loc_i = particle_list(part_idx)%logical_position(1, part_num, i_thread)
                 loc_j = particle_list(part_idx)%logical_position(2, part_num, i_thread)
-                v_part = particle_list(part_idx)%velocity(3:4, part_num, i_thread)
+                v_part = particle_list(part_idx)%velocity(1:2, part_num, i_thread)
                 corner_i = int(loc_i)
                 corner_j = int(loc_j)
                 d_i = loc_i - real(corner_i, kind = 8)
@@ -921,8 +921,8 @@ contains
                 if (.not. delete_bool) then
                     particle_list(part_idx)%logical_position(1, part_num - delete_idx, i_thread) = loc_i_new
                     particle_list(part_idx)%logical_position(2, part_num - delete_idx, i_thread) = loc_j_new
-                    particle_list(part_idx)%velocity(3:4, part_num - delete_idx, i_thread) = v_part
-                    particle_list(part_idx)%velocity(5, part_num - delete_idx, i_thread) = particle_list(part_idx)%velocity(5, part_num, i_thread)
+                    particle_list(part_idx)%velocity(1:2, part_num - delete_idx, i_thread) = v_part
+                    particle_list(part_idx)%velocity(3, part_num - delete_idx, i_thread) = particle_list(part_idx)%velocity(3, part_num, i_thread)
                 else
                     delete_idx = delete_idx + 1
                 end if
