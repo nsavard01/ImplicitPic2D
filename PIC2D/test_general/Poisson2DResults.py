@@ -64,6 +64,7 @@ gridY = np.fromfile('gridY.dat')
 sol_1 = np.fromfile('finalSol.dat')
 E_x = np.fromfile('E_x.dat')
 E_y = np.fromfile('E_y.dat')
+
 grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 Length = gridX[-1] - gridX[0]
 Width = gridY[-1] - gridY[0]

@@ -223,6 +223,7 @@ program main
         call system_clock(endTime)
         print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds for particle push'
         print *, 'amount total particles', sum(particle_list(1)%number_particles_thread)
+        print *, 'amount deleted particles', sum(particle_list(1)%number_deletes_thread)
     end select
 
     
