@@ -151,7 +151,6 @@ program main
     call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(1)%initialize_rand_uniform(world)
     call particle_list(1)%initialize_maxwellian_temperature(T_e)
-    print *, 'Particle temp is:', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
     call particle_list(1)%interpolation_particle_to_nodes()
