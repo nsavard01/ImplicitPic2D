@@ -224,19 +224,19 @@ contains
         type(domain_uniform), intent(in) :: world
         real(real64), intent(in) :: E_Field(2,world%N_x,world%N_y), del_t
         integer(int32), intent(in) :: i_thread
-        real(real64) :: v_part(2), loc_i, loc_j, q_over_m, d_i, d_j, E_part(2),&
+        real(real64) :: v_part(2), loc_i, loc_j, d_i, d_j, E_part(2),&
         E_SE(2), E_SW(2), E_NW(2), E_NE(2), inv_del_x, inv_del_y, &
         loc_i_new, loc_j_new, i_cell_real, j_cell_real, v_z, del_t_i, del_t_j, v_xi, v_eta
         integer(int32) :: i_cell, j_cell, N_x_cell, N_y_cell, number_particles_cell, wall_i, wall_j, number_particles_outside_cell
         integer(int64) :: part_num, cell_end_indx, cell_start_indx, number_particles_overflow
         logical :: delete_bool
-
+        
+        
         number_particles_overflow = 0
         N_x_cell = world%N_x - 1
         N_y_cell = world%N_y - 1
         inv_del_x = 1.0d0 / world%del_x
         inv_del_y = 1.0d0 / world%del_y
-        q_over_m = self%q_over_m
         do j_cell = 1, N_y_cell
             j_cell_real = real(j_cell, kind = 8)
             do i_cell = 1, N_x_cell
@@ -259,13 +259,12 @@ contains
                     E_NW * (1.0d0-d_i) * (d_j) + E_NE * (d_i) * (d_j)
             
                     ! solve for new velocity and position
-                    v_part = v_part + q_over_m * E_part * del_t
+                    v_part = v_part + self%q_over_m * E_part * del_t
                     v_xi = v_part(1) * inv_del_x
                     v_eta = v_part(2) * inv_del_y
                     loc_i_new = loc_i + v_xi * del_t
                     loc_j_new = loc_j + v_eta * del_t
 
-                    
                     delete_bool = .false.
                     if (loc_i_new > world%N_x) then
                         ! backtrack to wall position where it left
@@ -305,7 +304,7 @@ contains
                         end if
                     end if
     
-    
+
                     ! take care of any issue with particle outside eta boundary
                     ! it is possible for particle to be outside both x and y, so proceed if not deleted at left-right boundary
                     if (.not. delete_bool .and. loc_j_new > world%N_y) then
@@ -345,6 +344,7 @@ contains
                             end if
                         end if
                     end if
+                    
                    
                     if (int(loc_i_new) == i_cell .and. int(loc_j_new) == j_cell) then
                         ! stays in cell, put at beginning of cell array, move in place
@@ -411,6 +411,7 @@ contains
 
                 end do  
                 
+                
                 cell_end_indx = self%cell_ending_indx(i_cell, j_cell)
                 ! go through any particles that have been added by earlier cells
                 do part_num = cell_end_indx - number_particles_added_cell_thread(i_cell, j_cell, i_thread) + 1, cell_end_indx
@@ -420,12 +421,13 @@ contains
                     number_particles_cell = number_particles_cell + 1
                 end do
                 self%number_particles_cell_thread(i_cell, j_cell, i_thread) = number_particles_cell
-                number_particles_added_cell_thread(wall_i,wall_j, i_thread) = 0
+                number_particles_added_cell_thread(i_cell,j_cell, i_thread) = 0
             end do
         end do
+        
         number_particles_overflow_thread(i_thread) = number_particles_overflow
-
-        ! put remaining particles in overflow array in proper cell
+        
+        ! ! put remaining particles in overflow array in proper cell
         do part_num = 1, number_particles_overflow
             loc_i = logical_position_overflow(1, part_num, i_thread)
             loc_j = logical_position_overflow(2, part_num, i_thread)
