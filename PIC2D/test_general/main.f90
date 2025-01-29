@@ -42,7 +42,7 @@ program main
     evenGridBool = .true.
     redBlackBool = .true.
     Krylov_bool = .false.
-    center_box_bool = .false.
+    center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
