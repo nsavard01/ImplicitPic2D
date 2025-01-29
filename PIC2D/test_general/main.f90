@@ -42,7 +42,7 @@ program main
     evenGridBool = .true.
     redBlackBool = .true.
     Krylov_bool = .false.
-    center_box_bool = .false.
+    center_box_bool = .true.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
@@ -64,9 +64,9 @@ program main
     rho = e_charge * n_ave
 
     NESW_wallBoundaries(1) = 1 ! North
-    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(2) = 1 ! East
     NESW_wallBoundaries(3) = 1 ! South
-    NESW_wallBoundaries(4) = 2 ! West
+    NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
