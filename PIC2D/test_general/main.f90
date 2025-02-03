@@ -38,11 +38,11 @@ program main
 
     call change_global_thread(numThreads)
     
-    
+    call system_clock(count_rate = timingRate)
     evenGridBool = .true.
     redBlackBool = .true.
     Krylov_bool = .false.
-    center_box_bool = .true.
+    center_box_bool = .false.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
@@ -151,8 +151,13 @@ program main
     call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(1)%initialize_rand_uniform(world)
     call particle_list(1)%initialize_maxwellian_temperature(T_e)
+    call system_clock(startTime)
+    call particle_list(1)%particle_sort(world%N_x-1, world%N_y-1)
+    call system_clock(endTime)
+    print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
+    print *, ''
     print *, 'Particle temp is:', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0
-    call system_clock(count_rate = timingRate)
+    
     call system_clock(startTime)
     call particle_list(1)%interpolation_particle_to_nodes()
     call system_clock(endTime)
@@ -171,20 +176,6 @@ program main
     print *, 'particle collecting particle source term took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, ''
     
-
-    ! !$OMP parallel private(k, i, j)
-    ! !$OMP do collapse(2)
-    ! do j = 1, solver%N_y
-    !     do i = 1, solver%N_x
-    !         k = (j-1) * N_x + i
-    !         if (world%boundary_conditions(i,j) /= 1) then
-    !             ! stageOne%sourceTerm(i,j) = -rho/eps_0
-    !             solver%sourceTerm(i,j) = -rho/epsilon_0
-    !         end if
-    !     end do
-    ! end do
-    ! !$OMP end do
-    ! !$OMP end parallel
 
 
     call system_clock(startTime)
@@ -222,8 +213,14 @@ program main
         ! call particle_list(1)%interpolation_particle_to_nodes()
         call system_clock(endTime)
         print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds for particle push'
-        print *, 'amount total particles', sum(particle_list(1)%number_particles_thread)
+        print *, 'amount total particles', sum(particle_list(1)%number_particles_thread), sum(particle_list(1)%cell_count)
         print *, 'amount deleted particles', sum(particle_list(1)%number_deletes_thread)
+        ! call system_clock(startTime)
+        ! call particle_list(1)%particle_sort(world%N_x-1, world%N_y-1)
+        ! call system_clock(endTime)
+        ! print *, 'particle sorting after push took', real(endTime - startTime)/real(timingRate), 'seconds'
+        ! print *, ''
+
     end select
 
     
@@ -924,6 +921,7 @@ contains
                     particle_list(part_idx)%logical_position(2, part_num - delete_idx, i_thread) = loc_j_new
                     particle_list(part_idx)%velocity(1:2, part_num - delete_idx, i_thread) = v_part
                     particle_list(part_idx)%velocity(3, part_num - delete_idx, i_thread) = particle_list(part_idx)%velocity(3, part_num, i_thread)
+                    particle_list(part_idx)%cell_count(int(loc_i_new), int(loc_j_new), i_thread) = particle_list(part_idx)%cell_count(int(loc_i_new), int(loc_j_new), i_thread) + 1
                 else
                     delete_idx = delete_idx + 1
                 end if

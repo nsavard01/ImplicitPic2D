@@ -11,11 +11,14 @@ module mod_particle
 
     private
     public :: Particle
+    
 
     ! Particle contains particle properties and stored values in phase space
     type :: Particle
         character(:), allocatable :: name !name of the particle
         integer(int64), allocatable :: number_particles_thread(:), number_deletes_thread(:)
+        integer(int64), allocatable :: cell_indx_array(:,:,:)
+        integer(int32), allocatable ::  cell_count(:,:,:)
         ! numToCollide saves number that can collided in nullCollision
         integer(int64) :: max_indx ! maximum particles per thread
         real(real64), allocatable :: densities(:,:)
@@ -28,7 +31,7 @@ module mod_particle
         procedure, public, pass(self) :: initialize_rand_uniform
         procedure, public, pass(self) :: interpolation_particle_to_nodes
         ! procedure, public, pass(self) :: interpolation_particle_to_nodes_sorted
-        ! procedure, public, pass(self) :: particle_sort
+        procedure, public, pass(self) :: particle_sort
         ! procedure, public, pass(self) :: initializeRandCosine
         ! procedure, public, pass(self) :: initializeRandSine
         procedure, public, pass(self) :: initialize_maxwellian_temperature
@@ -66,7 +69,10 @@ contains
         self%work_space(:,:,omp_get_thread_num()+1) = 0.0d0
         !$OMP end parallel
         self%number_particles_thread = N_p/number_threads_global
-        
+        allocate(self%cell_count(N_x-1, N_y-1, number_threads_global))
+        self%cell_count = 0
+       
+        allocate(self%cell_indx_array(N_x-1, N_y-1, number_threads_global))
     end function particle_constructor
 
     subroutine initialize_weight_from_n_ave(self, n_ave, world)
@@ -131,6 +137,7 @@ contains
             
             self%logical_position(1,i, i_thread) = xi
             self%logical_position(2, i, i_thread) = eta
+            self%cell_count(int_xi, int_eta, i_thread) = self%cell_count(int_xi, int_eta, i_thread) + 1
         end do
         !$OMP end parallel
     end subroutine initialize_rand_uniform
@@ -144,6 +151,7 @@ contains
 
         !$OMP parallel private(part_num, i_cell,j_cell, d_i, d_j, xi, eta, i_thread)
         i_thread = omp_get_thread_num() + 1
+        self%work_space(:,:,i_thread) = 0.0d0
         do part_num = 1, self%number_particles_thread(i_thread)
             xi = self%logical_position(1,part_num,i_thread)
             eta = self%logical_position(2,part_num,i_thread)
@@ -196,71 +204,101 @@ contains
 
 
 
-    ! subroutine particle_sort(self, N_x_cell, N_y_cell)
-    !     ! sort particle by cell, with each cell going j = 1-> N_y-1, i = 1->N_x-1
-    !     ! make sort in place so no need to 
-    !     class(Particle), intent(in out) :: self
-    !     integer(int32), intent(in) :: N_x_cell, N_y_cell
-    !     integer(int64) :: k, part_num, max_idx, k_max
-    !     integer(int32) :: i_thread, eta, xi
-    !     real(real64) :: temp_phase_space(5)
-    !     max_idx = N_x_cell * N_y_cell
-    !     !$OMP parallel private(k, i_thread, eta, xi, k_max, part_num, temp_phase_space)
-    !     i_thread = omp_get_thread_num() + 1
-    !     self%cell_count(:,i_thread) = 0
-    !     ! get number of particles per cell
-    !     do part_num = 1, self%number_particles_thread(i_thread)
-    !         xi = int(self%phase_space(1,part_num, i_thread))
-    !         eta = int(self%phase_space(2,part_num, i_thread))
-    !         k = (eta - 1) * N_x_cell + xi
-    !         self%cell_count(k, i_thread) = self%cell_count(k, i_thread) + 1
-    !     end do
+    subroutine particle_sort(self, N_x_cell, N_y_cell)
+        ! sort particle by cell, with each cell going j = 1-> N_y-1, i = 1->N_x-1
+        ! make sort in place so no need to 
+        class(Particle), intent(in out) :: self
+        integer(int32), intent(in) :: N_x_cell, N_y_cell
+        integer(int64) :: part_num, k_past, k
+        integer(int32) :: i_thread, eta, xi, i_cell, j_cell
+        real(real64) :: temp_pos(2), temp_v(3)
 
-    !     ! get final cell index of each bin
-    !     self%cell_indx_array(1,i_thread) = self%cell_count(1,i_thread)
-    !     do k = 2, max_idx
-    !         self%cell_indx_array(k, i_thread) = self%cell_count(k, i_thread) + self%cell_indx_array(k-1, i_thread)
-    !     end do
-    !     self%cell_indx_array(max_idx+1, i_thread) = self%number_particles_thread(i_thread)
+        !$OMP parallel private(i_thread, i_cell, j_cell, eta, xi, part_num, temp_pos, temp_v, k_past, k)
+        i_thread = omp_get_thread_num() + 1
+        ! Should already have number of particles per cell at this point
 
-    !     ! order particles
-    !     do k_max = max_idx, 2, -1
-    !         do while (self%cell_count(k_max, i_thread) > 0)
-    !             part_num = self%cell_indx_array(k_max,i_thread)
-    !             ! find current highest cell indx
-    !             xi = int(self%phase_space(1,part_num, i_thread))
-    !             eta = int(self%phase_space(2,part_num, i_thread))
-    !             k = (eta - 1) * N_x_cell + xi
-    !             temp_phase_space = self%phase_space(:,self%cell_indx_array(k,i_thread), i_thread)
-    !             ! put last index in current place and then reduce that section by 1
-    !             self%phase_space(:,self%cell_indx_array(k,i_thread), i_thread) = self%phase_space(:,part_num, i_thread)
-
-    !             ! place temp_phase_space in current place
-    !             self%phase_space(:,part_num, i_thread) = temp_phase_space
-    !             self%cell_indx_array(k,i_thread) = self%cell_indx_array(k,i_thread)-1
-    !             self%cell_count(k, i_thread) = self%cell_count(k,i_thread) - 1
-    !         end do
-    !     end do
+        ! get final cell index of each bin
+        self%cell_indx_array(1, 1, i_thread) = self%cell_count(1,1,i_thread)
+        do j_cell = 1, N_y_cell
+            do i_cell = 2, N_x_cell
+                self%cell_indx_array(i_cell, j_cell, i_thread) = self%cell_count(i_cell, j_cell, i_thread) + self%cell_indx_array(i_cell-1, j_cell, i_thread)
+            end do
+            ! do for next row 1st i_cell = 1
+            if (j_cell /= N_y_cell) then
+                self%cell_indx_array(1, j_cell+1, i_thread) = self%cell_count(1, j_cell+1, i_thread) + self%cell_indx_array(N_x_cell, j_cell, i_thread)
+            end if
+        end do
         
+        ! do k = 2, max_idx
+        !     self%cell_indx_array(k, i_thread) = self%cell_count(k, i_thread) + self%cell_indx_array(k-1, i_thread)
+        ! end do
+        ! self%cell_indx_array(max_idx+1, i_thread) = self%number_particles_thread(i_thread)
 
-    !     do part_num = 2, self%number_particles_thread(i_thread)
-    !         xi = int(self%phase_space(1, part_num, i_thread))
-    !         eta = int(self%phase_space(2, part_num, i_thread))
-    !         k_max = (eta - 1) * N_x_cell + xi
+        ! order particles
+        do j_cell = N_y_cell, 2, -1
+            do i_cell = N_x_cell, 1, -1
+                do while (self%cell_count(i_cell, j_cell, i_thread) > 0)
+                    part_num = self%cell_indx_array(i_cell, j_cell, i_thread)
+                    ! find current highest cell indx
+                    xi = int(self%logical_position(1,part_num, i_thread))
+                    eta = int(self%logical_position(2,part_num, i_thread))
+                    temp_pos = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                    temp_v = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                    ! put last index in current place and then reduce that section by 1
+                    self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = self%logical_position(:,part_num, i_thread)
+                    self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = self%velocity(:,part_num, i_thread)
+                    ! place temp_phase_space in current place
+                    self%logical_position(:,part_num, i_thread) = temp_pos
+                    self%velocity(:,part_num, i_thread) = temp_v
+                    self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
+                    self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+                end do
+            end do
+        end do
+        j_cell = 1
+        do i_cell = N_x_cell, 2, -1
+            do while (self%cell_count(i_cell, j_cell, i_thread) > 0)
+                part_num = self%cell_indx_array(i_cell, j_cell, i_thread)
+                ! find current highest cell indx
+                xi = int(self%logical_position(1,part_num, i_thread))
+                eta = int(self%logical_position(2,part_num, i_thread))
+                temp_pos = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                temp_v = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
 
-    !         k = (int(self%phase_space(2, part_num-1, i_thread)) - 1) * N_x_cell + int(self%phase_space(1, part_num-1, i_thread))
-    !         if (k_max /= k) then
-    !             if (self%cell_indx_array(k_max, i_thread)+1 /= part_num) then
-    !                 print *, 'issue with start cell indx array'
-    !                 stop
-    !             end if
-    !         end if
-    !     end do
+                ! put last index in current place and then reduce that section by 1
+                self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = self%logical_position(:,part_num, i_thread)
+                self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = self%velocity(:,part_num, i_thread)
 
-    !     !$OMP end parallel
+                ! place temp_phase_space in current place
+                self%logical_position(:,part_num, i_thread) = temp_pos
+                self%velocity(:,part_num, i_thread) = temp_v
+                self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
+                self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+            end do
+        end do
+        self%cell_count(1,1,i_thread) = 0
+        ! do k_max = max_idx, 2, -1
+        !     do while (self%cell_count(k_max, i_thread) > 0)
+        !         part_num = self%cell_indx_array(k_max,i_thread)
+        !         ! find current highest cell indx
+        !         xi = int(self%phase_space(1,part_num, i_thread))
+        !         eta = int(self%phase_space(2,part_num, i_thread))
+        !         k = (eta - 1) * N_x_cell + xi
+        !         temp_phase_space = self%phase_space(:,self%cell_indx_array(k,i_thread), i_thread)
+        !         ! put last index in current place and then reduce that section by 1
+        !         self%phase_space(:,self%cell_indx_array(k,i_thread), i_thread) = self%phase_space(:,part_num, i_thread)
 
+        !         ! place temp_phase_space in current place
+        !         self%phase_space(:,part_num, i_thread) = temp_phase_space
+        !         self%cell_indx_array(k,i_thread) = self%cell_indx_array(k,i_thread)-1
+        !         self%cell_count(k, i_thread) = self%cell_count(k,i_thread) - 1
+        !     end do
+        ! end do
+        
+        
+        !$OMP end parallel
 
-    ! end subroutine particle_sort
+    end subroutine particle_sort
 
 
     ! subroutine initializeRandCosine(self, world, irand, alpha)
