@@ -42,7 +42,7 @@ program main
     evenGridBool = .true.
     redBlackBool = .true.
     Krylov_bool = .false.
-    center_box_bool = .true.
+    center_box_bool = .false.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
@@ -151,6 +151,7 @@ program main
     call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(1)%initialize_rand_uniform(world)
     call particle_list(1)%initialize_maxwellian_temperature(T_e)
+    print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0
     call system_clock(count_rate = timingRate)
     call system_clock(startTime)
     call particle_list(1)%interpolation_particle_to_nodes()
