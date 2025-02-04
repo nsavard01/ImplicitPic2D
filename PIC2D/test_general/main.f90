@@ -67,9 +67,9 @@ program main
     
     rho = e_charge * n_ave
 
-    NESW_wallBoundaries(1) = 3 ! North
+    NESW_wallBoundaries(1) = 2 ! North
     NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 3 ! South
+    NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
@@ -175,7 +175,7 @@ program main
     EField_time = 0.0d0
     mover_time = 0.0d0
     solver_time = 0.0d0
-    number_diagnostics = 100
+    number_diagnostics = 1
     call system_clock(count_rate = timingRate)
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics

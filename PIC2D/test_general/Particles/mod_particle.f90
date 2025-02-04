@@ -273,7 +273,6 @@ contains
                     loc_i_new = loc_i + v_xi * del_t
                     loc_j_new = loc_j + v_eta * del_t
 
-                
                     if (int(loc_i_new) == i_cell .and. int(loc_j_new) == j_cell) then
                         ! stays in cell, put at beginning of cell array, move in place
                         self%logical_position(1, cell_start_indx + number_particles_cell, i_thread) = loc_i_new
@@ -283,7 +282,6 @@ contains
                         number_particles_cell = number_particles_cell + 1
                     else
                         delete_bool = .false.
-
                         do while ((loc_i_new > world%N_x .or. loc_i_new < 1) .and. .not. delete_bool) 
                             if (loc_i_new > world%N_x) then
                                 ! backtrack to wall position where it left
@@ -423,7 +421,6 @@ contains
                             end if
 
                         end if
-
                     end if
 
                 end do  
