@@ -21,7 +21,7 @@ module mod_particle
     type :: Particle
         character(:), allocatable :: name !name of the particle
         ! numToCollide saves number that can collided in nullCollision
-        integer(int64) :: max_indx, max_indx_overflow ! maximum particles per thread
+        integer(int64) :: max_indx ! maximum particles per thread
 
         ! sort logical position into cells
 
