@@ -273,95 +273,7 @@ contains
                     loc_i_new = loc_i + v_xi * del_t
                     loc_j_new = loc_j + v_eta * del_t
 
-                    delete_bool = .false.
-
-                    do while ((loc_i_new > world%N_x .or. loc_i_new < 1) .and. .not. delete_bool) 
-                        if (loc_i_new > world%N_x) then
-                            ! backtrack to wall position where it left
-                            wall_i = world%N_x
-                            del_t_i = (loc_i_new - real(wall_i, kind = 8))/v_xi
-        
-                            ! get boundary j indices for particle
-                            wall_j = max(min(int(loc_j_new - v_eta * del_t_i), world%N_y-1), 1)
-                            delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
-                            if (.not. delete_bool) then
-                                if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i, wall_j+1) == 2) then
-                                    ! Neumann boundary
-                                    loc_i_new = 2.0d0 * real(wall_i, kind = 8) - loc_i_new
-                                    v_xi = -v_xi
-                                    v_part(1) = -v_part(1)
-                                else
-                                    loc_i_new = MODULO(loc_i_new, real(world%N_x-1, kind = 8))
-                                end if
-                            end if
-                        else
-                            ! backtrack to wall position where it left
-                            wall_i = 1
-                            del_t_i = (loc_i_new - real(wall_i, kind = 8))/v_xi
-        
-                            ! get boundary j indices for particle
-                            wall_j = max(min(int(loc_j_new - v_eta * del_t_i), world%N_y-1), 1)
-                            delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
-                            if (.not. delete_bool) then
-                                if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i, wall_j+1) == 2) then
-                                    ! Neumann boundary
-                                    loc_i_new = 2.0d0 - loc_i_new
-                                    v_xi = -v_xi
-                                    v_part(1) = -v_part(1)
-                                else
-                                    loc_i_new = real(world%N_x, kind = 8) - MODULO(real(world%N_x, kind = 8) - loc_i_new, real(world%N_x-1, kind = 8))
-                                end if
-                            end if
-                        end if
-                    end do
-
-                    do while ((loc_j_new > world%N_y .or. loc_j_new < 1) .and. .not. delete_bool)
-                        ! take care of any issue with particle outside eta boundary
-                        ! it is possible for particle to be outside both x and y, so proceed if not deleted at left-right boundary
-                        if (loc_j_new > world%N_y) then
-                            ! backtrack to wall position where it left
-                            wall_j = world%N_y
-                            del_t_j = (loc_j_new - real(wall_j, kind = 8))/v_eta
-        
-                            ! get boundary i indices for particle
-                            wall_i = max(min(int(loc_i_new - v_xi * del_t_j), world%N_x-1), 1)
-                            delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-                            if (.not. delete_bool) then
-                                if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i+1, wall_j) == 2) then
-                                    ! Neumann boundary
-                                    loc_j_new = 2.0d0 * real(wall_j, kind = 8) - loc_j_new
-                                    v_eta = -v_eta
-                                    v_part(2) = -v_part(2)
-                                else
-                                    loc_j_new = MODULO(loc_j_new, real(world%N_y-1, kind = 8))
-                                end if
-                            end if
-                        else
-                            ! backtrack to wall position where it left
-                            wall_j = 1
-                            del_t_j = (loc_j_new - real(wall_j, kind = 8))/v_eta
-        
-                            ! get boundary i indices for particle
-                            wall_i = max(min(int(loc_i_new - v_xi * del_t_j), world%N_x-1), 1)
-                            delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-                            if (.not. delete_bool) then
-                                if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i+1, wall_j) == 2) then
-                                    ! Neumann boundary
-                                    loc_j_new = 2.0d0- loc_j_new
-                                    v_eta = -v_eta
-                                    v_part(2) = -v_part(2)
-                                else
-                                    loc_j_new = real(world%N_y, kind = 8) - MODULO(real(world%N_y, kind = 8) - loc_j_new, real(world%N_y-1, kind = 8))
-                                end if
-                            end if
-                        end if
-
-                    end do
-    
-
-                    
-                    
-                    
+                
                     if (int(loc_i_new) == i_cell .and. int(loc_j_new) == j_cell) then
                         ! stays in cell, put at beginning of cell array, move in place
                         self%logical_position(1, cell_start_indx + number_particles_cell, i_thread) = loc_i_new
@@ -369,58 +281,147 @@ contains
                         self%velocity(1:2, cell_start_indx + number_particles_cell, i_thread) = v_part
                         self%velocity(3, cell_start_indx + number_particles_cell, i_thread) = v_z
                         number_particles_cell = number_particles_cell + 1
-                    else if (.not. delete_bool) then
-                        wall_i = int(loc_i_new) + (1 - INT(SIGN(1.0d0, v_xi)))/2
-                        wall_j = int(loc_j_new) + (1 - INT(SIGN(1.0d0, v_eta)))/2
-                
-                        ! We'll assume that particle doesn't go across many cells, so likelihood of passing dirichlet boundary and ending up in cell surrounded by plasma nodes is low
-                        ! corner node (wall_i, wall_j) needs to be dirichlet for particle to have chance of passing dirichlet wall
-                        if (world%boundary_conditions(wall_i, wall_j) == 1) then
-                            ! Find time to each wall it could have passed through
-                            del_t_i = (loc_i_new - wall_i)/v_xi
-                            del_t_j = (loc_j_new - wall_j)/v_eta
+                    else
+                        delete_bool = .false.
 
-                            if (del_t_i < del_t_j) then
-                                ! hits along left-right wall, check other j-th index node
-                                wall_j = int(loc_j_new)
+                        do while ((loc_i_new > world%N_x .or. loc_i_new < 1) .and. .not. delete_bool) 
+                            if (loc_i_new > world%N_x) then
+                                ! backtrack to wall position where it left
+                                wall_i = world%N_x
+                                del_t_i = (loc_i_new - real(wall_i, kind = 8))/v_xi
+            
+                                ! get boundary j indices for particle
+                                wall_j = max(min(int(loc_j_new - v_eta * del_t_i), world%N_y-1), 1)
                                 delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
+                                if (.not. delete_bool) then
+                                    if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i, wall_j+1) == 2) then
+                                        ! Neumann boundary
+                                        loc_i_new = 2.0d0 * real(wall_i, kind = 8) - loc_i_new
+                                        v_xi = -v_xi
+                                        v_part(1) = -v_part(1)
+                                    else
+                                        loc_i_new = MODULO(loc_i_new, real(world%N_x-1, kind = 8))
+                                    end if
+                                end if
                             else
-                                ! hits along up-down wall, check other i-th index node
-                                wall_i = int(loc_i_new)
-                                delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-                            end if
-                        end if
-
-                        if (.not. delete_bool) then
-                            wall_i = int(loc_i_new)
-                            wall_j = int(loc_j_new)
-                            if ((wall_j < j_cell) .or. (wall_i < i_cell .and. wall_j == j_cell)) then
-                                ! if in previous cell can add directly to cell array and increase number of particle counter
-                                self%logical_position(1, self%cell_starting_indx(wall_i, wall_j) + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_i_new
-                                self%logical_position(2, self%cell_starting_indx(wall_i, wall_j) + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_j_new
-                                self%velocity(1:2, self%cell_starting_indx(wall_i, wall_j) + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_part
-                                self%velocity(3, self%cell_starting_indx(wall_i, wall_j) + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_z
-                                self%number_particles_cell_thread(wall_i, wall_j, i_thread) = self%number_particles_cell_thread(wall_i, wall_j, i_thread) + 1
-                            else
-                                number_particles_outside_cell = self%number_particles_cell_thread(wall_i, wall_j, i_thread)
-                                cell_end_indx = self%cell_ending_indx(wall_i, wall_j)
-                                if (cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread) > &
-                                    self%cell_starting_indx(wall_i, wall_j) + number_particles_outside_cell - 1) then
-                                    ! Space within the cell array to place particles at end of the array
-                                    self%logical_position(1, cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_i_new
-                                    self%logical_position(2, cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_j_new
-                                    self%velocity(1:2, cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_part
-                                    self%velocity(3, cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_z
-                                    number_particles_added_cell_thread(wall_i, wall_j, i_thread) = number_particles_added_cell_thread(wall_i, wall_j, i_thread) + 1
-                                else   
-                                    ! no space left, place in overflow array
-                                    number_particles_overflow = number_particles_overflow + 1
-                                    logical_position_overflow(1, number_particles_overflow, i_thread) = loc_i_new
-                                    logical_position_overflow(2, number_particles_overflow, i_thread) = loc_j_new
-                                    velocity_overflow(1:2, number_particles_overflow, i_thread) = v_part
-                                    velocity_overflow(3, number_particles_overflow, i_thread) = v_z
+                                ! backtrack to wall position where it left
+                                wall_i = 1
+                                del_t_i = (loc_i_new - real(wall_i, kind = 8))/v_xi
+            
+                                ! get boundary j indices for particle
+                                wall_j = max(min(int(loc_j_new - v_eta * del_t_i), world%N_y-1), 1)
+                                delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
+                                if (.not. delete_bool) then
+                                    if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i, wall_j+1) == 2) then
+                                        ! Neumann boundary
+                                        loc_i_new = 2.0d0 - loc_i_new
+                                        v_xi = -v_xi
+                                        v_part(1) = -v_part(1)
+                                    else
+                                        loc_i_new = real(world%N_x, kind = 8) - MODULO(real(world%N_x, kind = 8) - loc_i_new, real(world%N_x-1, kind = 8))
+                                    end if
                                 end if
                             end if
+                        end do
+
+                        do while ((loc_j_new > world%N_y .or. loc_j_new < 1) .and. .not. delete_bool)
+                            ! take care of any issue with particle outside eta boundary
+                            ! it is possible for particle to be outside both x and y, so proceed if not deleted at left-right boundary
+                            if (loc_j_new > world%N_y) then
+                                ! backtrack to wall position where it left
+                                wall_j = world%N_y
+                                del_t_j = (loc_j_new - real(wall_j, kind = 8))/v_eta
+            
+                                ! get boundary i indices for particle
+                                wall_i = max(min(int(loc_i_new - v_xi * del_t_j), world%N_x-1), 1)
+                                delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
+                                if (.not. delete_bool) then
+                                    if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i+1, wall_j) == 2) then
+                                        ! Neumann boundary
+                                        loc_j_new = 2.0d0 * real(wall_j, kind = 8) - loc_j_new
+                                        v_eta = -v_eta
+                                        v_part(2) = -v_part(2)
+                                    else
+                                        loc_j_new = MODULO(loc_j_new, real(world%N_y-1, kind = 8))
+                                    end if
+                                end if
+                            else
+                                ! backtrack to wall position where it left
+                                wall_j = 1
+                                del_t_j = (loc_j_new - real(wall_j, kind = 8))/v_eta
+            
+                                ! get boundary i indices for particle
+                                wall_i = max(min(int(loc_i_new - v_xi * del_t_j), world%N_x-1), 1)
+                                delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
+                                if (.not. delete_bool) then
+                                    if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i+1, wall_j) == 2) then
+                                        ! Neumann boundary
+                                        loc_j_new = 2.0d0- loc_j_new
+                                        v_eta = -v_eta
+                                        v_part(2) = -v_part(2)
+                                    else
+                                        loc_j_new = real(world%N_y, kind = 8) - MODULO(real(world%N_y, kind = 8) - loc_j_new, real(world%N_y-1, kind = 8))
+                                    end if
+                                end if
+                            end if
+
+                        end do
+
+                        if (.not. delete_bool) then
+
+                            wall_i = int(loc_i_new) + (1 - INT(SIGN(1.0d0, v_xi)))/2
+                            wall_j = int(loc_j_new) + (1 - INT(SIGN(1.0d0, v_eta)))/2
+                    
+                            ! We'll assume that particle doesn't go across many cells, so likelihood of passing dirichlet boundary and ending up in cell surrounded by plasma nodes is low
+                            ! corner node (wall_i, wall_j) needs to be dirichlet for particle to have chance of passing dirichlet wall
+                            if (world%boundary_conditions(wall_i, wall_j) == 1) then
+                                ! Find time to each wall it could have passed through
+                                del_t_i = (loc_i_new - wall_i)/v_xi
+                                del_t_j = (loc_j_new - wall_j)/v_eta
+
+                                if (del_t_i < del_t_j) then
+                                    ! hits along left-right wall, check other j-th index node
+                                    wall_j = int(loc_j_new)
+                                    delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
+                                else
+                                    ! hits along up-down wall, check other i-th index node
+                                    wall_i = int(loc_i_new)
+                                    delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
+                                end if
+                            end if
+
+                            if (.not. delete_bool) then
+                                wall_i = int(loc_i_new)
+                                wall_j = int(loc_j_new)
+                                if ((wall_j < j_cell) .or. (wall_i < i_cell .and. wall_j == j_cell)) then
+                                    ! if in previous cell can add directly to cell array and increase number of particle counter
+                                    self%logical_position(1, self%cell_starting_indx(wall_i, wall_j) + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_i_new
+                                    self%logical_position(2, self%cell_starting_indx(wall_i, wall_j) + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_j_new
+                                    self%velocity(1:2, self%cell_starting_indx(wall_i, wall_j) + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_part
+                                    self%velocity(3, self%cell_starting_indx(wall_i, wall_j) + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_z
+                                    self%number_particles_cell_thread(wall_i, wall_j, i_thread) = self%number_particles_cell_thread(wall_i, wall_j, i_thread) + 1
+                                else
+                                    number_particles_outside_cell = self%number_particles_cell_thread(wall_i, wall_j, i_thread)
+                                    cell_end_indx = self%cell_ending_indx(wall_i, wall_j)
+                                    if (cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread) > &
+                                        self%cell_starting_indx(wall_i, wall_j) + number_particles_outside_cell - 1) then
+                                        ! Space within the cell array to place particles at end of the array
+                                        self%logical_position(1, cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_i_new
+                                        self%logical_position(2, cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_j_new
+                                        self%velocity(1:2, cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_part
+                                        self%velocity(3, cell_end_indx - number_particles_added_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_z
+                                        number_particles_added_cell_thread(wall_i, wall_j, i_thread) = number_particles_added_cell_thread(wall_i, wall_j, i_thread) + 1
+                                    else   
+                                        ! no space left, place in overflow array
+                                        number_particles_overflow = number_particles_overflow + 1
+                                        logical_position_overflow(1, number_particles_overflow, i_thread) = loc_i_new
+                                        logical_position_overflow(2, number_particles_overflow, i_thread) = loc_j_new
+                                        velocity_overflow(1:2, number_particles_overflow, i_thread) = v_part
+                                        velocity_overflow(3, number_particles_overflow, i_thread) = v_z
+                                    end if
+                                end if
+                            end if
+
                         end if
 
                     end if
