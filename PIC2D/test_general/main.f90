@@ -183,7 +183,7 @@ program main
     EField_time = 0.0d0
     mover_time = 0.0d0
     solver_time = 0.0d0
-    number_diagnostics = 30
+    number_diagnostics = 10
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
     close(41)
@@ -230,6 +230,7 @@ program main
     call system_clock(startTime)
     do i = 1, number_charged_particles
         call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
+        call particle_list(i)%resize_particle_arrays()
     end do
     call system_clock(endTime)
     print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'

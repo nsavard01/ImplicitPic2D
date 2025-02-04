@@ -32,6 +32,7 @@ module mod_particle
         procedure, public, pass(self) :: interpolation_particle_to_nodes
         ! procedure, public, pass(self) :: interpolation_particle_to_nodes_sorted
         procedure, public, pass(self) :: particle_sort
+        procedure, public, pass(self) :: resize_particle_arrays
         procedure, public, pass(self) :: particle_mover_uniform
         ! procedure, public, pass(self) :: initializeRandCosine
         ! procedure, public, pass(self) :: initializeRandSine
@@ -576,6 +577,45 @@ contains
         !$OMP end parallel
         res = res * self % mass * 0.5d0 / e_charge / SUM(self%number_particles_thread)
     end function getKEAve
+
+    subroutine resize_particle_arrays(self)
+        class(Particle), intent(in out) :: self
+        integer(int32) :: i_thread
+        integer(int64) :: max_indx_new
+        real(real64), allocatable :: logical_position_copy(:,:,:), velocity_copy(:,:,:)
+        
+        max_indx_new = real(maxval(self%number_particles_thread))
+        if (real(max_indx_new, kind = 8) < real(self%max_indx, kind = 8) * 0.8d0 .or. real(max_indx_new, kind = 8) > real(self%max_indx, kind = 8) * 0.95d0) then
+            ! Try to keep max indx for particles within 20%
+            self%max_indx = int(real(max_indx_new, kind = 8) / 0.875d0)
+            ! copy arrays to allocated array
+            allocate(logical_position_copy(2, self%max_indx, number_threads_global), velocity_copy(3, self%max_indx, number_threads_global))
+            !$OMP parallel private(i_thread)
+            i_thread = omp_get_thread_num() + 1
+            logical_position_copy(:,1:self%number_particles_thread(i_thread), i_thread) = self%logical_position(:, 1:self%number_particles_thread(i_thread), i_thread)
+            velocity_copy(:, 1:self%number_particles_thread(i_thread), i_thread) = self%velocity(:, 1:self%number_particles_thread(i_thread), i_thread)
+            !$OMP end parallel
+
+            deallocate(self%logical_position, self%velocity)
+            call move_alloc(logical_position_copy, self%logical_position)
+            call move_alloc(velocity_copy, self%velocity)
+            ! allocate(self%logical_position(2, self%max_indx, number_threads_global), self%velocity(3, self%max_indx, number_threads_global))
+            ! !$OMP parallel private(i_thread)
+            ! i_thread = omp_get_thread_num() + 1
+            ! self%logical_position(:,1:self%number_particles_thread(i_thread), i_thread) = logical_position_copy(:, 1:self%number_particles_thread(i_thread), i_thread)
+            ! self%velocity(:, 1:self%number_particles_thread(i_thread), i_thread) = velocity_copy(:, 1:self%number_particles_thread(i_thread), i_thread)
+            ! !$OMP end parallel
+            ! deallocate(logical_position_copy, velocity_copy)
+            if (allocated(logical_position_copy)) then
+                print *, 'error with allocation'
+
+            else if (allocated(velocity_copy)) then
+                print *, 'error with allocation'
+            end if
+
+        end if
+
+    end subroutine
 
     ! function getTotalMomentum(self) result(res)
     !     ! Get total momentum in domain
