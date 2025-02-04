@@ -67,9 +67,9 @@ program main
     
     rho = e_charge * n_ave
 
-    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(1) = 3 ! North
     NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(3) = 3 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
@@ -175,7 +175,7 @@ program main
     EField_time = 0.0d0
     mover_time = 0.0d0
     solver_time = 0.0d0
-    number_diagnostics = 1
+    number_diagnostics = 100
     call system_clock(count_rate = timingRate)
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
@@ -192,31 +192,30 @@ program main
             end do
             call system_clock(endTime)
             interp_time = interp_time + real(endTime - startTime)
-            print *, 'interp done'
+   
             call system_clock(startTime)
             call get_poisson_source_term(solver, world)
             call system_clock(endTime)
             source_term_time = source_term_time + real(endTime - startTime)
-            print *, 'source term done'
+      
         
             call system_clock(startTime)
             call mg_solver%solve(stepTol, relTol, 1)
             call system_clock(endTime)
             solver_time = solver_time + real(endTime - startTime)
-            print *, 'solver done'
+     
 
             call system_clock(startTime)
             call get_electric_field(E_Field, solver, world)
             call system_clock(endTime)
             EField_time = EField_time + real(endTime - startTime)
-            print *, 'Efield done'
+    
 
             
             call system_clock(startTime)
             call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
             call system_clock(endTime)
             mover_time = mover_time + real(endTime - startTime)
-            print *, 'mover done'
             
             print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread), sum(particle_list(2)%number_particles_cell_thread)
         end select

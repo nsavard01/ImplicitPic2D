@@ -81,14 +81,16 @@ gridY = gridY[0:numNodes[1]:2**(stage-1)]
 grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 
 plt.figure()
-for i in range(numDiag):
-
-    sol_1 = np.fromfile('finalSol' + str(i+1) + '.dat')
-    plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
-    cb = plt.colorbar()
+sol_1 = np.fromfile('finalSol' + str(1) + '.dat')
+plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order='F'), shading='nearest')
+cb = plt.colorbar()
+for i in range(1,numDiag):
     plt.pause(0.08)
     cb.remove()
     plt.cla()
+    sol_1 = np.fromfile('finalSol' + str(i + 1) + '.dat')
+    plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order='F'), shading='nearest')
+    cb = plt.colorbar()
 
 
 # plt.figure()
