@@ -168,7 +168,7 @@ program main
     print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, ''
     print *, 'Particle temp is:', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0, particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
-
+    
     ! get E-field
     allocate(E_Field(2,N_x, N_y))
     E_field = 0.0d0
@@ -183,7 +183,7 @@ program main
     EField_time = 0.0d0
     mover_time = 0.0d0
     solver_time = 0.0d0
-    number_diagnostics = 1
+    number_diagnostics = 10
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
     close(41)
@@ -214,10 +214,10 @@ program main
             EField_time = EField_time + real(endTime - startTime)
 
             call system_clock(startTime)
-            call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
+            call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t, k == number_diagnostics)
             call system_clock(endTime)
             mover_time = mover_time + real(endTime - startTime)
-            print *, 'amount total particles', sum(particle_list(1)%number_particles_thread), sum(particle_list(2)%number_particles_thread)
+            print *, 'amount total particles', sum(particle_list(1)%number_particles_thread), sum(particle_list(2)%number_particles_thread), sum(particle_list(1)%cell_count)
 
         end select
         write(char_i, '(I4)') k
@@ -227,6 +227,13 @@ program main
         close(41)
     end do
 
+    call system_clock(startTime)
+    do i = 1, number_charged_particles
+        call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
+    end do
+    call system_clock(endTime)
+    print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
+    print *, ''
     print *, ''
     print *, 'interpolation time took', interp_time / real(timingRate)
     print *, 'source term time took', source_term_time / real(timingRate)
@@ -758,17 +765,18 @@ contains
 
 
 
-    subroutine push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
+    subroutine push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t, count_bool)
         type(domain_uniform), intent(in) :: world
         real(real64), intent(in) :: E_field(2,world%N_x,world%N_y), del_t
         integer(int32), intent(in) :: number_charged_particles
         type(Particle), intent(in out) :: particle_list(number_charged_particles)
+        logical, intent(in) :: count_bool
         integer(int32) :: i_thread, part_idx
 
        !$OMP parallel private(i_thread, part_idx)
         i_thread = omp_get_thread_num() + 1
         do part_idx = 1, number_charged_particles
-            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread)
+            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread, count_bool)
             ! call particle_list(part_idx)%particle_resort(world, i_thread)
         end do
         !$OMP end parallel

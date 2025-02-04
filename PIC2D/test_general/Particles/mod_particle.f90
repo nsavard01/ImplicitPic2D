@@ -301,11 +301,12 @@ contains
 
     end subroutine particle_sort
 
-    subroutine particle_mover_uniform(self, E_Field, world, del_t, i_thread)
+    subroutine particle_mover_uniform(self, E_Field, world, del_t, i_thread, count_bool)
         class(Particle), intent(in out) :: self
         type(domain_uniform), intent(in) :: world
         real(real64), intent(in) :: E_Field(2,world%N_x,world%N_y), del_t
         integer(int32), intent(in) :: i_thread
+        logical, intent(in) :: count_bool
         real(real64) :: v_part(2), loc_i, loc_j, d_i, d_j, E_part(2),&
             E_SE(2), E_SW(2), E_NW(2), E_NE(2), inv_del_x, inv_del_y, &
             v_xi, v_eta, del_t_i, del_t_j, loc_i_new, loc_j_new
@@ -467,7 +468,7 @@ contains
                 self%logical_position(2, part_num - delete_idx, i_thread) = loc_j_new
                 self%velocity(1:2, part_num - delete_idx, i_thread) = v_part
                 self%velocity(3, part_num - delete_idx, i_thread) = self%velocity(3, part_num, i_thread)
-                ! self%cell_count(int(loc_i_new), int(loc_j_new), i_thread) = self%cell_count(int(loc_i_new), int(loc_j_new), i_thread) + 1
+                if (count_bool) self%cell_count(int(loc_i_new), int(loc_j_new), i_thread) = self%cell_count(int(loc_i_new), int(loc_j_new), i_thread) + 1
             else
                 delete_idx = delete_idx + 1
             end if
