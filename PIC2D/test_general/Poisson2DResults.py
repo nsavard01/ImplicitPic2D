@@ -61,9 +61,10 @@ def format_coord(x, y):
 numNodes = np.fromfile('NumNodes.dat', dtype=int)
 gridX = np.fromfile('gridX.dat')
 gridY = np.fromfile('gridY.dat')
-sol_1 = np.fromfile('finalSol.dat')
-E_x = np.fromfile('E_x.dat')
-E_y = np.fromfile('E_y.dat')
+numDiag = np.fromfile('NumDiag.dat', dtype = int)[0]
+# source_term = np.fromfile('source_term.dat')
+# E_x = np.fromfile('E_x.dat')
+# E_y = np.fromfile('E_y.dat')
 
 grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 Length = gridX[-1] - gridX[0]
@@ -79,20 +80,24 @@ gridX = gridX[0:numNodes[0]:2**(stage-1)]
 gridY = gridY[0:numNodes[1]:2**(stage-1)]
 grid2DX, grid2DY = np.meshgrid(gridX, gridY, indexing = 'ij')
 
-
-
 plt.figure()
-plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
-plt.colorbar()
+for i in range(numDiag):
+
+    sol_1 = np.fromfile('finalSol' + str(i+1) + '.dat')
+    plt.pcolormesh(grid2DX, grid2DY, np.reshape(sol_1, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
+    cb = plt.colorbar()
+    plt.pause(0.08)
+    cb.remove()
+    plt.cla()
 
 
-plt.figure()
-plt.pcolormesh(grid2DX, grid2DY, np.reshape(E_x, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
-plt.colorbar()
-
-plt.figure()
-plt.pcolormesh(grid2DX, grid2DY, np.reshape(E_y, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
-plt.colorbar()
+# plt.figure()
+# plt.pcolormesh(grid2DX, grid2DY, np.reshape(E_x, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
+# plt.colorbar()
+#
+# plt.figure()
+# plt.pcolormesh(grid2DX, grid2DY, np.reshape(E_y, (numNodes_x, numNodes_y), order = 'F'), shading = 'nearest')
+# plt.colorbar()
 
 # test = np.reshape(sol_1, (numNodes[0], numNodes[1]), order = 'F')[0:numNodes[0]:2, 0:numNodes[1]:2] - np.reshape(GSRes, (numNodes_x, numNodes_y), order = 'F')
 # plt.figure()

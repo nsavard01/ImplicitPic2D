@@ -22,14 +22,15 @@ program main
     real(real64), allocatable :: E_Field(:, :, :)
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
-    integer :: inner_box_first_y, inner_box_last_y, inner_box_first_x, inner_box_last_x, i_thread
+    integer :: inner_box_first_y, inner_box_last_y, inner_box_first_x, inner_box_last_x, i_thread, number_diagnostics
     real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
-    real(real64) :: relTol, stepTol, temp_real, n_ave, del_t, T_e
+    real(real64) :: relTol, stepTol, temp_real, n_ave, del_t, T_e, T_i, interp_time, source_term_time, solver_time, EField_time, mover_time
     logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool
     integer(int32) :: num_part_per_cell = 200
     integer(int64) :: num_part_total
+    character(len=5) :: char_i
 
     call execute_command_line("rm -r *.dat")
     call mkl_set_num_threads(numThreads)
@@ -60,12 +61,15 @@ program main
     omega = 1.5d0
     relTol = 1.d-8
     stepTol = 1.d-6
-    n_ave = 1.d12
+    n_ave = 1.d16
+    T_e = 2.0d0
+    T_i = 0.025d0
+    
     rho = e_charge * n_ave
 
-    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(1) = 2 ! North
     NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(3) = 2 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
@@ -144,96 +148,94 @@ program main
 
 
     num_part_total = num_part_per_cell * world%number_total_cells
-    T_e = 2.0d0
-    call change_global_numPart(1)
+    
+    call change_global_numPart(2)
     allocate(particle_list(number_charged_particles))
-    particle_list(1) = Particle(mass_electron, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world%N_x, world%N_y)
+    particle_list(1) = Particle(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world%N_x, world%N_y)
     call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(1)%initialize_rand_uniform(world)
     call particle_list(1)%initialize_maxwellian_temperature(T_e)
     print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0
-    call system_clock(count_rate = timingRate)
-    call system_clock(startTime)
-    call particle_list(1)%interpolation_particle_to_nodes()
-    call system_clock(endTime)
-    print *, 'particle interpolation took', real(endTime - startTime)/real(timingRate), 'seconds'
-    print *, ''
 
-
-
-    
+    particle_list(2) = Particle(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world%N_x, world%N_y)
+    call particle_list(2)%initialize_weight_from_n_ave(n_ave, world)
+    call particle_list(2)%initialize_rand_uniform(world)
+    call particle_list(2)%initialize_maxwellian_temperature(T_i)
+    print *, 'average KE', particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
     select type (world)
     type is (domain_uniform)
         del_t = 0.5d0 * min(world%del_x, world%del_y)/sqrt(2.0d0 * T_e * e_charge/mass_electron)
+        print *, del_t
     end select
-
-    call system_clock(startTime)
-    call get_poisson_source_term(solver, particle_list, 1, world)
-    call system_clock(endTime)
-    print *, 'particle collecting particle source term took', real(endTime - startTime)/real(timingRate), 'seconds'
-    print *, ''
-    
-
-    ! ! !$OMP parallel private(k, i, j)
-    ! ! !$OMP do collapse(2)
-    ! ! do j = 1, solver%N_y
-    ! !     do i = 1, solver%N_x
-    ! !         k = (j-1) * N_x + i
-    ! !         if (world%boundary_conditions(i,j) /= 1) then
-    ! !             ! stageOne%sourceTerm(i,j) = -rho/eps_0
-    ! !             solver%sourceTerm(i,j) = -rho/epsilon_0
-    ! !         end if
-    ! !     end do
-    ! ! end do
-    ! ! !$OMP end do
-    ! ! !$OMP end parallel
-
-
-    call system_clock(startTime)
-    call mg_solver%solve(stepTol, relTol, 1)
-    call system_clock(endTime)
-    print *, 'Took', mg_solver%numIter, 'iterations for MG'
-    print *, 'MG took', real(endTime - startTime)/real(timingRate), 'seconds'
-    print *, ''
-
-    ! get E-field
     allocate(E_Field(2,N_x, N_y))
     E_field = 0.0d0
-    select type (world)
-    type is (domain_uniform)
-        call system_clock(startTime)
-        call get_electric_field(E_Field, solver, world)
-        call system_clock(endTime)
-        print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds for making electric field'
-        print *, ''
 
-        open(41,file='E_x.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-        write(41) E_Field(1,:,:)
-        close(41)
-
-        open(41,file='E_y.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-        write(41) E_Field(2,:,:)
-        close(41)
-
-        print *, 'Doing particle push'
-        print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread)
-        call system_clock(startTime)
-        call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
-        ! call delete_particles_uniform(particle_list, number_charged_particles)
-        call system_clock(endTime)
-        print *, 'Took', real(endTime - startTime)/real(timingRate), 'seconds for particle push'
-        print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread)
-    end select
-
-    
-
-    
-
-    
-    
-    open(41,file='finalSol.dat', form='UNFORMATTED', access = 'stream', status = 'new')
-    write(41) solver%solution
+    interp_time = 0.0d0
+    source_term_time = 0.0d0
+    EField_time = 0.0d0
+    mover_time = 0.0d0
+    solver_time = 0.0d0
+    number_diagnostics = 1
+    call system_clock(count_rate = timingRate)
+    open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+    write(41) number_diagnostics
     close(41)
+    do k = 1, number_diagnostics
+    
+        select type (world)
+        type is (domain_uniform)
+
+            call system_clock(startTime)
+            call reset_particle_work_space()
+            do i = 1, number_charged_particles
+                call particle_list(i)%interpolation_particle_to_nodes()
+            end do
+            call system_clock(endTime)
+            interp_time = interp_time + real(endTime - startTime)
+            print *, 'interp done'
+            call system_clock(startTime)
+            call get_poisson_source_term(solver, world)
+            call system_clock(endTime)
+            source_term_time = source_term_time + real(endTime - startTime)
+            print *, 'source term done'
+        
+            call system_clock(startTime)
+            call mg_solver%solve(stepTol, relTol, 1)
+            call system_clock(endTime)
+            solver_time = solver_time + real(endTime - startTime)
+            print *, 'solver done'
+
+            call system_clock(startTime)
+            call get_electric_field(E_Field, solver, world)
+            call system_clock(endTime)
+            EField_time = EField_time + real(endTime - startTime)
+            print *, 'Efield done'
+
+            
+            call system_clock(startTime)
+            call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
+            call system_clock(endTime)
+            mover_time = mover_time + real(endTime - startTime)
+            print *, 'mover done'
+            
+            print *, 'amount total particles', sum(particle_list(1)%number_particles_cell_thread), sum(particle_list(2)%number_particles_cell_thread)
+        end select
+        write(char_i, '(I4)') k
+        print *, 'finalSol'//trim(adjustl(char_i))//'.dat'
+        open(41,file='finalSol'//trim(adjustl(char_i))//'.dat', form='UNFORMATTED', access = 'stream', status = 'new')
+        write(41) solver%solution
+        close(41)
+    end do
+
+    print *, ''
+    print *, 'interpolation time took', interp_time / real(timingRate)
+    print *, 'source term time took', source_term_time / real(timingRate)
+    print *, 'solver time took', solver_time / real(timingRate)
+    print *, 'EField time took', EField_time / real(timingRate)
+    print *, 'Mover time took', mover_time / real(timingRate)
+    print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0, particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
+
+    
 
     
     end associate
@@ -507,12 +509,10 @@ contains
 
     end subroutine get_electric_field
 
-    subroutine get_poisson_source_term(first_smoother, particle_list, number_charged_particles, world)
+    subroutine get_poisson_source_term(first_smoother, world)
         class(domain_base), intent(in) :: world
         class(GS_Base), intent(in out) :: first_smoother
-        integer, intent(in) :: number_charged_particles
-        type(Particle), intent(in) :: particle_list(number_charged_particles)
-        integer(int32) :: i, i_thread, j, p, k, part_num
+        integer(int32) :: i, i_thread, j, p, k
         real(real64) :: inv_epsilon_0
         inv_epsilon_0 = 1.0d0/epsilon_0
 
@@ -521,7 +521,7 @@ contains
 
         select type (world)
         type is (domain_uniform)
-            !$OMP parallel private(k, p, i, j, part_num, i_thread)
+            !$OMP parallel private(k, p, i, j, i_thread)
             !$OMP workshare
             first_smoother%sourceTerm = 0.0d0
             !$OMP end workshare
@@ -634,7 +634,7 @@ contains
             !$OMP end do
             !$OMP end parallel      
         type is (domain_curv)
-            !$OMP parallel private(k, p, i, j, part_num, i_thread)
+            !$OMP parallel private(k, p, i, j, i_thread)
             !$OMP workshare
             first_smoother%sourceTerm = 0.0d0
             !$OMP end workshare

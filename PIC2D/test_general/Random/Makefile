@@ -1,5 +1,5 @@
 COMPILER_C = icx
-BASE_C = -O3 -ipo -xHost -fast -qmkl -qopenmp
+
 
 all: mod_rand_generator.o PCG_func.o
 

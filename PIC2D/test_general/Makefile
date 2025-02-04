@@ -1,5 +1,6 @@
 FC = ifx
 BASE= -Ofast -ipo -qopenmp -qmkl -xHost -heap-arrays 8192 #-xCORE-AVX512 -mt_mpi 
+BASE_C = -O3 -ipo -xHost -fast -qmkl -qopenmp
 DEBUG = -qmkl -qopenmp -g -traceback -check all -heap-arrays 8192 -fp-stack-check -warn all #-traceback -CB -fp-stack-check -warn all -check uninit -check pointers -check output_conversion -check format -check stack -fpe0 -check arg_temp_created -g
 OPT= $(BASE)
 
@@ -38,6 +39,7 @@ debug: clean setDebug main
 setDebug: 
 	@echo "Setting up Debug flags"
 	$(eval BASE = -qmkl -qopenmp -g -traceback -check all -fp-stack-check -warn all)
+	$(eval BASE_C = -qmkl -qopenmp -g -traceback -check all -fp-stack-check -warn all)
 	
 main: main.o $(total_obj_list)
 	$(FC) $(BASE) -o $@ main.o $(total_obj_list)
@@ -52,7 +54,7 @@ particle: world constants random
 	cd $(particle_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
 world: constants random
-	cd $(world_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
+	cd $(world_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "BASE_C=$(BASE_C)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
 random: constants
 	cd $(rand_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
