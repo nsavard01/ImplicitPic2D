@@ -140,7 +140,7 @@ contains
                 call self%MG_smoothers(1)%GS_Smoother%smoothIterations(self%numberPreSmoothOper-1)
                 self%stepResidual = self%MG_smoothers(1)%GS_Smoother%smoothWithRes()
                 if (self%stepResidual < stepTol) then
-                    print *, 'step residual lowered'
+                    ! print *, 'step residual lowered'
                     exit
                 end if
                 ! Final Residual calculation
@@ -149,9 +149,9 @@ contains
                 self%R2_current = SUM(self%MG_smoothers(1)%GS_Smoother%residual**2)
                 !$OMP end parallel workshare
                 self%R2_current = sqrt(self%R2_current)
-                print *, 'MG iter:', i, 'res:', self%R2_current/initRes
+                ! print *, 'MG iter:', i, 'res:', self%R2_current/initRes
                 if (self%R2_current/initRes < relTol) then
-                    print *, 'Starting residual lowered'
+                    ! print *, 'Starting residual lowered'
                     exit
                 end if
             end do
