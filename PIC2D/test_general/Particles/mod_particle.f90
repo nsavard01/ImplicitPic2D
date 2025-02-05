@@ -30,6 +30,7 @@ module mod_particle
         procedure, public, pass(self) :: initialize_weight_from_n_ave
         procedure, public, pass(self) :: initialize_rand_uniform
         procedure, public, pass(self) :: interpolation_particle_to_nodes
+        procedure, public, pass(self) :: interpolation_particle_to_nodes_and_sort
         ! procedure, public, pass(self) :: interpolation_particle_to_nodes_sorted
         procedure, public, pass(self) :: particle_sort
         procedure, public, pass(self) :: resize_particle_arrays
@@ -144,7 +145,7 @@ contains
         !$OMP end parallel
     end subroutine initialize_rand_uniform
 
-    subroutine interpolation_particle_to_nodes(self)
+    subroutine interpolation_particle_to_nodes(self, N_x_cell, N_y_cell)
         ! interpolate particles to work space array
         class(Particle), intent(in out) :: self
         integer(int32) :: i_thread, i_cell, j_cell
@@ -170,6 +171,11 @@ contains
         !$OMP end parallel
 
     end subroutine interpolation_particle_to_nodes
+
+    subroutine interpolation_particle_to_nodes_and_sort(self)
+
+
+    end subroutine interpolation_particle_to_nodes_and_sort
 
 
     ! subroutine interpolation_particle_to_nodes_sorted(self, N_x_cells, N_y_cells)
