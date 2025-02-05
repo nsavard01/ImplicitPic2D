@@ -10,12 +10,13 @@ module mod_particle
     implicit none
 
     private
-    public :: Particle, reset_particle_work_space
+    public :: Particle, reset_particle_work_space, push_particles_uniform
     ! The following arrays will be used by all particles for threaded operations as temporaries, so only allocate a single time
     real(real64), allocatable, public, protected :: logical_position_overflow(:,:,:), velocity_overflow(:,:,:), particle_work_space(:,:,:)
-    integer(int64), allocatable, public, protected :: number_particles_overflow_thread(:)
+    ! integer(int64), allocatable, public, protected :: number_particles_overflow_thread(:)
     integer(int32), allocatable, public, protected :: number_particles_added_cell_thread(:,:,:)
-    integer(int64), public, protected :: max_indx_overflow = 0
+    integer(int64), public, protected :: max_indx_overflow = 0, max_number_overflow = 0, number_particles_overflow_thread = 0
+    !$OMP threadprivate(number_particles_overflow_thread)
 
     ! Particle contains particle properties and stored values in phase space
     type :: Particle
@@ -82,13 +83,13 @@ contains
             particle_work_space(:,:,omp_get_thread_num()+1) = 0.0d0
             !$OMP end parallel
         end if
-        if (.not. allocated(number_particles_overflow_thread)) allocate(number_particles_overflow_thread(number_threads_global))
+        ! if (.not. allocated(number_particles_overflow_thread)) allocate(number_particles_overflow_thread(number_threads_global))
         if (.not. allocated(number_particles_added_cell_thread)) then
             allocate(number_particles_added_cell_thread(N_x-1, N_y-1, number_threads_global))
             number_particles_added_cell_thread = 0
         end if
         !$OMP parallel
-        number_particles_overflow_thread(omp_get_thread_num()+1) = N_p/number_threads_global
+        number_particles_overflow_thread = N_p/number_threads_global
         !$OMP end parallel
         allocate(self%cell_starting_indx(N_x-1, N_y-1), self%cell_ending_indx(N_x-1, N_y-1), &
         self%number_particles_cell_thread(N_x-1, N_y-1, number_threads_global))
@@ -121,7 +122,7 @@ contains
         real(real64), intent(in) :: n_ave
         class(domain_base), intent(in) :: world
         integer :: i, j
-        real(real64) :: area
+        real(real64) :: area, sum_part
 
         select type (world)
         type is (domain_uniform)
@@ -141,7 +142,11 @@ contains
             !$OMP end do
             !$OMP end parallel
         end select 
-        self%weight = n_ave * area / SUM(number_particles_overflow_thread)
+        sum_part = 0
+        !$OMP parallel reduction(+:sum_part)
+        sum_part = sum_part + number_particles_overflow_thread
+        !$OMP end parallel
+        self%weight = n_ave * area / real(sum_part, kind = 8)
         self%q_times_weight = self%charge * self%weight
     end subroutine initialize_weight_from_n_ave
 
@@ -156,7 +161,7 @@ contains
         L_y = world%end_Y - world%start_Y
         !$OMP parallel private(i_thread, i, x_pos, y_pos, eta, xi, int_xi, int_eta)
         i_thread = omp_get_thread_num() + 1
-        do i = 1, number_particles_overflow_thread(i_thread)
+        do i = 1, number_particles_overflow_thread
             x_pos = pcg32_random_r(state_PCG) * L_x + world%start_X
             xi = world%get_xi_from_X(x_pos)
             int_xi = int(xi)
@@ -439,7 +444,6 @@ contains
             end do
         end do
         
-        number_particles_overflow_thread(i_thread) = number_particles_overflow
         
         ! ! put remaining particles in overflow array in proper cell
         do part_num = 1, number_particles_overflow
@@ -455,7 +459,34 @@ contains
             self%number_particles_cell_thread(wall_i, wall_j, i_thread) = self%number_particles_cell_thread(wall_i, wall_j, i_thread) + 1
         end do
 
+        ! used to keep track of maximum amount of overflow
+        number_particles_overflow_thread = number_particles_overflow
+        print *, 'in thread', omp_get_thread_num() + 1
+        
+
     end subroutine particle_mover_uniform
+
+    subroutine push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
+        type(domain_uniform), intent(in) :: world
+        real(real64), intent(in) :: E_field(2,world%N_x,world%N_y), del_t
+        integer(int32), intent(in) :: number_charged_particles
+        type(Particle), intent(in out) :: particle_list(number_charged_particles)
+        integer(int32) :: i_thread, part_idx
+
+        max_number_overflow = 0
+        !$OMP parallel private(i_thread, part_idx)
+        i_thread = omp_get_thread_num() + 1
+        do part_idx = 1, number_charged_particles
+            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread)
+            ! call particle_list(part_idx)%particle_resort(world, i_thread)
+            max_number_overflow = max(number_particles_overflow_thread, max_number_overflow)
+        end do
+        !$OMP end parallel
+        stop
+
+
+
+    end subroutine push_particles_uniform
 
     ! subroutine interpolation_particle_to_nodes_sorted(self, N_x_cells, N_y_cells)
     !     ! interpolate particles to work space array
@@ -736,6 +767,45 @@ contains
         !$OMP end parallel
         res = res * self % mass * 0.5d0 / e_charge / SUM(self%number_particles_cell_thread)
     end function getKEAve
+
+    ! subroutine resize_particle_arrays(particle_list)
+    !     type(Particle), intent(in out) :: self
+    !     integer(int32) :: i_thread
+    !     integer(int64) :: max_indx_new
+    !     real(real64), allocatable :: logical_position_copy(:,:,:), velocity_copy(:,:,:)
+        
+    !     max_indx_new = real(maxval(self%number_particles_thread))
+    !     if (real(max_indx_new, kind = 8) < real(self%max_indx, kind = 8) * 0.8d0 .or. real(max_indx_new, kind = 8) > real(self%max_indx, kind = 8) * 0.95d0) then
+    !         ! Try to keep max indx for particles within 20%
+    !         self%max_indx = int(real(max_indx_new, kind = 8) / 0.875d0)
+    !         ! copy arrays to allocated array
+    !         allocate(logical_position_copy(2, self%max_indx, number_threads_global), velocity_copy(3, self%max_indx, number_threads_global))
+    !         !$OMP parallel private(i_thread)
+    !         i_thread = omp_get_thread_num() + 1
+    !         logical_position_copy(:,1:self%number_particles_thread(i_thread), i_thread) = self%logical_position(:, 1:self%number_particles_thread(i_thread), i_thread)
+    !         velocity_copy(:, 1:self%number_particles_thread(i_thread), i_thread) = self%velocity(:, 1:self%number_particles_thread(i_thread), i_thread)
+    !         !$OMP end parallel
+
+    !         deallocate(self%logical_position, self%velocity)
+    !         call move_alloc(logical_position_copy, self%logical_position)
+    !         call move_alloc(velocity_copy, self%velocity)
+    !         ! allocate(self%logical_position(2, self%max_indx, number_threads_global), self%velocity(3, self%max_indx, number_threads_global))
+    !         ! !$OMP parallel private(i_thread)
+    !         ! i_thread = omp_get_thread_num() + 1
+    !         ! self%logical_position(:,1:self%number_particles_thread(i_thread), i_thread) = logical_position_copy(:, 1:self%number_particles_thread(i_thread), i_thread)
+    !         ! self%velocity(:, 1:self%number_particles_thread(i_thread), i_thread) = velocity_copy(:, 1:self%number_particles_thread(i_thread), i_thread)
+    !         ! !$OMP end parallel
+    !         ! deallocate(logical_position_copy, velocity_copy)
+    !         if (allocated(logical_position_copy)) then
+    !             print *, 'error with allocation'
+
+    !         else if (allocated(velocity_copy)) then
+    !             print *, 'error with allocation'
+    !         end if
+
+    !     end if
+
+    ! end subroutine
 
     ! function getTotalMomentum(self) result(res)
     !     ! Get total momentum in domain

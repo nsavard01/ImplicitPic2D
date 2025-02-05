@@ -175,7 +175,7 @@ program main
     EField_time = 0.0d0
     mover_time = 0.0d0
     solver_time = 0.0d0
-    number_diagnostics = 40
+    number_diagnostics = 10
     call system_clock(count_rate = timingRate)
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
@@ -751,25 +751,6 @@ contains
     end subroutine get_poisson_source_term
 
 
-
-
-
-    subroutine push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
-        type(domain_uniform), intent(in) :: world
-        real(real64), intent(in) :: E_field(2,world%N_x,world%N_y), del_t
-        integer(int32), intent(in) :: number_charged_particles
-        type(Particle), intent(in out) :: particle_list(number_charged_particles)
-        integer(int32) :: i_thread, part_idx
-
-        !$OMP parallel private(i_thread, part_idx)
-        i_thread = omp_get_thread_num() + 1
-        do part_idx = 1, number_charged_particles
-            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread)
-            ! call particle_list(part_idx)%particle_resort(world, i_thread)
-        end do
-        !$OMP end parallel
-
-    end subroutine push_particles_uniform
 
 
 
