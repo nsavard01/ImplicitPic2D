@@ -215,7 +215,7 @@ program main
             EField_time = EField_time + real(endTime - startTime)
 
             call system_clock(startTime)
-            call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t, i == number_diagnostics)
+            call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t, k == number_diagnostics)
             call system_clock(endTime)
             mover_time = mover_time + real(endTime - startTime)
             print *, 'amount total particles', sum(particle_list(1)%number_particles_thread), sum(particle_list(2)%number_particles_thread), sum(particle_list(1)%cell_count)
@@ -228,13 +228,13 @@ program main
         close(41)
     end do
 
-    ! call system_clock(startTime)
-    ! do i = 1, number_charged_particles
-    !     call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
-    !     ! call particle_list(i)%resize_particle_arrays()
-    ! end do
-    ! call system_clock(endTime)
-    ! sort_time = sort_time + real(endTime - startTime)
+    call system_clock(startTime)
+    do i = 1, number_charged_particles
+        call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
+        ! call particle_list(i)%resize_particle_arrays()
+    end do
+    call system_clock(endTime)
+    sort_time = sort_time + real(endTime - startTime)
     print *, 'particle sorting took', sort_time/real(timingRate), 'seconds'
     print *, ''
     print *, ''
