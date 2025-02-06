@@ -198,7 +198,7 @@ contains
         integer(int64) :: part_num
         real(real64) :: d_i, d_j, xi, eta, i_cell_real, j_cell_real
 
-        !$OMP parallel private(part_num, i_cell,j_cell, d_i, d_j, xi, eta, i_thread)
+        !$OMP parallel private(part_num, i_cell,j_cell, i_cell_real, j_cell_real, d_i, d_j, xi, eta, i_thread)
         i_thread = omp_get_thread_num() + 1
         do j_cell = 1, N_y_cell
             j_cell_real = real(j_cell, kind = 8)
