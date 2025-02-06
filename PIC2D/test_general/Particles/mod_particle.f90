@@ -190,16 +190,14 @@ contains
         !$OMP end parallel
     end subroutine initialize_rand_uniform
 
-    subroutine interpolation_particle_to_nodes(self)
+    subroutine interpolation_particle_to_nodes(self, N_x_cell, N_y_cell)
         ! interpolate particles to work space array
         class(Particle), intent(in out) :: self
-        integer(int32) :: N_x_cell, N_y_cell
+        integer(int32), intent(in) :: N_x_cell, N_y_cell
         integer(int32) :: i_thread, i_cell, j_cell
         integer(int64) :: part_num
         real(real64) :: d_i, d_j, xi, eta, i_cell_real, j_cell_real
 
-        N_x_cell = size(self%cell_starting_indx, DIM = 1)
-        N_y_cell = size(self%cell_starting_indx, DIM = 2)
         !$OMP parallel private(part_num, i_cell,j_cell, d_i, d_j, xi, eta, i_thread)
         i_thread = omp_get_thread_num() + 1
         do j_cell = 1, N_y_cell
@@ -461,7 +459,6 @@ contains
 
         ! used to keep track of maximum amount of overflow
         number_particles_overflow_thread = number_particles_overflow
-        print *, 'in thread', omp_get_thread_num() + 1
         
 
     end subroutine particle_mover_uniform
@@ -482,7 +479,6 @@ contains
             max_number_overflow = max(number_particles_overflow_thread, max_number_overflow)
         end do
         !$OMP end parallel
-        stop
 
 
 

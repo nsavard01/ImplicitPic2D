@@ -15,7 +15,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 601, N_y = 501, numThreads = 6
+    integer(int32) :: N_x = 601, N_y = 501, numThreads = 32
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -188,7 +188,7 @@ program main
             call system_clock(startTime)
             call reset_particle_work_space()
             do i = 1, number_charged_particles
-                call particle_list(i)%interpolation_particle_to_nodes()
+                call particle_list(i)%interpolation_particle_to_nodes(world%N_x-1, world%N_y-1)
             end do
             call system_clock(endTime)
             interp_time = interp_time + real(endTime - startTime)
@@ -232,6 +232,7 @@ program main
     print *, 'solver time took', solver_time / real(timingRate)
     print *, 'EField time took', EField_time / real(timingRate)
     print *, 'Mover time took', mover_time / real(timingRate)
+    print *, 'Total time is:', (interp_time + source_term_time + solver_time + EField_time + mover_time) / real(timingRate, kind = 8)
     print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0, particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
 
     
