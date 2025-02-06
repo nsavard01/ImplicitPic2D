@@ -10,7 +10,7 @@ module mod_particle
     implicit none
 
     private
-    public :: Particle, reset_particle_work_space, push_particles_uniform
+    public :: Particle, reset_particle_work_space, push_particles_uniform, interpolation_particle_charge_density
     ! The following arrays will be used by all particles for threaded operations as temporaries, so only allocate a single time
     real(real64), allocatable, public, protected :: logical_position_overflow(:,:,:), velocity_overflow(:,:,:), particle_work_space(:,:,:)
     ! integer(int64), allocatable, public, protected :: number_particles_overflow_thread(:)
@@ -190,16 +190,14 @@ contains
         !$OMP end parallel
     end subroutine initialize_rand_uniform
 
-    subroutine interpolation_particle_to_nodes(self, N_x_cell, N_y_cell)
+    subroutine interpolation_particle_to_nodes(self, i_thread, N_x_cell, N_y_cell)
         ! interpolate particles to work space array
-        class(Particle), intent(in out) :: self
-        integer(int32), intent(in) :: N_x_cell, N_y_cell
-        integer(int32) :: i_thread, i_cell, j_cell
+        class(Particle), intent(in) :: self
+        integer(int32), intent(in) :: i_thread, N_x_cell, N_y_cell
+        integer(int32) :: i_cell, j_cell
         integer(int64) :: part_num
         real(real64) :: d_i, d_j, xi, eta, i_cell_real, j_cell_real
 
-        !$OMP parallel private(part_num, i_cell,j_cell, i_cell_real, j_cell_real, d_i, d_j, xi, eta, i_thread)
-        i_thread = omp_get_thread_num() + 1
         do j_cell = 1, N_y_cell
             j_cell_real = real(j_cell, kind = 8)
             do i_cell = 1, N_x_cell
@@ -217,9 +215,21 @@ contains
                 end do
             end do
         end do
-        !$OMP end parallel
-
     end subroutine interpolation_particle_to_nodes
+
+    subroutine interpolation_particle_charge_density(particle_list, N_x_cell, N_y_cell)
+        type(Particle), intent(in) :: particle_list(number_charged_particles)
+        integer(int32), intent(in) :: N_x_cell, N_y_cell
+        integer(int32) :: i_thread, part_idx
+
+        !$OMP parallel private(i_thread, part_idx)
+        i_thread = omp_get_thread_num() + 1
+        particle_work_space(:,:, i_thread) = 0.0d0 
+        do part_idx = 1, number_charged_particles
+            call particle_list(part_idx)%interpolation_particle_to_nodes(i_thread, N_x_cell, N_y_cell)
+        end do
+        !$OMP end parallel
+    end subroutine interpolation_particle_charge_density
 
     subroutine reset_particle_work_space()
         integer(int32) :: i_thread
@@ -456,9 +466,6 @@ contains
             self%velocity(:, cell_start_indx + number_particles_cell, i_thread) = velocity_overflow(:, part_num, i_thread)
             self%number_particles_cell_thread(wall_i, wall_j, i_thread) = self%number_particles_cell_thread(wall_i, wall_j, i_thread) + 1
         end do
-
-        ! used to keep track of maximum amount of overflow
-        number_particles_overflow_thread = number_particles_overflow
         
 
     end subroutine particle_mover_uniform
@@ -470,13 +477,12 @@ contains
         type(Particle), intent(in out) :: particle_list(number_charged_particles)
         integer(int32) :: i_thread, part_idx
 
-        max_number_overflow = 0
+    
         !$OMP parallel private(i_thread, part_idx)
         i_thread = omp_get_thread_num() + 1
         do part_idx = 1, number_charged_particles
             call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread)
             ! call particle_list(part_idx)%particle_resort(world, i_thread)
-            max_number_overflow = max(number_particles_overflow_thread, max_number_overflow)
         end do
         !$OMP end parallel
 

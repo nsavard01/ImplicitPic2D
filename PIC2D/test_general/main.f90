@@ -175,7 +175,7 @@ program main
     EField_time = 0.0d0
     mover_time = 0.0d0
     solver_time = 0.0d0
-    number_diagnostics = 1
+    number_diagnostics = 10
     call system_clock(count_rate = timingRate)
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
@@ -186,10 +186,7 @@ program main
         type is (domain_uniform)
 
             call system_clock(startTime)
-            call reset_particle_work_space()
-            do i = 1, number_charged_particles
-                call particle_list(i)%interpolation_particle_to_nodes(world%N_x-1, world%N_y-1)
-            end do
+            call interpolation_particle_charge_density(particle_list, world%N_x-1, world%N_y-1)
             call system_clock(endTime)
             interp_time = interp_time + real(endTime - startTime)
    
