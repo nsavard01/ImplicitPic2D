@@ -64,10 +64,10 @@ program main
     n_ave = 1.d16
     rho = e_charge * n_ave
 
-    NESW_wallBoundaries(1) = 2 ! North
-    NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
-    NESW_wallBoundaries(4) = 1 ! West
+    NESW_wallBoundaries(1) = 1 ! North
+    NESW_wallBoundaries(2) = 2 ! East
+    NESW_wallBoundaries(3) = 1 ! South
+    NESW_wallBoundaries(4) = 2 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
@@ -193,6 +193,7 @@ program main
         select type (world)
         type is (domain_uniform)
             call system_clock(startTime)
+            call reset_particle_work_space()
             do i = 1, number_charged_particles
                 call particle_list(i)%interpolation_particle_to_nodes()
             end do
@@ -200,7 +201,7 @@ program main
             interp_time = interp_time + real(endTime - startTime)
 
             call system_clock(startTime)
-            call get_poisson_source_term(solver, particle_list, number_charged_particles, world)
+            call get_poisson_source_term(solver, world)
             call system_clock(endTime)
             source_term_time = source_term_time + real(endTime - startTime)
 
@@ -520,12 +521,10 @@ contains
 
     end subroutine get_electric_field
 
-    subroutine get_poisson_source_term(first_smoother, particle_list, number_charged_particles, world)
+    subroutine get_poisson_source_term(first_smoother, world)
         class(domain_base), intent(in) :: world
         class(GS_Base), intent(in out) :: first_smoother
-        integer, intent(in) :: number_charged_particles
-        type(Particle), intent(in) :: particle_list(number_charged_particles)
-        integer(int32) :: i, i_thread, j, p, k, part_num
+        integer(int32) :: i, i_thread, j, p, k
         real(real64) :: inv_epsilon_0
         inv_epsilon_0 = 1.0d0/epsilon_0
 
@@ -534,7 +533,7 @@ contains
 
         select type (world)
         type is (domain_uniform)
-            !$OMP parallel private(k, p, i, j, part_num, i_thread)
+            !$OMP parallel private(k, p, i, j, i_thread)
             !$OMP workshare
             first_smoother%sourceTerm = 0.0d0
             !$OMP end workshare
@@ -543,15 +542,15 @@ contains
             !$OMP do
             do k = 1, first_smoother%number_inner_rows
                 j = first_smoother%start_row_indx + k - 1
-                do part_num = 1, number_charged_particles
+                
                     do i_thread = 1, number_threads_global
                         do p = 1, first_smoother%number_row_sections(k)
                             do i = first_smoother%start_inner_indx_x(p, k), first_smoother%end_inner_indx_x(p,k)  
-                                first_smoother%sourceTerm(i,j) = first_smoother%sourceTerm(i,j) - particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(i,j,i_thread) * world%inv_node_volume*inv_epsilon_0
+                                first_smoother%sourceTerm(i,j) = first_smoother%sourceTerm(i,j) - particle_work_space(i,j,i_thread) * world%inv_node_volume*inv_epsilon_0
                             end do
                         end do
                     end do
-                end do
+        
             end do
             !$OMP end do nowait
 
@@ -560,95 +559,94 @@ contains
             !$OMP section
             if (world%boundary_conditions(1,1) == 2) then
                 ! lower left corner
-                do part_num = 1, number_charged_particles
+        
                     do i_thread = 1, number_threads_global   
-                        first_smoother%sourceTerm(1,1) = first_smoother%sourceTerm(1,1) - 4.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(1,1,i_thread) * world%inv_node_volume*inv_epsilon_0
+                        first_smoother%sourceTerm(1,1) = first_smoother%sourceTerm(1,1) - 4.0d0 * particle_work_space(1,1,i_thread) * world%inv_node_volume*inv_epsilon_0
                     end do
-                end do
+      
             end if
             !$OMP section
             if (world%boundary_conditions(world%N_x, 1) == 2) then
                 ! lower right corner
-                do part_num = 1, number_charged_particles
+     
                     do i_thread = 1, number_threads_global   
-                        first_smoother%sourceTerm(world%N_x,1) = first_smoother%sourceTerm(world%N_x,1) - 4.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(world%N_x,1,i_thread) * world%inv_node_volume*inv_epsilon_0
+                        first_smoother%sourceTerm(world%N_x,1) = first_smoother%sourceTerm(world%N_x,1) - 4.0d0 * particle_work_space(world%N_x,1,i_thread) * world%inv_node_volume*inv_epsilon_0
                     end do
-                end do
+         
             end if
             !$OMP section
             if (world%boundary_conditions(1, world%N_y) == 2) then
                 ! upper left corner
-                do part_num = 1, number_charged_particles
+        
                     do i_thread = 1, number_threads_global   
-                        first_smoother%sourceTerm(1,world%N_y) = first_smoother%sourceTerm(1,world%N_y) - 4.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(1,world%N_y,i_thread) * world%inv_node_volume*inv_epsilon_0
+                        first_smoother%sourceTerm(1,world%N_y) = first_smoother%sourceTerm(1,world%N_y) - 4.0d0 * particle_work_space(1,world%N_y,i_thread) * world%inv_node_volume*inv_epsilon_0
                     end do
-                end do
+            
             end if
             !$OMP section
             if (world%boundary_conditions(world%N_x, world%N_y) == 2) then
                 ! upper right corner
-                do part_num = 1, number_charged_particles
+                
                     do i_thread = 1, number_threads_global   
-                        first_smoother%sourceTerm(world%N_x,world%N_y) = first_smoother%sourceTerm(world%N_x,world%N_y) - 4.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(world%N_x,world%N_y,i_thread) * world%inv_node_volume*inv_epsilon_0
+                        first_smoother%sourceTerm(world%N_x,world%N_y) = first_smoother%sourceTerm(world%N_x,world%N_y) - 4.0d0 * particle_work_space(world%N_x,world%N_y,i_thread) * world%inv_node_volume*inv_epsilon_0
                     end do
-                end do
+                
             end if
             !$OMP end sections nowait
 
             !lower boundary
             !$OMP do
             do p = 1, first_smoother%number_bottom_row_sections
-                do part_num = 1, number_charged_particles
+                
                     do i_thread = 1, number_threads_global
                         do i = first_smoother%start_bottom_row_indx(p), first_smoother%end_bottom_row_indx(p)
-                            first_smoother%sourceTerm(i,1) = first_smoother%sourceTerm(i,1) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(i,1,i_thread) * world%inv_node_volume*inv_epsilon_0
+                            first_smoother%sourceTerm(i,1) = first_smoother%sourceTerm(i,1) - 2.0d0 * particle_work_space(i,1,i_thread) * world%inv_node_volume*inv_epsilon_0
                         end do
                     end do
-                end do
             end do
             !$OMP end do nowait
 
             ! ! upper boundary
             !$OMP do
             do p = 1, first_smoother%number_top_row_sections
-                do part_num = 1, number_charged_particles
+           
                     do i_thread = 1, number_threads_global
                         do i = first_smoother%start_top_row_indx(p), first_smoother%end_top_row_indx(p)
-                            first_smoother%sourceTerm(i,world%N_y) = first_smoother%sourceTerm(i,world%N_y) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(i,world%N_y,i_thread) * world%inv_node_volume*inv_epsilon_0
+                            first_smoother%sourceTerm(i,world%N_y) = first_smoother%sourceTerm(i,world%N_y) - 2.0d0 * particle_work_space(i,world%N_y,i_thread) * world%inv_node_volume*inv_epsilon_0
                         end do
                     end do
-                end do
+         
             end do
             !$OMP end do nowait
 
             ! left boundary
             !$OMP do
             do p = 1, first_smoother%number_left_column_sections
-                do part_num = 1, number_charged_particles
+           
                     do i_thread = 1, number_threads_global
                         do j = first_smoother%start_left_column_indx(p), first_smoother%end_left_column_indx(p)
-                            first_smoother%sourceTerm(1,j) = first_smoother%sourceTerm(1,j) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(1,j,i_thread) * world%inv_node_volume*inv_epsilon_0
+                            first_smoother%sourceTerm(1,j) = first_smoother%sourceTerm(1,j) - 2.0d0 * particle_work_space(1,j,i_thread) * world%inv_node_volume*inv_epsilon_0
                         end do
                     end do
-                end do
+           
             end do
             !$OMP end do nowait
 
             ! right boundary
             !$OMP do
             do p = 1, first_smoother%number_right_column_sections
-                do part_num = 1, number_charged_particles
+              
                     do i_thread = 1, number_threads_global
                         do j = first_smoother%start_right_column_indx(p), first_smoother%end_right_column_indx(p)
-                            first_smoother%sourceTerm(world%N_x,j) = first_smoother%sourceTerm(world%N_x,j) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(world%N_x,j,i_thread) * world%inv_node_volume*inv_epsilon_0
+                            first_smoother%sourceTerm(world%N_x,j) = first_smoother%sourceTerm(world%N_x,j) - 2.0d0 * particle_work_space(world%N_x,j,i_thread) * world%inv_node_volume*inv_epsilon_0
                         end do
                     end do
-                end do
+           
             end do
             !$OMP end do
             !$OMP end parallel      
         type is (domain_curv)
-            !$OMP parallel private(k, p, i, j, part_num, i_thread)
+            !$OMP parallel private(k, p, i, j, i_thread)
             !$OMP workshare
             first_smoother%sourceTerm = 0.0d0
             !$OMP end workshare
@@ -657,15 +655,15 @@ contains
             !$OMP do
             do k = 1, first_smoother%number_inner_rows
                 j = first_smoother%start_row_indx + k - 1
-                do part_num = 1, number_charged_particles
+
                     do i_thread = 1, number_threads_global
                         do p = 1, first_smoother%number_row_sections(k)
                             do i = first_smoother%start_inner_indx_x(p, k), first_smoother%end_inner_indx_x(p,k)  
-                                first_smoother%sourceTerm(i,j) = first_smoother%sourceTerm(i,j) - particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(i,j,i_thread) * world%inv_node_volume(i,j)*inv_epsilon_0
+                                first_smoother%sourceTerm(i,j) = first_smoother%sourceTerm(i,j) - particle_work_space(i,j,i_thread) * world%inv_node_volume(i,j)*inv_epsilon_0
                             end do
                         end do
                     end do
-                end do
+    
             end do
             !$OMP end do nowait
 
@@ -674,90 +672,90 @@ contains
             !$OMP section
             if (world%boundary_conditions(1,1) == 2) then
                 ! lower left corner
-                do part_num = 1, number_charged_particles
+
                     do i_thread = 1, number_threads_global   
-                        first_smoother%sourceTerm(1,1) = first_smoother%sourceTerm(1,1) - 4.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(1,1,i_thread) * world%inv_node_volume(1,1)*inv_epsilon_0
+                        first_smoother%sourceTerm(1,1) = first_smoother%sourceTerm(1,1) - 4.0d0 * particle_work_space(1,1,i_thread) * world%inv_node_volume(1,1)*inv_epsilon_0
                     end do
-                end do
+        
             end if
             !$OMP section
             if (world%boundary_conditions(world%N_x, 1) == 2) then
                 ! lower right corner
-                do part_num = 1, number_charged_particles
+       
                     do i_thread = 1, number_threads_global   
-                        first_smoother%sourceTerm(world%N_x,1) = first_smoother%sourceTerm(world%N_x,1) - 4.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(world%N_x,1,i_thread) * world%inv_node_volume(world%N_x,1)*inv_epsilon_0
+                        first_smoother%sourceTerm(world%N_x,1) = first_smoother%sourceTerm(world%N_x,1) - 4.0d0 * particle_work_space(world%N_x,1,i_thread) * world%inv_node_volume(world%N_x,1)*inv_epsilon_0
                     end do
-                end do
+     
             end if
             !$OMP section
             if (world%boundary_conditions(1, world%N_y) == 2) then
                 ! upper left corner
-                do part_num = 1, number_charged_particles
+
                     do i_thread = 1, number_threads_global   
-                        first_smoother%sourceTerm(1,world%N_y) = first_smoother%sourceTerm(1,world%N_y) - 4.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(1,world%N_y,i_thread) * world%inv_node_volume(1,world%N_y)*inv_epsilon_0
+                        first_smoother%sourceTerm(1,world%N_y) = first_smoother%sourceTerm(1,world%N_y) - 4.0d0 * particle_work_space(1,world%N_y,i_thread) * world%inv_node_volume(1,world%N_y)*inv_epsilon_0
                     end do
-                end do
+
             end if
             !$OMP section
             if (world%boundary_conditions(world%N_x, world%N_y) == 2) then
                 ! upper right corner
-                do part_num = 1, number_charged_particles
+
                     do i_thread = 1, number_threads_global   
-                        first_smoother%sourceTerm(world%N_x,world%N_y) = first_smoother%sourceTerm(world%N_x,world%N_y) - 4.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(world%N_x,world%N_y,i_thread) * world%inv_node_volume(world%N_x,world%N_y)*inv_epsilon_0
+                        first_smoother%sourceTerm(world%N_x,world%N_y) = first_smoother%sourceTerm(world%N_x,world%N_y) - 4.0d0 * particle_work_space(world%N_x,world%N_y,i_thread) * world%inv_node_volume(world%N_x,world%N_y)*inv_epsilon_0
                     end do
-                end do
+
             end if
             !$OMP end sections nowait
 
             !lower boundary
             !$OMP do
             do p = 1, first_smoother%number_bottom_row_sections
-                do part_num = 1, number_charged_particles
+             
                     do i_thread = 1, number_threads_global
                         do i = first_smoother%start_bottom_row_indx(p), first_smoother%end_bottom_row_indx(p)
-                            first_smoother%sourceTerm(i,1) = first_smoother%sourceTerm(i,1) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(i,1,i_thread) * world%inv_node_volume(i,1)*inv_epsilon_0
+                            first_smoother%sourceTerm(i,1) = first_smoother%sourceTerm(i,1) - 2.0d0 * particle_work_space(i,1,i_thread) * world%inv_node_volume(i,1)*inv_epsilon_0
                         end do
                     end do
-                end do
+      
             end do
             !$OMP end do nowait
 
             ! ! upper boundary
             !$OMP do
             do p = 1, first_smoother%number_top_row_sections
-                do part_num = 1, number_charged_particles
+             
                     do i_thread = 1, number_threads_global
                         do i = first_smoother%start_top_row_indx(p), first_smoother%end_top_row_indx(p)
-                            first_smoother%sourceTerm(i,world%N_y) = first_smoother%sourceTerm(i,world%N_y) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(i,world%N_y,i_thread) * world%inv_node_volume(i,world%N_y)*inv_epsilon_0
+                            first_smoother%sourceTerm(i,world%N_y) = first_smoother%sourceTerm(i,world%N_y) - 2.0d0 * particle_work_space(i,world%N_y,i_thread) * world%inv_node_volume(i,world%N_y)*inv_epsilon_0
                         end do
                     end do
-                end do
+     
             end do
             !$OMP end do nowait
 
             ! left boundary
             !$OMP do
             do p = 1, first_smoother%number_left_column_sections
-                do part_num = 1, number_charged_particles
+  
                     do i_thread = 1, number_threads_global
                         do j = first_smoother%start_left_column_indx(p), first_smoother%end_left_column_indx(p)
-                            first_smoother%sourceTerm(1,j) = first_smoother%sourceTerm(1,j) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(1,j,i_thread) * world%inv_node_volume(1,j)*inv_epsilon_0
+                            first_smoother%sourceTerm(1,j) = first_smoother%sourceTerm(1,j) - 2.0d0 * particle_work_space(1,j,i_thread) * world%inv_node_volume(1,j)*inv_epsilon_0
                         end do
                     end do
-                end do
+     
             end do
             !$OMP end do nowait
 
             ! right boundary
             !$OMP do
             do p = 1, first_smoother%number_right_column_sections
-                do part_num = 1, number_charged_particles
+               
                     do i_thread = 1, number_threads_global
                         do j = first_smoother%start_right_column_indx(p), first_smoother%end_right_column_indx(p)
-                            first_smoother%sourceTerm(world%N_x,j) = first_smoother%sourceTerm(world%N_x,j) - 2.0d0 * particle_list(part_num)%q_times_weight * particle_list(part_num)%work_space(world%N_x,j,i_thread) * world%inv_node_volume(world%N_x,j)*inv_epsilon_0
+                            first_smoother%sourceTerm(world%N_x,j) = first_smoother%sourceTerm(world%N_x,j) - 2.0d0 * particle_work_space(world%N_x,j,i_thread) * world%inv_node_volume(world%N_x,j)*inv_epsilon_0
                         end do
                     end do
-                end do
+        
             end do
             !$OMP end do
             !$OMP end parallel      
