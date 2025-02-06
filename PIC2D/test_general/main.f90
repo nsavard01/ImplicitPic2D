@@ -185,7 +185,7 @@ program main
     mover_time = 0.0d0
     solver_time = 0.0d0
     sort_time = 0.0d0
-    number_diagnostics = 1
+    number_diagnostics = 10
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
     close(41)
@@ -194,10 +194,7 @@ program main
         select type (world)
         type is (domain_uniform)
             call system_clock(startTime)
-            call reset_particle_work_space()
-            do i = 1, number_charged_particles
-                call particle_list(i)%interpolation_particle_to_nodes()
-            end do
+            call interpolate_particle_charge_density(particle_list)
             call system_clock(endTime)
             interp_time = interp_time + real(endTime - startTime)
 
@@ -779,7 +776,7 @@ contains
        !$OMP parallel private(i_thread, part_idx)
         i_thread = omp_get_thread_num() + 1
         do part_idx = 1, number_charged_particles
-            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread, count_bool)
+            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, count_bool)
             ! call particle_list(part_idx)%particle_resort(world, i_thread)
         end do
         !$OMP end parallel

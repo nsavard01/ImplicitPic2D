@@ -10,7 +10,7 @@ module mod_particle
     implicit none
 
     private
-    public :: Particle, reset_particle_work_space
+    public :: Particle, reset_particle_work_space, interpolate_particle_charge_density
     real(real64), allocatable, public, protected :: particle_work_space(:,:,:)
 
     ! Particle contains particle properties and stored values in phase space
@@ -156,7 +156,7 @@ contains
         integer(int64) :: part_num
         real(real64) :: d_i, d_j, xi, eta
 
-        !$OMP parallel private(part_num, i_cell,j_cell, d_i, d_j, xi, eta, i_thread)
+        
         i_thread = omp_get_thread_num() + 1
         do part_num = 1, self%number_particles_thread(i_thread)
             xi = self%logical_position(1,part_num,i_thread)
@@ -171,9 +171,25 @@ contains
             particle_work_space(i_cell,j_cell+1, i_thread) = particle_work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j) * self%q_times_weight
             particle_work_space(i_cell+1,j_cell+1, i_thread) = particle_work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j) * self%q_times_weight
         end do
-        !$OMP end parallel
 
     end subroutine interpolation_particle_to_nodes
+
+
+    subroutine interpolate_particle_charge_density(particle_list)
+        type(Particle), intent(in out) :: particle_list(number_charged_particles)
+        integer(int32) :: i_thread, part_idx
+
+       !$OMP parallel private(i_thread, part_idx)
+        i_thread = omp_get_thread_num() + 1
+        particle_work_space(:,:, i_thread) = 0.0d0
+        do part_idx = 1, number_charged_particles
+            call particle_list(part_idx)%interpolation_particle_to_nodes()
+            ! call particle_list(part_idx)%particle_resort(world, i_thread)
+        end do
+        !$OMP end parallel
+
+
+    end subroutine interpolate_particle_charge_density
 
     ! subroutine interpolation_particle_to_nodes_and_sort(self)
 
@@ -450,11 +466,11 @@ contains
 
     ! end subroutine interpolation_particle_to_nodes_and_sort
 
-    subroutine particle_mover_uniform(self, E_Field, world, del_t, i_thread, count_bool)
+    subroutine particle_mover_uniform(self, E_Field, world, del_t, count_bool)
         class(Particle), intent(in out) :: self
         type(domain_uniform), intent(in) :: world
         real(real64), intent(in) :: E_Field(2,world%N_x,world%N_y), del_t
-        integer(int32), intent(in) :: i_thread
+        integer(int32) :: i_thread
         logical, intent(in) :: count_bool
         real(real64) :: v_part(2), loc_i, loc_j, d_i, d_j, E_part(2),&
             E_SE(2), E_SW(2), E_NW(2), E_NE(2), inv_del_x, inv_del_y, &
@@ -463,6 +479,7 @@ contains
         integer(int64) :: part_num, delete_idx
         logical :: delete_bool
 
+        i_thread = omp_get_thread_num() + 1
         inv_del_x = 1.0d0/world%del_x
         inv_del_y = 1.0d0/world%del_y
         delete_idx = 0
