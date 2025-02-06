@@ -23,7 +23,7 @@ program main
     integer(int32) :: NESW_wallBoundaries(4), matDimension, i, j, k, numberStages, startTime, endTime, timingRate, numberPreSmoothOper, numberPostSmoothOper, numberIter
     integer :: upperBound, lowerBound, rightBound, leftBound, stageInt, curv_grid_type_x, curv_grid_type_y, mat_dimension
     integer :: inner_box_first_y, inner_box_last_y, inner_box_first_x, inner_box_last_x, i_thread, number_diagnostics
-    real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi, interp_time, source_term_time, EField_time, mover_time, solver_time
+    real(real64) :: upperPhi, rightPhi, lowerPhi, leftPhi, innerPhi, interp_time, source_term_time, EField_time, mover_time, solver_time, sort_time
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: relTol, stepTol, temp_real, n_ave, del_t, T_e, T_i
@@ -183,6 +183,7 @@ program main
     EField_time = 0.0d0
     mover_time = 0.0d0
     solver_time = 0.0d0
+    sort_time = 0.0d0
     number_diagnostics = 10
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
@@ -214,7 +215,7 @@ program main
             EField_time = EField_time + real(endTime - startTime)
 
             call system_clock(startTime)
-            call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t, k == number_diagnostics)
+            call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t, i == number_diagnostics)
             call system_clock(endTime)
             mover_time = mover_time + real(endTime - startTime)
             print *, 'amount total particles', sum(particle_list(1)%number_particles_thread), sum(particle_list(2)%number_particles_thread), sum(particle_list(1)%cell_count)
@@ -227,13 +228,14 @@ program main
         close(41)
     end do
 
-    call system_clock(startTime)
-    do i = 1, number_charged_particles
-        call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
-        call particle_list(i)%resize_particle_arrays()
-    end do
-    call system_clock(endTime)
-    print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
+    ! call system_clock(startTime)
+    ! do i = 1, number_charged_particles
+    !     call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
+    !     ! call particle_list(i)%resize_particle_arrays()
+    ! end do
+    ! call system_clock(endTime)
+    ! sort_time = sort_time + real(endTime - startTime)
+    print *, 'particle sorting took', sort_time/real(timingRate), 'seconds'
     print *, ''
     print *, ''
     print *, 'interpolation time took', interp_time / real(timingRate)
@@ -241,6 +243,7 @@ program main
     print *, 'solver time took', solver_time / real(timingRate)
     print *, 'EField time took', EField_time / real(timingRate)
     print *, 'Mover time took', mover_time / real(timingRate)
+    print *, 'Total time is', (sort_time + interp_time + source_term_time + solver_time + Efield_time + mover_time) / real(timingRate, kind = 8)
     print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0, particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
     
 

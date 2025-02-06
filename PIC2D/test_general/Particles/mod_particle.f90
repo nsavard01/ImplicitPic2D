@@ -145,7 +145,7 @@ contains
         !$OMP end parallel
     end subroutine initialize_rand_uniform
 
-    subroutine interpolation_particle_to_nodes(self, N_x_cell, N_y_cell)
+    subroutine interpolation_particle_to_nodes(self)
         ! interpolate particles to work space array
         class(Particle), intent(in out) :: self
         integer(int32) :: i_thread, i_cell, j_cell
@@ -172,10 +172,10 @@ contains
 
     end subroutine interpolation_particle_to_nodes
 
-    subroutine interpolation_particle_to_nodes_and_sort(self)
+    ! subroutine interpolation_particle_to_nodes_and_sort(self)
 
 
-    end subroutine interpolation_particle_to_nodes_and_sort
+    ! end subroutine interpolation_particle_to_nodes_and_sort
 
 
     ! subroutine interpolation_particle_to_nodes_sorted(self, N_x_cells, N_y_cells)
@@ -217,96 +217,226 @@ contains
         ! make sort in place so no need to 
         class(Particle), intent(in out) :: self
         integer(int32), intent(in) :: N_x_cell, N_y_cell
-        integer(int64) :: part_num, k_past, k
-        integer(int32) :: i_thread, eta, xi, i_cell, j_cell
-        real(real64) :: temp_pos(2), temp_v(3)
+        integer(int64) :: part_num, cell_end_indx
+        integer(int32) :: i_thread, eta, xi, i_cell, j_cell, cell_count
+        real(real64) :: pos_curr(2), v_curr(3), pos_other(2), v_other(3)
 
-        !$OMP parallel private(i_thread, i_cell, j_cell, eta, xi, part_num, temp_pos, temp_v, k_past, k)
+        !$OMP parallel private(i_thread, i_cell, j_cell, eta, xi, part_num, pos_curr, v_curr, pos_other, v_other, cell_count, cell_end_indx)
         i_thread = omp_get_thread_num() + 1
         ! Should already have number of particles per cell at this point
 
         ! get final cell index of each bin
         self%cell_indx_array(1, 1, i_thread) = self%cell_count(1,1,i_thread)
-        do j_cell = 1, N_y_cell
+        do j_cell = 1, N_y_cell-1
             do i_cell = 2, N_x_cell
                 self%cell_indx_array(i_cell, j_cell, i_thread) = self%cell_count(i_cell, j_cell, i_thread) + self%cell_indx_array(i_cell-1, j_cell, i_thread)
             end do
-            ! do for next row 1st i_cell = 1
-            if (j_cell /= N_y_cell) then
-                self%cell_indx_array(1, j_cell+1, i_thread) = self%cell_count(1, j_cell+1, i_thread) + self%cell_indx_array(N_x_cell, j_cell, i_thread)
-            end if
+            self%cell_indx_array(1, j_cell+1, i_thread) = self%cell_count(1, j_cell+1, i_thread) + self%cell_indx_array(N_x_cell, j_cell, i_thread)
+        end do
+        ! do last row
+        j_cell = N_y_cell
+        do i_cell = 2, N_x_cell
+            self%cell_indx_array(i_cell, j_cell, i_thread) = self%cell_count(i_cell, j_cell, i_thread) + self%cell_indx_array(i_cell-1, j_cell, i_thread)
         end do
         
-        ! do k = 2, max_idx
-        !     self%cell_indx_array(k, i_thread) = self%cell_count(k, i_thread) + self%cell_indx_array(k-1, i_thread)
-        ! end do
-        ! self%cell_indx_array(max_idx+1, i_thread) = self%number_particles_thread(i_thread)
-
         ! order particles
         do j_cell = N_y_cell, 2, -1
             do i_cell = N_x_cell, 1, -1
-                do while (self%cell_count(i_cell, j_cell, i_thread) > 0)
-                    part_num = self%cell_indx_array(i_cell, j_cell, i_thread)
-                    ! find current highest cell indx
-                    xi = int(self%logical_position(1,part_num, i_thread))
-                    eta = int(self%logical_position(2,part_num, i_thread))
-                    temp_pos = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
-                    temp_v = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
-                    ! put last index in current place and then reduce that section by 1
-                    self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = self%logical_position(:,part_num, i_thread)
-                    self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = self%velocity(:,part_num, i_thread)
-                    ! place temp_phase_space in current place
-                    self%logical_position(:,part_num, i_thread) = temp_pos
-                    self%velocity(:,part_num, i_thread) = temp_v
-                    self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
-                    self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+                cell_end_indx = self%cell_indx_array(i_cell, j_cell, i_thread)
+                cell_count = self%cell_count(i_cell, j_cell, i_thread)
+                do part_num = cell_end_indx, cell_end_indx-cell_count+1, -1
+                    pos_curr = self%logical_position(:,part_num, i_thread)
+                    v_curr = self%velocity(:,part_num, i_thread)
+                    xi = int(pos_curr(1))
+                    eta = int(pos_curr(2))
+                    do while (xi /= i_cell .or. eta /= j_cell)
+                        pos_other = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                        v_other = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                        ! put last index in current place and then reduce that section by 1
+                        self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = pos_curr
+                        self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = v_curr
+                        self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
+                        self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+                        pos_curr = pos_other
+                        v_curr = v_other
+                        xi = int(pos_curr(1))
+                        eta = int(pos_curr(2))
+                    end do
+                    self%logical_position(:,part_num, i_thread) = pos_curr
+                    self%velocity(:, part_num, i_thread) = v_curr
                 end do
+                self%cell_count(i_cell, j_cell, i_thread) = 0
+                self%cell_indx_array(i_cell, j_cell, i_thread) = cell_end_indx-cell_count+1
             end do
         end do
         j_cell = 1
         do i_cell = N_x_cell, 2, -1
-            do while (self%cell_count(i_cell, j_cell, i_thread) > 0)
-                part_num = self%cell_indx_array(i_cell, j_cell, i_thread)
-                ! find current highest cell indx
-                xi = int(self%logical_position(1,part_num, i_thread))
-                eta = int(self%logical_position(2,part_num, i_thread))
-                temp_pos = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
-                temp_v = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
-
-                ! put last index in current place and then reduce that section by 1
-                self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = self%logical_position(:,part_num, i_thread)
-                self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = self%velocity(:,part_num, i_thread)
-
-                ! place temp_phase_space in current place
-                self%logical_position(:,part_num, i_thread) = temp_pos
-                self%velocity(:,part_num, i_thread) = temp_v
-                self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
-                self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+            cell_end_indx = self%cell_indx_array(i_cell, j_cell, i_thread)
+            cell_count = self%cell_count(i_cell, j_cell, i_thread)
+            do part_num = cell_end_indx, cell_end_indx-cell_count+1, -1
+                pos_curr = self%logical_position(:,part_num, i_thread)
+                v_curr = self%velocity(:,part_num, i_thread)
+                xi = int(pos_curr(1))
+                eta = int(pos_curr(2))
+                do while (xi /= i_cell .or. eta /= j_cell)
+                    pos_other = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                    v_other = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                    ! put last index in current place and then reduce that section by 1
+                    self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = pos_curr
+                    self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = v_curr
+                    self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
+                    self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+                    pos_curr = pos_other
+                    v_curr = v_other
+                    xi = int(pos_curr(1))
+                    eta = int(pos_curr(2))
+                end do
+                self%logical_position(:,part_num, i_thread) = pos_curr
+                self%velocity(:, part_num, i_thread) = v_curr
             end do
+            self%cell_count(i_cell, j_cell, i_thread) = 0
+            self%cell_indx_array(i_cell, j_cell, i_thread) = cell_end_indx-cell_count+1
         end do
         self%cell_count(1,1,i_thread) = 0
-        ! do k_max = max_idx, 2, -1
-        !     do while (self%cell_count(k_max, i_thread) > 0)
-        !         part_num = self%cell_indx_array(k_max,i_thread)
-        !         ! find current highest cell indx
-        !         xi = int(self%phase_space(1,part_num, i_thread))
-        !         eta = int(self%phase_space(2,part_num, i_thread))
-        !         k = (eta - 1) * N_x_cell + xi
-        !         temp_phase_space = self%phase_space(:,self%cell_indx_array(k,i_thread), i_thread)
-        !         ! put last index in current place and then reduce that section by 1
-        !         self%phase_space(:,self%cell_indx_array(k,i_thread), i_thread) = self%phase_space(:,part_num, i_thread)
+        self%cell_indx_array(1,1,i_thread) = 1
 
-        !         ! place temp_phase_space in current place
-        !         self%phase_space(:,part_num, i_thread) = temp_phase_space
-        !         self%cell_indx_array(k,i_thread) = self%cell_indx_array(k,i_thread)-1
-        !         self%cell_count(k, i_thread) = self%cell_count(k,i_thread) - 1
-        !     end do
-        ! end do
-        
         
         !$OMP end parallel
 
     end subroutine particle_sort
+
+    subroutine interpolation_particle_to_nodes_and_sort(self, N_x_cell, N_y_cell)
+        ! sort particle by cell, with each cell going j = 1-> N_y-1, i = 1->N_x-1
+        ! make sort in place so no need to 
+        class(Particle), intent(in out) :: self
+        integer(int32), intent(in) :: N_x_cell, N_y_cell
+        integer(int64) :: part_num, cell_end_indx, k, k_past
+        integer(int32) :: i_thread, eta, xi, i_cell, j_cell, cell_count
+        real(real64) :: pos_curr(2), v_curr(3), pos_other(2), v_other(3), d_i, d_j
+
+        !$OMP parallel private(i_thread, i_cell, j_cell, eta, xi, part_num, pos_curr, v_curr, pos_other, v_other, cell_count, cell_end_indx, d_i, d_j)
+        i_thread = omp_get_thread_num() + 1
+        self%work_space(:,:,i_thread) = 0.0d0
+        ! Should already have number of particles per cell at this point
+
+        ! get final cell index of each bin
+        self%cell_indx_array(1, 1, i_thread) = self%cell_count(1,1,i_thread)
+        do j_cell = 1, N_y_cell-1
+            do i_cell = 2, N_x_cell
+                self%cell_indx_array(i_cell, j_cell, i_thread) = self%cell_count(i_cell, j_cell, i_thread) + self%cell_indx_array(i_cell-1, j_cell, i_thread)
+            end do
+            self%cell_indx_array(1, j_cell+1, i_thread) = self%cell_count(1, j_cell+1, i_thread) + self%cell_indx_array(N_x_cell, j_cell, i_thread)
+        end do
+        ! do last row
+        j_cell = N_y_cell
+        do i_cell = 2, N_x_cell
+            self%cell_indx_array(i_cell, j_cell, i_thread) = self%cell_count(i_cell, j_cell, i_thread) + self%cell_indx_array(i_cell-1, j_cell, i_thread)
+        end do
+        
+        ! order particles
+        do j_cell = N_y_cell, 2, -1
+            do i_cell = N_x_cell, 1, -1
+                cell_end_indx = self%cell_indx_array(i_cell, j_cell, i_thread)
+                cell_count = self%cell_count(i_cell, j_cell, i_thread)
+                do part_num = cell_end_indx, cell_end_indx-cell_count+1, -1
+                    pos_curr = self%logical_position(:,part_num, i_thread)
+                    v_curr = self%velocity(:,part_num, i_thread)
+                    xi = int(pos_curr(1))
+                    eta = int(pos_curr(2))
+                    do while (xi /= i_cell .or. eta /= j_cell)
+                        pos_other = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                        v_other = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                        ! put last index in current place and then reduce that section by 1
+                        self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = pos_curr
+                        self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = v_curr
+                        self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
+                        self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+                        d_i = pos_curr(1) - real(xi, kind = 8)
+                        d_j = pos_curr(2) - real(eta, kind = 8)
+                        self%work_space(xi,eta, i_thread) = self%work_space(xi,eta, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+                        self%work_space(xi+1,eta, i_thread) = self%work_space(xi+1,eta, i_thread) + (d_i) * (1.0d0-d_j)
+                        self%work_space(xi,eta+1, i_thread) = self%work_space(xi,eta+1, i_thread) + (1.0d0-d_i) * (d_j)
+                        self%work_space(xi+1,eta+1, i_thread) = self%work_space(xi+1,eta+1, i_thread) + (d_i) * (d_j)
+                        pos_curr = pos_other
+                        v_curr = v_other
+                        xi = int(pos_curr(1))
+                        eta = int(pos_curr(2))
+                    end do
+                    d_i = pos_curr(1) - real(i_cell, kind = 8)
+                    d_j = pos_curr(2) - real(j_cell, kind = 8)
+                    self%work_space(i_cell,j_cell, i_thread) = self%work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+                    self%work_space(i_cell+1,j_cell, i_thread) = self%work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j)
+                    self%work_space(i_cell,j_cell+1, i_thread) = self%work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j)
+                    self%work_space(i_cell+1,j_cell+1, i_thread) = self%work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j)
+                    self%logical_position(:,part_num, i_thread) = pos_curr
+                    self%velocity(:, part_num, i_thread) = v_curr
+                end do
+                self%cell_count(i_cell, j_cell, i_thread) = 0
+                self%cell_indx_array(i_cell, j_cell, i_thread) = cell_end_indx-cell_count+1
+            end do
+        end do
+        j_cell = 1
+        do i_cell = N_x_cell, 2, -1
+            cell_end_indx = self%cell_indx_array(i_cell, j_cell, i_thread)
+            cell_count = self%cell_count(i_cell, j_cell, i_thread)
+            do part_num = cell_end_indx, cell_end_indx-cell_count+1, -1
+                pos_curr = self%logical_position(:,part_num, i_thread)
+                v_curr = self%velocity(:,part_num, i_thread)
+                xi = int(pos_curr(1))
+                eta = int(pos_curr(2))
+                do while (xi /= i_cell .or. eta /= j_cell)
+                    pos_other = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                    v_other = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                    ! put last index in current place and then reduce that section by 1
+                    self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = pos_curr
+                    self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = v_curr
+                    self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
+                    self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+                    d_i = pos_curr(1) - real(xi, kind = 8)
+                    d_j = pos_curr(2) - real(eta, kind = 8)
+                    self%work_space(xi,eta, i_thread) = self%work_space(xi,eta, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+                    self%work_space(xi+1,eta, i_thread) = self%work_space(xi+1,eta, i_thread) + (d_i) * (1.0d0-d_j)
+                    self%work_space(xi,eta+1, i_thread) = self%work_space(xi,eta+1, i_thread) + (1.0d0-d_i) * (d_j)
+                    self%work_space(xi+1,eta+1, i_thread) = self%work_space(xi+1,eta+1, i_thread) + (d_i) * (d_j)
+                    pos_curr = pos_other
+                    v_curr = v_other
+                    xi = int(pos_curr(1))
+                    eta = int(pos_curr(2))
+                end do
+                d_i = pos_curr(1) - real(i_cell, kind = 8)
+                d_j = pos_curr(2) - real(j_cell, kind = 8)
+                self%work_space(i_cell,j_cell, i_thread) = self%work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+                self%work_space(i_cell+1,j_cell, i_thread) = self%work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j)
+                self%work_space(i_cell,j_cell+1, i_thread) = self%work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j)
+                self%work_space(i_cell+1,j_cell+1, i_thread) = self%work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j)
+                self%logical_position(:,part_num, i_thread) = pos_curr
+                self%velocity(:, part_num, i_thread) = v_curr
+            end do
+            self%cell_count(i_cell, j_cell, i_thread) = 0
+            self%cell_indx_array(i_cell, j_cell, i_thread) = cell_end_indx-cell_count+1
+        end do
+
+        ! interpolate first index, should all be ordered
+        i_cell = 1
+        do part_num = 1, self%cell_indx_array(i_cell+1, j_cell, i_thread)-1
+            pos_curr = self%logical_position(:,part_num, i_thread)
+            v_curr = self%velocity(:,part_num, i_thread)
+            d_i = pos_curr(1) - real(i_cell, kind = 8)
+            d_j = pos_curr(2) - real(j_cell, kind = 8)
+            self%work_space(i_cell,j_cell, i_thread) = self%work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
+            self%work_space(i_cell+1,j_cell, i_thread) = self%work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j)
+            self%work_space(i_cell,j_cell+1, i_thread) = self%work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j)
+            self%work_space(i_cell+1,j_cell+1, i_thread) = self%work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j)
+            self%logical_position(:,part_num, i_thread) = pos_curr
+            self%velocity(:, part_num, i_thread) = v_curr
+        end do
+        self%cell_count(1,1,i_thread) = 0
+        self%cell_indx_array(1,1,i_thread) = 1
+
+        
+        !$OMP end parallel
+
+    end subroutine interpolation_particle_to_nodes_and_sort
 
     subroutine particle_mover_uniform(self, E_Field, world, del_t, i_thread, count_bool)
         class(Particle), intent(in out) :: self
