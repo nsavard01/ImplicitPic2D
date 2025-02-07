@@ -15,7 +15,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 601, N_y = 501, numThreads = 2
+    integer(int32) :: N_x = 601, N_y = 501, numThreads = 4
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -167,6 +167,7 @@ program main
     call system_clock(endTime)
     print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, ''
+    print *, 'particle numbers', sum(particle_list(1)%number_particles_thread), sum(particle_list(2)%number_particles_thread)
     
     print *, 'Particle temp is:', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0, particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
     
