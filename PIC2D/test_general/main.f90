@@ -15,7 +15,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 601, N_y = 501, numThreads = 4
+    integer(int32) :: N_x = 601, N_y = 501, numThreads = 2
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -38,6 +38,7 @@ program main
     call omp_set_max_active_levels(numThreads)
 
     call change_global_thread(numThreads)
+    print *, number_threads_global
     
     call system_clock(count_rate = timingRate)
     evenGridBool = .true.
