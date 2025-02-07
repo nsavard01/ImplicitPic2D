@@ -157,6 +157,9 @@ program main
     call particle_list(1)%initialize_maxwellian_temperature(T_e)
     print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0
 
+    print *, particle_list(1)%logical_position(:, 1, 6), particle_list(1)%logical_position(:,particle_list(1)%cell_starting_indx(world%N_x-1, world%N_y-1) + particle_list(1)%number_particles_cell_thread(world%N_x-1, world%N_y-1, 6)-1, 6)
+    stop
+
     particle_list(2) = Particle(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world%N_x, world%N_y)
     call particle_list(2)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(2)%initialize_rand_uniform(world)
