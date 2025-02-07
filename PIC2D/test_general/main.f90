@@ -15,7 +15,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 601, N_y = 501, numThreads = 6
+    integer(int32) :: N_x = 601, N_y = 501, numThreads = 2
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -160,13 +160,13 @@ program main
     call particle_list(2)%initialize_maxwellian_temperature(T_i)
 
 
-    ! call system_clock(startTime)
-    ! do i = 1, number_charged_particles
-    !     call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
-    ! end do
-    ! call system_clock(endTime)
-    ! print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
-    ! print *, ''
+    call system_clock(startTime)
+    do i = 1, number_charged_particles
+        call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
+    end do
+    call system_clock(endTime)
+    print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
+    print *, ''
     
     print *, 'Particle temp is:', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0, particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
     
@@ -186,7 +186,7 @@ program main
     mover_time = 0.0d0
     solver_time = 0.0d0
     sort_time = 0.0d0
-    number_diagnostics = 100
+    number_diagnostics = 1
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
     close(41)
@@ -228,13 +228,13 @@ program main
         close(41)
     end do
 
-    ! call system_clock(startTime)
-    ! do i = 1, number_charged_particles
-    !     call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
-    !     ! call particle_list(i)%resize_particle_arrays()
-    ! end do
-    ! call system_clock(endTime)
-    ! sort_time = sort_time + real(endTime - startTime)
+    call system_clock(startTime)
+    do i = 1, number_charged_particles
+        call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
+        ! call particle_list(i)%resize_particle_arrays()
+    end do
+    call system_clock(endTime)
+    sort_time = sort_time + real(endTime - startTime)
     print *, 'particle sorting took', sort_time/real(timingRate), 'seconds'
     print *, ''
     print *, ''
