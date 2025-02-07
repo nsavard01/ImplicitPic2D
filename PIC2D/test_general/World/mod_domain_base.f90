@@ -14,7 +14,7 @@ module mod_domain_base
         ! store grid quantities
         real(real64), allocatable :: grid_X(:), grid_Y(:) ! spatial location in grid
         integer(int32), allocatable :: boundary_conditions(:,:) ! type of node in each direction 
-        real(real64) :: start_X, end_X, start_Y, end_Y! start and end locations of grid as reference
+        real(real64) :: start_X, end_X, start_Y, end_Y ! start and end locations of grid as reference
         integer(int32) :: N_x, N_y, N_x_cells, N_y_cells ! amount of nodes in x and y direction
         integer(int64) :: number_total_cells 
     contains

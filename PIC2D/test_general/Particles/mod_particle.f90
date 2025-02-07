@@ -191,7 +191,7 @@ contains
         class(Particle), intent(in) :: self
         integer(int32), intent(in) :: i_thread, N_x_cell, N_y_cell
         integer(int32) :: i_cell, j_cell
-        integer(int64) :: part_num, start_point, end_point
+        integer(int64) :: part_num, start_point, end_point, sum_part
         real(real64) :: d_i, d_j, xi, eta
 
         do j_cell = 1, N_y_cell
@@ -207,6 +207,7 @@ contains
                     particle_work_space(i_cell+1,j_cell, i_thread) = particle_work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j) * self%q_times_weight
                     particle_work_space(i_cell,j_cell+1, i_thread) = particle_work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j) * self%q_times_weight
                     particle_work_space(i_cell+1,j_cell+1, i_thread) = particle_work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j) * self%q_times_weight
+                    sum_part = sum_part + 1
                 end do
             end do
         end do
@@ -215,22 +216,15 @@ contains
     subroutine interpolation_particle_charge_density(particle_list, N_x_cell, N_y_cell)
         type(Particle), intent(in) :: particle_list(number_charged_particles)
         integer(int32), intent(in) :: N_x_cell, N_y_cell
-        integer(int32) :: i_thread, part_idx, start_time, end_time
+        integer(int32) :: i_thread, part_idx
 
         !$OMP parallel private(i_thread, part_idx)
         i_thread = omp_get_thread_num() + 1
         particle_work_space(:,:, i_thread) = 0.0d0
-        !$OMP end parallel
-
         do part_idx = 1, number_charged_particles
-            call system_clock(start_time)
-            !$OMP parallel private(i_thread)
-            i_thread = omp_get_thread_num() + 1
-            call particle_list(part_idx)%interpolation_particle_to_nodes(i_thread, N_x_cell, N_y_cell)
-            !$OMP end parallel
-            call system_clock(end_time)
-            print *, end_time - start_time
+            call particle_list(part_idx)%interpolation_particle_to_nodes(i_thread, N_x_cell, N_y_cell)    
         end do
+        !$OMP end parallel
     end subroutine interpolation_particle_charge_density
 
     subroutine reset_particle_work_space()
