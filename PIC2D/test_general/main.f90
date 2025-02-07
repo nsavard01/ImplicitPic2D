@@ -15,7 +15,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 601, N_y = 501, numThreads = 32
+    integer(int32) :: N_x = 601, N_y = 501, numThreads = 6
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -151,16 +151,15 @@ program main
     
     call change_global_numPart(2)
     allocate(particle_list(number_charged_particles))
-    particle_list(1) = Particle(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world%N_x, world%N_y)
+    particle_list(1) = Particle(mass_electron, -e_charge, 1.0d0, num_part_total, 3*num_part_total, 'e', world%N_x, world%N_y)
     call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(1)%initialize_rand_uniform(world)
     call particle_list(1)%initialize_maxwellian_temperature(T_e)
     print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0
 
-    print *, particle_list(1)%logical_position(:, 1, 6), particle_list(1)%logical_position(:,particle_list(1)%cell_starting_indx(world%N_x-1, world%N_y-1) + particle_list(1)%number_particles_cell_thread(world%N_x-1, world%N_y-1, 6)-1, 6)
-    stop
 
-    particle_list(2) = Particle(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world%N_x, world%N_y)
+
+    particle_list(2) = Particle(mass_proton, e_charge, 1.0d0, num_part_total, 3*num_part_total, 'H+', world%N_x, world%N_y)
     call particle_list(2)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(2)%initialize_rand_uniform(world)
     call particle_list(2)%initialize_maxwellian_temperature(T_i)

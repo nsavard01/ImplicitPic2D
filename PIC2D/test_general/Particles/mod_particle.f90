@@ -13,10 +13,9 @@ module mod_particle
     public :: Particle, reset_particle_work_space, push_particles_uniform, interpolation_particle_charge_density
     ! The following arrays will be used by all particles for threaded operations as temporaries, so only allocate a single time
     real(real64), allocatable, public, protected :: logical_position_overflow(:,:,:), velocity_overflow(:,:,:), particle_work_space(:,:,:)
-    ! integer(int64), allocatable, public, protected :: number_particles_overflow_thread(:)
+    integer(int64), allocatable, public, protected :: number_particles_overflow_thread(:)
     integer(int32), allocatable, public, protected :: number_particles_added_cell_thread(:,:,:)
-    integer(int64), public, protected :: max_indx_overflow = 0, max_number_overflow = 0, number_particles_overflow_thread = 0
-    !$OMP threadprivate(number_particles_overflow_thread)
+    integer(int64), public, protected :: max_indx_overflow = 0, max_number_overflow = 0
 
     ! Particle contains particle properties and stored values in phase space
     type :: Particle
@@ -83,14 +82,14 @@ contains
             particle_work_space(:,:,omp_get_thread_num()+1) = 0.0d0
             !$OMP end parallel
         end if
-        ! if (.not. allocated(number_particles_overflow_thread)) allocate(number_particles_overflow_thread(number_threads_global))
+        if (.not. allocated(number_particles_overflow_thread)) then
+            allocate(number_particles_overflow_thread(number_threads_global))
+            number_particles_overflow_thread = N_p/number_threads_global
+        end if
         if (.not. allocated(number_particles_added_cell_thread)) then
             allocate(number_particles_added_cell_thread(N_x-1, N_y-1, number_threads_global))
             number_particles_added_cell_thread = 0
         end if
-        !$OMP parallel
-        number_particles_overflow_thread = N_p/number_threads_global
-        !$OMP end parallel
         allocate(self%cell_starting_indx(N_x-1, N_y-1), self%cell_ending_indx(N_x-1, N_y-1), &
         self%number_particles_cell_thread(N_x-1, N_y-1, number_threads_global))
         num_cells = (N_x-1) * (N_y-1)
@@ -122,7 +121,7 @@ contains
         real(real64), intent(in) :: n_ave
         class(domain_base), intent(in) :: world
         integer :: i, j
-        real(real64) :: area, sum_part
+        real(real64) :: area
 
         select type (world)
         type is (domain_uniform)
@@ -142,11 +141,7 @@ contains
             !$OMP end do
             !$OMP end parallel
         end select 
-        sum_part = 0
-        !$OMP parallel reduction(+:sum_part)
-        sum_part = sum_part + number_particles_overflow_thread
-        !$OMP end parallel
-        self%weight = n_ave * area / real(sum_part, kind = 8)
+        self%weight = n_ave * area / sum(number_particles_overflow_thread)
         self%q_times_weight = self%charge * self%weight
     end subroutine initialize_weight_from_n_ave
 
@@ -161,7 +156,7 @@ contains
         L_y = world%end_Y - world%start_Y
         !$OMP parallel private(i_thread, i, x_pos, y_pos, eta, xi, int_xi, int_eta)
         i_thread = omp_get_thread_num() + 1
-        do i = 1, number_particles_overflow_thread
+        do i = 1, number_particles_overflow_thread(i_thread)
             x_pos = pcg32_random_r(state_PCG) * L_x + world%start_X
             xi = world%get_xi_from_X(x_pos)
             int_xi = int(xi)
@@ -187,7 +182,9 @@ contains
             self%logical_position(2, start_cell_indx + cell_part_number, i_thread) = eta
             self%number_particles_cell_thread(int_xi, int_eta, i_thread) = self%number_particles_cell_thread(int_xi, int_eta, i_thread) + 1
         end do
+
         !$OMP end parallel
+       
     end subroutine initialize_rand_uniform
 
     subroutine interpolation_particle_to_nodes(self, i_thread, N_x_cell, N_y_cell)
@@ -207,7 +204,6 @@ contains
                     eta = self%logical_position(2,part_num,i_thread)
                     d_i = xi - i_cell_real
                     d_j = eta - j_cell_real
-
                     particle_work_space(i_cell,j_cell, i_thread) = particle_work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j) * self%q_times_weight
                     particle_work_space(i_cell+1,j_cell, i_thread) = particle_work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j) * self%q_times_weight
                     particle_work_space(i_cell,j_cell+1, i_thread) = particle_work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j) * self%q_times_weight
