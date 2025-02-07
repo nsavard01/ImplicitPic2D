@@ -216,6 +216,7 @@ contains
         type(Particle), intent(in) :: particle_list(number_charged_particles)
         integer(int32), intent(in) :: N_x_cell, N_y_cell
         integer(int32) :: i_thread, part_idx
+      
 
         !$OMP parallel private(i_thread, part_idx)
         i_thread = omp_get_thread_num() + 1
