@@ -82,10 +82,9 @@ contains
             particle_work_space(:,:,omp_get_thread_num()+1) = 0.0d0
             !$OMP end parallel
         end if
-        if (.not. allocated(number_particles_overflow_thread)) then
-            allocate(number_particles_overflow_thread(number_threads_global))
-            number_particles_overflow_thread = N_p/number_threads_global
-        end if
+        if (.not. allocated(number_particles_overflow_thread)) allocate(number_particles_overflow_thread(number_threads_global))
+        number_particles_overflow_thread = N_p/number_threads_global
+
         if (.not. allocated(number_particles_added_cell_thread)) then
             allocate(number_particles_added_cell_thread(N_x-1, N_y-1, number_threads_global))
             number_particles_added_cell_thread = 0
@@ -154,7 +153,7 @@ contains
         real(real64) :: x_pos, y_pos, L_x, L_y, xi, eta
         L_x = world%end_X - world%start_X
         L_y = world%end_Y - world%start_Y
-        !$OMP parallel private(i_thread, i, x_pos, y_pos, eta, xi, int_xi, int_eta)
+        !$OMP parallel private(i_thread, i, x_pos, y_pos, eta, xi, int_xi, int_eta, cell_part_number, start_cell_indx)
         i_thread = omp_get_thread_num() + 1
         do i = 1, number_particles_overflow_thread(i_thread)
             x_pos = pcg32_random_r(state_PCG) * L_x + world%start_X
@@ -193,19 +192,17 @@ contains
         integer(int32), intent(in) :: i_thread, N_x_cell, N_y_cell
         integer(int32) :: i_cell, j_cell
         integer(int64) :: part_num, start_point, end_point
-        real(real64) :: d_i, d_j, xi, eta, i_cell_real, j_cell_real
+        real(real64) :: d_i, d_j, xi, eta
 
         do j_cell = 1, N_y_cell
-            j_cell_real = real(j_cell, kind = 8)
             do i_cell = 1, N_x_cell
-                i_cell_real = real(i_cell, kind = 8)
                 start_point = self%cell_starting_indx(i_cell, j_cell)
                 end_point = self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread) - 1
                 do part_num = start_point, end_point
                     xi = self%logical_position(1,part_num,i_thread)
                     eta = self%logical_position(2,part_num,i_thread)
-                    d_i = xi - i_cell_real
-                    d_j = eta - j_cell_real
+                    d_i = xi - real(i_cell, kind = 8)
+                    d_j = eta - real(j_cell, kind = 8)
                     particle_work_space(i_cell,j_cell, i_thread) = particle_work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j) * self%q_times_weight
                     particle_work_space(i_cell+1,j_cell, i_thread) = particle_work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j) * self%q_times_weight
                     particle_work_space(i_cell,j_cell+1, i_thread) = particle_work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j) * self%q_times_weight
