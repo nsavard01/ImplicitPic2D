@@ -156,6 +156,7 @@ program main
     call particle_list(1)%initialize_rand_uniform(world)
     call particle_list(1)%initialize_maxwellian_temperature(T_e)
     print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0
+    print *, sum(particle_list(1)%number_particles_cell_thread)
 
 
 
@@ -164,10 +165,11 @@ program main
     call particle_list(2)%initialize_rand_uniform(world)
     call particle_list(2)%initialize_maxwellian_temperature(T_i)
     print *, 'average KE', particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
+    print *, sum(particle_list(2)%number_particles_cell_thread)
     select type (world)
     type is (domain_uniform)
         del_t = 0.5d0 * min(world%del_x, world%del_y)/sqrt(2.0d0 * T_e * e_charge/mass_electron)
-        print *, del_t
+        print *, 'del_t is', del_t
     end select
     allocate(E_Field(2,N_x, N_y))
     E_field = 0.0d0
@@ -177,7 +179,7 @@ program main
     EField_time = 0.0d0
     mover_time = 0.0d0
     solver_time = 0.0d0
-    number_diagnostics = 5
+    number_diagnostics = 10
     call system_clock(count_rate = timingRate)
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
