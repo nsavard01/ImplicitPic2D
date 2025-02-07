@@ -191,7 +191,7 @@ contains
         class(Particle), intent(in) :: self
         integer(int32), intent(in) :: i_thread, N_x_cell, N_y_cell
         integer(int32) :: i_cell, j_cell
-        integer(int64) :: part_num, start_point, end_point, sum_part
+        integer(int64) :: part_num, start_point, end_point
         real(real64) :: d_i, d_j, xi, eta
 
         do j_cell = 1, N_y_cell
@@ -207,7 +207,6 @@ contains
                     particle_work_space(i_cell+1,j_cell, i_thread) = particle_work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j) * self%q_times_weight
                     particle_work_space(i_cell,j_cell+1, i_thread) = particle_work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j) * self%q_times_weight
                     particle_work_space(i_cell+1,j_cell+1, i_thread) = particle_work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j) * self%q_times_weight
-                    sum_part = sum_part + 1
                 end do
             end do
         end do
