@@ -192,14 +192,16 @@ contains
         class(Particle), intent(in) :: self
         integer(int32), intent(in) :: i_thread, N_x_cell, N_y_cell
         integer(int32) :: i_cell, j_cell
-        integer(int64) :: part_num
+        integer(int64) :: part_num, start_point, end_point
         real(real64) :: d_i, d_j, xi, eta, i_cell_real, j_cell_real
 
         do j_cell = 1, N_y_cell
             j_cell_real = real(j_cell, kind = 8)
             do i_cell = 1, N_x_cell
                 i_cell_real = real(i_cell, kind = 8)
-                do part_num = self%cell_starting_indx(i_cell, j_cell), self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread) - 1
+                start_point = self%cell_starting_indx(i_cell, j_cell)
+                end_point = self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread) - 1
+                do part_num = start_point, end_point
                     xi = self%logical_position(1,part_num,i_thread)
                     eta = self%logical_position(2,part_num,i_thread)
                     d_i = xi - i_cell_real
@@ -463,7 +465,7 @@ contains
             self%number_particles_cell_thread(wall_i, wall_j, i_thread) = self%number_particles_cell_thread(wall_i, wall_j, i_thread) + 1
         end do
         
-
+        number_particles_overflow_thread(i_thread) = number_particles_overflow
     end subroutine particle_mover_uniform
 
     subroutine push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
@@ -478,7 +480,6 @@ contains
         i_thread = omp_get_thread_num() + 1
         do part_idx = 1, number_charged_particles
             call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread)
-            ! call particle_list(part_idx)%particle_resort(world, i_thread)
         end do
         !$OMP end parallel
 
