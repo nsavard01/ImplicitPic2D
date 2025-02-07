@@ -15,7 +15,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 501, N_y = 501, numThreads = 8
+    integer(int32) :: N_x = 601, N_y = 501, numThreads = 8
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
