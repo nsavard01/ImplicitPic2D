@@ -162,8 +162,8 @@ contains
             eta = self%logical_position(2,part_num,i_thread)
             i_cell = int(xi)
             j_cell = int(eta)
-            d_i = xi - real(i_cell)
-            d_j = eta - real(j_cell)
+            d_i = xi - real(i_cell, kind = 8)
+            d_j = eta - real(j_cell, kind = 8)
 
             particle_work_space(i_cell,j_cell, i_thread) = particle_work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j) * self%q_times_weight
             particle_work_space(i_cell+1,j_cell, i_thread) = particle_work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j) * self%q_times_weight
