@@ -151,7 +151,7 @@ contains
 
     subroutine interpolation_particle_to_nodes(self, i_thread)
         ! interpolate particles to work space array
-        class(Particle), intent(in out) :: self
+        class(Particle), intent(in) :: self
         integer(int32), intent(in) :: i_thread
         integer(int32) :: i_cell, j_cell
         integer(int64) :: part_num
@@ -175,7 +175,7 @@ contains
 
 
     subroutine interpolate_particle_charge_density(particle_list)
-        type(Particle), intent(in out) :: particle_list(number_charged_particles)
+        type(Particle), intent(in) :: particle_list(number_charged_particles)
         integer(int32) :: i_thread, part_idx
 
        !$OMP parallel private(i_thread, part_idx)
