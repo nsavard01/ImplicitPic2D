@@ -177,6 +177,7 @@ program main
     select type (world)
     type is (domain_uniform)
         del_t = 0.5d0 * min(world%del_x, world%del_y)/sqrt(2.0d0 * T_e * e_charge/mass_electron)
+        print *, 'del_t is:', del_t
     end select
 
     interp_time = 0.0d0
