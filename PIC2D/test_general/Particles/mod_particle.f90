@@ -215,15 +215,22 @@ contains
     subroutine interpolation_particle_charge_density(particle_list, N_x_cell, N_y_cell)
         type(Particle), intent(in) :: particle_list(number_charged_particles)
         integer(int32), intent(in) :: N_x_cell, N_y_cell
-        integer(int32) :: i_thread, part_idx
+        integer(int32) :: i_thread, part_idx, start_time, end_time
 
         !$OMP parallel private(i_thread, part_idx)
         i_thread = omp_get_thread_num() + 1
-        particle_work_space(:,:, i_thread) = 0.0d0 
-        do part_idx = 1, number_charged_particles
-            call particle_list(part_idx)%interpolation_particle_to_nodes(i_thread, N_x_cell, N_y_cell)
-        end do
+        particle_work_space(:,:, i_thread) = 0.0d0
         !$OMP end parallel
+
+        do part_idx = 1, number_charged_particles
+            call system_clock(start_time)
+            !$OMP parallel private(i_thread)
+            i_thread = omp_get_thread_num() + 1
+            call particle_list(part_idx)%interpolation_particle_to_nodes(i_thread, N_x_cell, N_y_cell)
+            !$OMP end parallel
+            call system_clock(end_time)
+            print *, end_time - start_time
+        end do
     end subroutine interpolation_particle_charge_density
 
     subroutine reset_particle_work_space()
