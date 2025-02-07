@@ -149,15 +149,14 @@ contains
         !$OMP end parallel
     end subroutine initialize_rand_uniform
 
-    subroutine interpolation_particle_to_nodes(self)
+    subroutine interpolation_particle_to_nodes(self, i_thread)
         ! interpolate particles to work space array
         class(Particle), intent(in out) :: self
-        integer(int32) :: i_thread, i_cell, j_cell
+        integer(int32), intent(in) :: i_thread
+        integer(int32) :: i_cell, j_cell
         integer(int64) :: part_num
         real(real64) :: d_i, d_j, xi, eta
 
-        
-        i_thread = omp_get_thread_num() + 1
         do part_num = 1, self%number_particles_thread(i_thread)
             xi = self%logical_position(1,part_num,i_thread)
             eta = self%logical_position(2,part_num,i_thread)
@@ -183,7 +182,7 @@ contains
         i_thread = omp_get_thread_num() + 1
         particle_work_space(:,:, i_thread) = 0.0d0
         do part_idx = 1, number_charged_particles
-            call particle_list(part_idx)%interpolation_particle_to_nodes()
+            call particle_list(part_idx)%interpolation_particle_to_nodes(i_thread)
             ! call particle_list(part_idx)%particle_resort(world, i_thread)
         end do
         !$OMP end parallel
