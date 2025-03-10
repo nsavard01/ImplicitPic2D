@@ -2,4 +2,5 @@
 !*/
 !*.f90
 !*.py
+*.fuse_hidden*
 !Makefile
