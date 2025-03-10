@@ -15,7 +15,7 @@ program main
     use omp_lib
     implicit none
 
-    integer(int32) :: N_x = 601, N_y = 501, numThreads = 8
+    integer(int32) :: N_x = 601, N_y = 501, numThreads = 6
     type(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
@@ -188,7 +188,7 @@ program main
     mover_time = 0.0d0
     solver_time = 0.0d0
     sort_time = 0.0d0
-    number_diagnostics = 1
+    number_diagnostics = 10
     open(41,file='NumDiag.dat', form='UNFORMATTED', access = 'stream', status = 'new')
     write(41) number_diagnostics
     close(41)
