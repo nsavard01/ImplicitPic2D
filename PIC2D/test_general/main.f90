@@ -28,7 +28,7 @@ program main
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: relTol, stepTol, temp_real, n_ave, del_t, T_e, T_i
     logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool
-    integer(int32) :: num_part_per_cell = 200
+    integer(int32) :: num_part_per_cell = 500
     integer(int64) :: num_part_total
     character(len=5) :: char_i
 
