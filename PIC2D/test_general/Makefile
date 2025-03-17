@@ -21,7 +21,7 @@ mod_GS_Base_Even.o mod_GS_Base.o mod_CSRMAtrix.o mod_pardisoSolver.o
 solver_obj_list = $(addprefix $(solver_dir), $(OBJ_solver))
 
 particle_dir = Particles/
-OBJ_particle = mod_particle.o
+OBJ_particle = mod_particle_contiguous.o mod_particle.o
 particle_obj_list = $(addprefix $(particle_dir), $(OBJ_particle))
 
 total_obj_list = $(solver_obj_list) $(particle_obj_list) $(world_obj_list) $(rand_obj_list) $(constants_obj_list)

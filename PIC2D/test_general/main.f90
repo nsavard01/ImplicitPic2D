@@ -11,12 +11,13 @@ program main
     use mod_domain_curv
     use mod_GS_Base
     use mod_particle
+    use mod_particle_contiguous
     use mod_rand_generator
     use omp_lib
     implicit none
 
     integer(int32) :: N_x = 601, N_y = 501, numThreads = 6
-    type(Particle), allocatable :: particle_list(:)
+    class(Particle), allocatable :: particle_list(:)
     class(domain_base), allocatable, target :: world
     class(MGSolver), allocatable :: mg_solver
     real(real64), allocatable :: E_Field(:, :, :)
@@ -28,7 +29,7 @@ program main
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: relTol, stepTol, temp_real, n_ave, del_t, T_e, T_i
     logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool
-    integer(int32) :: num_part_per_cell = 500
+    integer(int32) :: num_part_per_cell = 200
     integer(int64) :: num_part_total
     character(len=5) :: char_i
 
@@ -149,28 +150,43 @@ program main
     T_e = 2.0d0
     T_i = 0.025
     call change_global_numPart(2)
-    allocate(particle_list(number_charged_particles))
-    particle_list(1) = Particle(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world%N_x, world%N_y)
-    call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
-    call particle_list(1)%initialize_rand_uniform(world)
-    call particle_list(1)%initialize_maxwellian_temperature(T_e)
+    allocate(Particle_Contiguous :: particle_list(number_charged_particles))
 
-    particle_list(2) = Particle(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world%N_x, world%N_y)
-    call particle_list(2)%initialize_weight_from_n_ave(n_ave, world)
-    call particle_list(2)%initialize_rand_uniform(world)
-    call particle_list(2)%initialize_maxwellian_temperature(T_i)
+    select type (p => particle_list(1))
+    type is (Particle_Contiguous)
+        p = Particle_Contiguous(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world)
+        call p%initialize_weight_from_n_ave(n_ave, world)
+        call p%initialize_rand_uniform(world)
+        call p%initialize_maxwellian_temperature(T_e)
+        call p%get_sum_totals()
+    end select
+
+    select type (p => particle_list(2))
+    type is (Particle_Contiguous)
+        p = Particle_Contiguous(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world)
+        call p%initialize_weight_from_n_ave(n_ave, world)
+        call p%initialize_rand_uniform(world)
+        call p%initialize_maxwellian_temperature(T_i)
+        call p%get_sum_totals()
+    end select
 
 
     call system_clock(startTime)
     do i = 1, number_charged_particles
-        call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
+        !$OMP parallel private(i_thread)
+        i_thread = omp_get_thread_num()+1
+        select type (p => particle_list(i))
+        type is (Particle_Contiguous)
+            call p%particle_sort(i_thread, world%N_x-1, world%N_y-1)
+        end select
+        !$OMP end parallel
     end do
     call system_clock(endTime)
     print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, ''
-    print *, 'particle numbers', sum(particle_list(1)%number_particles_thread), sum(particle_list(2)%number_particles_thread)
+    print *, 'particle numbers', particle_list(1)%total_number_particles, particle_list(2)%total_number_particles
     
-    print *, 'Particle temp is:', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0, particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
+    print *, 'Particle temp is:', particle_list(1)%get_KE_Ave() * 2.0d0 / 3.0d0, particle_list(2)%get_KE_Ave() * 2.0d0 / 3.0d0
     
     ! get E-field
     allocate(E_Field(2,N_x, N_y))
@@ -216,11 +232,18 @@ program main
             call system_clock(endTime)
             EField_time = EField_time + real(endTime - startTime)
 
+            select type (particle_list)
+            type is (Particle_Contiguous)
+            do i = 1, number_charged_particles
+                particle_list(i)%count_bool = (k == number_diagnostics)
+                call particle_list(i)%get_sum_totals()
+            end do
+            end select
             call system_clock(startTime)
-            call push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t, k == number_diagnostics)
+            call push_particles_uniform(particle_list, E_Field, world, del_t)
             call system_clock(endTime)
             mover_time = mover_time + real(endTime - startTime)
-            print *, 'amount total particles', sum(particle_list(1)%number_particles_thread), sum(particle_list(2)%number_particles_thread), sum(particle_list(1)%cell_count)
+            print *, 'amount total particles', particle_list(1)%total_number_particles, particle_list(2)%total_number_particles
 
         end select
         write(char_i, '(I4)') k
@@ -230,14 +253,13 @@ program main
         close(41)
     end do
 
-    call system_clock(startTime)
-    do i = 1, number_charged_particles
-        call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
-        ! call particle_list(i)%resize_particle_arrays()
-    end do
-    call system_clock(endTime)
-    sort_time = sort_time + real(endTime - startTime)
-    print *, 'particle sorting took', sort_time/real(timingRate), 'seconds'
+    ! call system_clock(startTime)
+    ! do i = 1, number_charged_particles
+    !     call particle_list(i)%particle_sort(world%N_x-1, world%N_y-1)
+    !     ! call particle_list(i)%resize_particle_arrays()
+    ! end do
+    ! call system_clock(endTime)
+    ! sort_time = sort_time + real(endTime - startTime)
     print *, ''
     print *, ''
     print *, 'interpolation time took', interp_time / real(timingRate)
@@ -246,7 +268,7 @@ program main
     print *, 'EField time took', EField_time / real(timingRate)
     print *, 'Mover time took', mover_time / real(timingRate)
     print *, 'Total time is', (sort_time + interp_time + source_term_time + solver_time + Efield_time + mover_time) / real(timingRate, kind = 8)
-    print *, 'average KE', particle_list(1)%getKEAve() * 2.0d0 / 3.0d0, particle_list(2)%getKEAve() * 2.0d0 / 3.0d0
+    print *, 'average KE', particle_list(1)%get_KE_Ave() * 2.0d0 / 3.0d0, particle_list(2)%get_KE_Ave() * 2.0d0 / 3.0d0
     
 
 
@@ -765,26 +787,6 @@ contains
     end subroutine get_poisson_source_term
 
 
-
-
-
-    subroutine push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t, count_bool)
-        type(domain_uniform), intent(in) :: world
-        real(real64), intent(in) :: E_field(2,world%N_x,world%N_y), del_t
-        integer(int32), intent(in) :: number_charged_particles
-        type(Particle), intent(in out) :: particle_list(number_charged_particles)
-        logical, intent(in) :: count_bool
-        integer(int32) :: i_thread, part_idx
-
-       !$OMP parallel private(i_thread, part_idx)
-        i_thread = omp_get_thread_num() + 1
-        do part_idx = 1, number_charged_particles
-            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, count_bool)
-            ! call particle_list(part_idx)%particle_resort(world, i_thread)
-        end do
-        !$OMP end parallel
-
-    end subroutine push_particles_uniform
 
 
     ! subroutine readChargedParticleInputs(filename, irand, T_e, T_i, numThread, world, particleList)
