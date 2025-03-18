@@ -1,14 +1,11 @@
 module mod_MGSolver
     use iso_fortran_env, only: int32, int64, real64
-    use omp_lib
-    use mod_MG_Stage
-    use mod_PardisoSolver
-    use mod_CSRMAtrix
+    use mod_pardisoSolver
     use mod_domain_base
     use mod_domain_curv
     use mod_domain_uniform
-    use mod_GS_Base_Curv
-    use mod_GS_Base_Even
+    use mod_CSRMAtrix
+    use mod_MG_Stage
     implicit none
 
     ! Stage for each multigrid, will define restriction and prolongation operations

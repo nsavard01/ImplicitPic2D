@@ -1,13 +1,14 @@
 module mod_particle_contiguous
 
+
     use iso_fortran_env, only: int32, real64, output_unit
     use constants
-    use mod_particle
     use mod_domain_base
     use mod_domain_uniform
     use mod_domain_curv
     use mod_rand_generator
     use omp_lib
+    use mod_particle
     implicit none
 
    

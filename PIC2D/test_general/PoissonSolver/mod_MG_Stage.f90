@@ -1,9 +1,9 @@
 module mod_MG_Stage
     use iso_fortran_env, only: int32, int64, real64
-    use mod_GS_Base
     use mod_domain_base
     use mod_domain_uniform
     use mod_domain_curv
+    use mod_GS_Base
     use mod_ZebraSolverEven
     use mod_RedBlackSolverEven
     use mod_ZebraSolverCurv

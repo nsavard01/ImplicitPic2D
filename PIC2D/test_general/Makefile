@@ -31,7 +31,7 @@ include_dir = $(addprefix -I,  $(total_dir_list))
 
 RM = rm -f
 
-all: main
+all: $(total_obj_list) main
 
 debug: clean setDebug main
 
@@ -39,25 +39,25 @@ setDebug:
 	@echo "Setting up Debug flags"
 	$(eval BASE = -qmkl -qopenmp -g -traceback -check all -fp-stack-check -warn all)
 	
-main: main.o $(total_obj_list)
+main: main.o 
 	$(FC) $(BASE) -o $@ main.o $(total_obj_list)
 
-main.o: main.f90 solver particle world random constants
+main.o: main.f90 $(constants_obj_list) $(rand_obj_list) $(world_obj_list) $(particle_obj_list) $(solver_obj_list)
 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
 
-solver: particle world constants
+$(solver_obj_list): $(constants_obj_list) $(rand_obj_list) $(world_obj_list)
 	cd $(solver_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-particle: world constants random
+$(particle_obj_list): $(constants_obj_list) $(rand_obj_list) $(world_obj_list)
 	cd $(particle_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-world: constants random
+$(world_obj_list):
 	cd $(world_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-random: constants
+$(rand_obj_list): 
 	cd $(rand_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-constants:
+$(constants_obj_list): 
 	cd $(constants_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
 clean:

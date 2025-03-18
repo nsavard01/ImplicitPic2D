@@ -1,8 +1,6 @@
 module mod_RedBlackSolverEven
     use iso_fortran_env, only: int32, int64, real64
     use mod_GS_Base_Even
-    use mod_domain_uniform
-    use omp_lib
     implicit none
 
     ! Class for a red black gauss siedel smoother
