@@ -14,7 +14,7 @@ module mod_domain_base
         ! store grid quantities
         real(real64), allocatable :: grid_X(:), grid_Y(:) ! spatial location in grid
         integer(int32), allocatable :: boundary_conditions(:,:) ! type of node in each direction 
-        real(real64) :: start_X, end_X, start_Y, end_Y! start and end locations of grid as reference
+        real(real64) :: start_X, end_X, start_Y, end_Y, total_cell_area ! start and end locations of grid as reference
         integer(int32) :: N_x, N_y, N_x_cells, N_y_cells ! amount of nodes in x and y direction
         integer(int64) :: number_total_cells 
     contains
@@ -55,22 +55,6 @@ contains
 
     subroutine get_number_cells(self)
         class(domain_base), intent(in out) :: self
-        integer :: j, i
-        integer(int64) :: num
-        num = 0
-        !$OMP parallel private(j,i) reduction(+:num)
-        !$OMP do
-        do j = 1, self%N_y-1
-            do i = 1, self%N_x-1
-                if (self%boundary_conditions(i,j) == 0 .or. self%boundary_conditions(i+1,j) == 0 &
-                .or. self%boundary_conditions(i,j+1) == 0 .or. self%boundary_conditions(i+1,j+1) == 0) then
-                    num = num + 1
-                end if
-            end do
-        end do
-        !$OMP end do
-        !$OMP end parallel
-        self%number_total_cells = num
     end subroutine get_number_cells
 
     subroutine form_boundary_conditions(self, upperBound, rightBound, lowerBound, leftBound, inner_box_first_x, inner_box_last_x, inner_box_first_y, inner_box_last_y, center_box_bool)

@@ -12,6 +12,7 @@ program main
     use mod_GS_Base
     use mod_particle
     use mod_particle_contiguous
+    use mod_particle_per_cell
     use mod_rand_generator
     use omp_lib
     implicit none
@@ -28,7 +29,7 @@ program main
     real(real64) :: NESW_phiValues(4), rho, omega
     real(real64) :: Length = 0.05, Width = 0.05, delX, delY
     real(real64) :: relTol, stepTol, temp_real, n_ave, del_t, T_e, T_i
-    logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool
+    logical :: evenGridBool, redBlackBool, Krylov_bool, center_box_bool, particle_per_cell_bool
     integer(int32) :: num_part_per_cell = 200
     integer(int64) :: num_part_total
     character(len=5) :: char_i
@@ -46,6 +47,7 @@ program main
     redBlackBool = .true.
     Krylov_bool = .false.
     center_box_bool = .false.
+    particle_per_cell_bool = .false.
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
@@ -150,39 +152,35 @@ program main
     T_e = 2.0d0
     T_i = 0.025
     call change_global_numPart(2)
-    allocate(Particle_Contiguous :: particle_list(number_charged_particles))
+    if (particle_per_cell_bool) then
+        allocate(Particle_Per_Cell :: particle_list(number_charged_particles))
+    else
+        allocate(Particle_Contiguous :: particle_list(number_charged_particles))
+    end if
 
     select type (p => particle_list(1))
     type is (Particle_Contiguous)
         p = Particle_Contiguous(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world)
-        call p%initialize_weight_from_n_ave(n_ave, world)
-        call p%initialize_rand_uniform(world)
-        call p%initialize_maxwellian_temperature(T_e)
-        call p%get_sum_totals()
+    type is (Particle_Per_Cell)
+        p = Particle_Per_Cell(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world)
     end select
+    call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
+    call particle_list(1)%initialize_rand_uniform(world)
+    call particle_list(1)%initialize_maxwellian_temperature(T_e)
+    call particle_list(1)%get_sum_totals()
 
     select type (p => particle_list(2))
     type is (Particle_Contiguous)
         p = Particle_Contiguous(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world)
-        call p%initialize_weight_from_n_ave(n_ave, world)
-        call p%initialize_rand_uniform(world)
-        call p%initialize_maxwellian_temperature(T_i)
-        call p%get_sum_totals()
+    type is (Particle_Per_Cell)
+        p = Particle_Per_Cell(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world)
     end select
+    call particle_list(2)%initialize_weight_from_n_ave(n_ave, world)
+    call particle_list(2)%initialize_rand_uniform(world)
+    call particle_list(2)%initialize_maxwellian_temperature(T_e)
+    call particle_list(2)%get_sum_totals()
 
 
-    call system_clock(startTime)
-    do i = 1, number_charged_particles
-        !$OMP parallel private(i_thread)
-        i_thread = omp_get_thread_num()+1
-        select type (p => particle_list(i))
-        type is (Particle_Contiguous)
-            call p%particle_sort(i_thread, world%N_x-1, world%N_y-1)
-        end select
-        !$OMP end parallel
-    end do
-    call system_clock(endTime)
-    print *, 'particle sorting took', real(endTime - startTime)/real(timingRate), 'seconds'
     print *, ''
     print *, 'particle numbers', particle_list(1)%total_number_particles, particle_list(2)%total_number_particles
     
@@ -232,13 +230,15 @@ program main
             call system_clock(endTime)
             EField_time = EField_time + real(endTime - startTime)
 
-            select type (particle_list)
-            type is (Particle_Contiguous)
+            
+            
             do i = 1, number_charged_particles
-                particle_list(i)%count_bool = (k == number_diagnostics)
+                select type (particle_list)
+                type is (Particle_Contiguous)
+                    particle_list(i)%count_bool = (k == number_diagnostics)
+                end select
                 call particle_list(i)%get_sum_totals()
             end do
-            end select
             call system_clock(startTime)
             call push_particles_uniform(particle_list, E_Field, world, del_t)
             call system_clock(endTime)

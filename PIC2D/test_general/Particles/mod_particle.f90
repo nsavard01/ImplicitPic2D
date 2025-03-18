@@ -75,26 +75,8 @@ contains
         class(domain_base), intent(in) :: world
         integer :: i, j
         real(real64) :: area
-
-        select type (world)
-        type is (domain_uniform)
-            area = world%number_total_cells/world%inv_node_volume
-        type is (domain_curv)
-            area = 0
-            !$OMP parallel private(j,i) reduction(+:area)
-            !$OMP do
-            do j = 1, world%N_y-1
-                do i = 1, world%N_x-1
-                    if (world%boundary_conditions(i,j) == 0 .or. world%boundary_conditions(i+1,j) == 0 &
-                    .or. world%boundary_conditions(i,j+1) == 0 .or. world%boundary_conditions(i+1,j+1) == 0) then
-                        area = area + world%del_x(i) * world%del_y(j)
-                    end if
-                end do
-            end do
-            !$OMP end do
-            !$OMP end parallel
-        end select 
-        self%weight = n_ave * area / real(self%total_number_particles, kind = 8)
+        
+        self%weight = n_ave * world%total_cell_area / real(self%total_number_particles, kind = 8)
         self%q_times_weight = self%charge * self%weight
     end subroutine initialize_weight_from_n_ave
 

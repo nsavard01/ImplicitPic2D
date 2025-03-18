@@ -2,6 +2,7 @@ module mod_particle_per_cell
 
     use iso_fortran_env, only: int32, real64, output_unit
     use constants
+    use mod_particle
     use mod_domain_base
     use mod_domain_uniform
     use mod_domain_curv
@@ -9,191 +10,131 @@ module mod_particle_per_cell
     use omp_lib
     implicit none
 
-    private
-    public :: Particle, reset_particle_work_space, push_particles_uniform, interpolation_particle_charge_density
     ! The following arrays will be used by all particles for threaded operations as temporaries, so only allocate a single time
-    real(real64), allocatable, public, protected :: logical_position_overflow(:,:,:), velocity_overflow(:,:,:), particle_work_space(:,:,:)
+    real(real64), allocatable, public, protected :: logical_position_overflow(:,:,:), velocity_overflow(:,:,:)
     integer(int64), allocatable, public, protected :: number_particles_overflow_thread(:)
     integer(int32), allocatable, public, protected :: number_particles_added_cell_thread(:,:,:)
     integer(int64), public, protected :: max_indx_overflow = 0, max_number_overflow = 0
 
     ! Particle contains particle properties and stored values in phase space
-    type :: Particle
-        character(:), allocatable :: name !name of the particle
-        ! numToCollide saves number that can collided in nullCollision
-        integer(int64) :: max_indx ! maximum particles per thread
-
-        ! sort logical position into cells
-
+    type, extends(Particle) :: Particle_Per_Cell
         integer(int64), allocatable :: cell_starting_indx(:,:), cell_ending_indx(:,:)  ! starting/ending index (or particle number) for particle in cell per thread [i index, j index, thread #]
         ! We assume for the moment that particles will be equally spread through each thread, so starting/ending index is the same for all threads
         integer(int32), allocatable :: number_particles_cell_thread(:,:,:) ! total number of particles in a cell for a particular thread [i index, j index, thread #]
-        real(real64), allocatable :: densities(:,:)
-        real(real64), allocatable :: logical_position(:,:, :), velocity(:,:,:) !particle phase space, represents [# particle]
-        real(real64) :: mass, charge, weight, q_over_m, q_times_weight ! mass (kg), charge(C), and weight (N/m^2 in 1D) of particles. Assume constant weight for moment
 
     contains
-        procedure, public, pass(self) :: initialize_weight_from_n_ave
-        procedure, public, pass(self) :: initialize_rand_uniform
-        procedure, public, pass(self) :: interpolation_particle_to_nodes
-        ! procedure, public, pass(self) :: interpolation_particle_to_nodes_sorted
-        procedure, public, pass(self) :: particle_mover_uniform
-        ! procedure, public, pass(self) :: initializeRandCosine
-        ! procedure, public, pass(self) :: initializeRandSine
-        procedure, public, pass(self) :: initialize_maxwellian_temperature
-        procedure, public, pass(self) :: getKEAve
-        ! procedure, public, pass(self) :: getTotalKE
-        ! procedure, public, pass(self) :: getTotalMomentum
-        ! procedure, public, pass(self) :: writePhaseSpace
-        ! procedure, public, pass(self) :: writeLocalTemperature
-    end type Particle
-
-
-    interface Particle
-        module procedure :: particle_constructor
-    end interface Particle
+        procedure, public, pass(self) :: initialize_rand_uniform => initialize_rand_uniform_cell
+        procedure, public, pass(self) :: interpolation_particle_to_nodes => interpolation_particle_to_nodes_cell
+        procedure, public, pass(self) :: particle_mover_uniform => particle_mover_uniform_cell
+        procedure, public, pass(self) :: initialize_maxwellian_temperature => initialize_maxwellian_temperature_cell
+        procedure, public, pass(self) :: get_sum_totals => get_sum_totals_cell
+    end type
+    interface Particle_Per_Cell
+        module procedure :: particle_per_cell_constructor
+    end interface Particle_Per_Cell
 
 contains
 
-    type(Particle) function particle_constructor(mass, q, w_p, N_p, finalIdx, particleName, N_x, N_y) result(self)
+    type(Particle_Per_Cell) function particle_per_cell_constructor(mass, q, w_p, N_p, finalIdx, particleName, world) result(self)
         ! Construct particle object, sizeIncrease is fraction larger stored array compared to initial amount of particles
         ! In future, use hash function for possible k = 1 .. Nx, m amount of boundaries, p = prime number  m < p < N_x. h(k) = (k%p)%m
         real(real64), intent(in) :: mass, q, w_p
         integer(int64), intent(in) :: N_p, finalIdx
-        integer(int32), intent(in) :: N_x, N_y
+        class(domain_base), intent(in) :: world
         character(*), intent(in) :: particleName
-        integer(int64) :: part_num_separation, num_cells, k, leftOver_number
+        integer(int64) :: part_num_separation, k, leftOver_number
         integer(int32) :: i, j
-        self % name = particleName
-        self % mass = mass
-        self % charge = q
-        self % weight = w_p
-        self%q_over_m = q/mass
-        self%q_times_weight = q * w_p
-        self %max_indx = finalIdx / number_threads_global
-        max_indx_overflow = max(N_p / number_threads_global, max_indx_overflow)
-        allocate(self%logical_position(2,self%max_indx, number_threads_global), &
-        self%velocity(3,self%max_indx, number_threads_global))
+        call self%initialize_base_variables(mass, q, w_p, N_p, finalIdx, particleName, world%N_x, world%N_y)
+        max_indx_overflow = max(self%total_number_particles / number_threads_global, max_indx_overflow)
         if (.not. allocated(velocity_overflow)) allocate(velocity_overflow(3, max_indx_overflow, number_threads_global))
         if (.not. allocated(logical_position_overflow)) allocate(logical_position_overflow(2, max_indx_overflow, number_threads_global))
-        if (.not. allocated(particle_work_space)) then
-            allocate(particle_work_space(N_x, N_y, number_threads_global))
-            !$OMP parallel
-            particle_work_space(:,:,omp_get_thread_num()+1) = 0.0d0
-            !$OMP end parallel
-        end if
         if (.not. allocated(number_particles_overflow_thread)) allocate(number_particles_overflow_thread(number_threads_global))
-        number_particles_overflow_thread = N_p/number_threads_global
+        number_particles_overflow_thread = self%total_number_particles/number_threads_global
 
         if (.not. allocated(number_particles_added_cell_thread)) then
-            allocate(number_particles_added_cell_thread(N_x-1, N_y-1, number_threads_global))
+            allocate(number_particles_added_cell_thread(world%N_x-1, world%N_y-1, number_threads_global))
             number_particles_added_cell_thread = 0
         end if
-        allocate(self%cell_starting_indx(N_x-1, N_y-1), self%cell_ending_indx(N_x-1, N_y-1), &
-        self%number_particles_cell_thread(N_x-1, N_y-1, number_threads_global))
-        num_cells = (N_x-1) * (N_y-1)
-        part_num_separation = self%max_indx / num_cells
-        leftOver_number = self%max_indx - part_num_separation * num_cells
+        allocate(self%cell_starting_indx(world%N_x-1, world%N_y-1), self%cell_ending_indx(world%N_x-1, world%N_y-1), &
+        self%number_particles_cell_thread(world%N_x-1, world%N_y-1, number_threads_global))
+        part_num_separation = self%max_indx / world%number_total_cells
+        leftOver_number = self%max_indx - part_num_separation * world%number_total_cells
         k = 1
-        do j = 1, N_y-1
-            do i = 1, N_x-1
-                if (leftOver_number > 0) then
-                    ! while still left over numbers have total cell number + 1 what it would be otherwise
-                    self%cell_starting_indx(i,j) = k
-                    self%cell_ending_indx(i,j) = k + part_num_separation
-                    k = k + part_num_separation + 1
-                    leftOver_number = leftOver_number - 1
-                else
-                    self%cell_starting_indx(i,j) = k
-                    self%cell_ending_indx(i,j) = k + part_num_separation - 1
-                    k = k + part_num_separation
+        do j = 1, world%N_y-1
+            do i = 1, world%N_x-1
+                if (world%boundary_conditions(i, j) == 0 .or. world%boundary_conditions(i+1,j) == 0 &
+                    .or. world%boundary_conditions(i,j+1) == 0 .or. world%boundary_conditions(i+1,j+1) == 0) then
+                    if (leftOver_number > 0) then
+                        ! while still left over numbers have total cell number + 1 what it would be otherwise
+                        self%cell_starting_indx(i,j) = k
+                        self%cell_ending_indx(i,j) = k + part_num_separation
+                        k = k + part_num_separation + 1
+                        leftOver_number = leftOver_number - 1
+                    else
+                        self%cell_starting_indx(i,j) = k
+                        self%cell_ending_indx(i,j) = k + part_num_separation - 1
+                        k = k + part_num_separation
+                    end if
                 end if
             end do
         end do
         self%number_particles_cell_thread = 0
         
-    end function particle_constructor
+    end function particle_per_cell_constructor
 
-    subroutine initialize_weight_from_n_ave(self, n_ave, world)
-        ! initialize w_p based on initial average n (N/m^3) over domain
-        class(Particle), intent(in out) :: self
-        real(real64), intent(in) :: n_ave
+
+    subroutine initialize_rand_uniform_cell(self, world)
+        ! distribute particles randomly over the domain
+        class(Particle_Per_Cell), intent(in out) :: self
         class(domain_base), intent(in) :: world
-        integer :: i, j
-        real(real64) :: area
-
-        select type (world)
-        type is (domain_uniform)
-            area = world%number_total_cells/world%inv_node_volume
-        type is (domain_curv)
-            area = 0
-            !$OMP parallel private(j,i) reduction(+:area)
-            !$OMP do
-            do j = 1, world%N_y-1
-                do i = 1, world%N_x-1
-                    if (world%boundary_conditions(i,j) == 0 .or. world%boundary_conditions(i+1,j) == 0 &
-                    .or. world%boundary_conditions(i,j+1) == 0 .or. world%boundary_conditions(i+1,j+1) == 0) then
-                        area = area + world%del_x(i) * world%del_y(j)
-                    end if
+        integer(int32) :: i_thread, int_xi, int_eta, last_xi, last_eta, number_cell
+        integer(int64) :: part_num, number_particles, idx_num
+        real(real64) :: particle_remainder, real_number_cell
+        !$OMP parallel private(i_thread, part_num,int_xi, int_eta, idx_num, number_particles, last_xi, last_eta, number_cell, real_number_cell, particle_remainder)
+        i_thread = omp_get_thread_num() + 1
+        number_particles = number_particles_overflow_thread(i_thread)
+        particle_remainder = 0.0
+        idx_num = 0
+        do int_eta = 1, world%N_y-1
+            do int_xi = 1, world%N_x-1
+                if (world%boundary_conditions(int_xi, int_eta) == 0 .or. world%boundary_conditions(int_xi+1,int_eta) == 0 &
+                    .or. world%boundary_conditions(int_xi,int_eta+1) == 0 .or. world%boundary_conditions(int_xi+1,int_eta+1) == 0) then
+                    select type (world)
+                    type is (domain_uniform)
+                        real_number_cell = real(number_particles, kind = 8) / real(world%number_total_cells, kind = 8)
+                    type is (domain_curv)
+                        real_number_cell = real(number_particles, kind = 8)  * world%del_x(int_xi) * world%del_y(int_eta)/ world%total_cell_area
+                    end select
+                    number_cell = int(real_number_cell + particle_remainder)
+                    particle_remainder = particle_remainder + real_number_cell - real(number_cell, kind = 8)
+                    last_xi = int_xi
+                    last_eta = int_eta
+                else
+                    number_cell = 0
+                end if
+                self%number_particles_cell_thread(int_xi, int_eta, i_thread) = number_cell
+                idx_num = self%cell_starting_indx(int_xi, int_eta)
+                do part_num = 1, number_cell
+                    self%logical_position(1, idx_num, i_thread) = pcg32_random_r(state_PCG) + real(int_xi, kind = 8)
+                    self%logical_position(2, idx_num, i_thread) = pcg32_random_r(state_PCG) + real(int_eta, kind = 8)
+                    idx_num = idx_num + 1
                 end do
             end do
-            !$OMP end do
-            !$OMP end parallel
-        end select 
-        self%weight = n_ave * area / sum(number_particles_overflow_thread)
-        self%q_times_weight = self%charge * self%weight
-    end subroutine initialize_weight_from_n_ave
-
-    subroutine initialize_rand_uniform(self, world)
-        ! distribute particles randomly over the domain
-        class(Particle), intent(in out) :: self
-        class(domain_base), intent(in) :: world
-        integer(int32) :: i_thread, int_xi, int_eta
-        integer(int64) :: i, start_cell_indx, cell_part_number
-        real(real64) :: x_pos, y_pos, L_x, L_y, xi, eta
-        L_x = world%end_X - world%start_X
-        L_y = world%end_Y - world%start_Y
-        !$OMP parallel private(i_thread, i, x_pos, y_pos, eta, xi, int_xi, int_eta, cell_part_number, start_cell_indx)
-        i_thread = omp_get_thread_num() + 1
-        do i = 1, number_particles_overflow_thread(i_thread)
-            x_pos = pcg32_random_r(state_PCG) * L_x + world%start_X
-            xi = world%get_xi_from_X(x_pos)
-            int_xi = int(xi)
-
-            y_pos = pcg32_random_r(state_PCG)  * L_y + world%start_Y
-            eta = world%get_eta_from_Y(y_pos)
-            int_eta = int(eta)
-            do while (world%boundary_conditions(int_xi, int_eta) /= 0 .and. world%boundary_conditions(int_xi+1, int_eta) /= 0 &
-                .and. world%boundary_conditions(int_xi, int_eta+1) /= 0 .and. world%boundary_conditions(int_xi+1, int_eta+1) /= 0)
-                x_pos = pcg32_random_r(state_PCG)  * L_x + world%start_X
-                xi = world%get_xi_from_X(x_pos)
-                int_xi = int(xi)
-
-                y_pos = pcg32_random_r(state_PCG) * L_y + world%start_Y
-                eta = world%get_eta_from_Y(y_pos)
-                int_eta = int(eta)
-            end do
-            
-            
-            cell_part_number = self%number_particles_cell_thread(int_xi, int_eta, i_thread)
-            start_cell_indx = self%cell_starting_indx(int_xi, int_eta)
-            self%logical_position(1, start_cell_indx + cell_part_number, i_thread) = xi
-            self%logical_position(2, start_cell_indx + cell_part_number, i_thread) = eta
-            self%number_particles_cell_thread(int_xi, int_eta, i_thread) = self%number_particles_cell_thread(int_xi, int_eta, i_thread) + 1
         end do
 
         !$OMP end parallel
-       
-    end subroutine initialize_rand_uniform
+    end subroutine initialize_rand_uniform_cell
 
-    subroutine interpolation_particle_to_nodes(self, i_thread, N_x_cell, N_y_cell)
+    subroutine interpolation_particle_to_nodes_cell(self, i_thread, const)
         ! interpolate particles to work space array
-        class(Particle), intent(in) :: self
-        integer(int32), intent(in) :: i_thread, N_x_cell, N_y_cell
-        integer(int32) :: i_cell, j_cell
+        class(Particle_Per_Cell), intent(in) :: self
+        integer(int32), intent(in) :: i_thread
+        real(real64), intent(in) :: const
+        integer(int32) :: i_cell, j_cell, N_x_cell, N_y_cell
         integer(int64) :: part_num, start_point, end_point
         real(real64) :: d_i, d_j, xi, eta, NW, NE, SW, SE, real_j_cell, real_i_cell
-
+        N_x_cell = size(self%cell_starting_indx, DIM = 1)
+        N_y_cell = size(self%cell_starting_indx, DIM = 2)
         do j_cell = 1, N_y_cell
             real_j_cell = real(j_cell, kind = 8)
             do i_cell = 1, N_x_cell
@@ -214,41 +155,18 @@ contains
                     NW = NW + (1.0d0-d_i) * (d_j)
                     NE = NE + d_i * d_j
                 end do
-                particle_work_space(i_cell,j_cell, i_thread) = particle_work_space(i_cell,j_cell, i_thread) + SW * self%q_times_weight
-                particle_work_space(i_cell+1,j_cell, i_thread) = particle_work_space(i_cell+1,j_cell, i_thread) + SE * self%q_times_weight
-                particle_work_space(i_cell,j_cell+1, i_thread) = particle_work_space(i_cell,j_cell+1, i_thread) + NW * self%q_times_weight
-                particle_work_space(i_cell+1,j_cell+1, i_thread) = particle_work_space(i_cell+1,j_cell+1, i_thread) + NE * self%q_times_weight
+                particle_work_space(i_cell,j_cell, i_thread) = particle_work_space(i_cell,j_cell, i_thread) + SW * const
+                particle_work_space(i_cell+1,j_cell, i_thread) = particle_work_space(i_cell+1,j_cell, i_thread) + SE * const
+                particle_work_space(i_cell,j_cell+1, i_thread) = particle_work_space(i_cell,j_cell+1, i_thread) + NW * const
+                particle_work_space(i_cell+1,j_cell+1, i_thread) = particle_work_space(i_cell+1,j_cell+1, i_thread) + NE * const
             end do
         end do
-    end subroutine interpolation_particle_to_nodes
+    end subroutine interpolation_particle_to_nodes_cell
 
-    subroutine interpolation_particle_charge_density(particle_list, N_x_cell, N_y_cell)
-        type(Particle), intent(in) :: particle_list(number_charged_particles)
-        integer(int32), intent(in) :: N_x_cell, N_y_cell
-        integer(int32) :: i_thread, part_idx
-      
 
-        !$OMP parallel private(i_thread, part_idx)
-        i_thread = omp_get_thread_num() + 1
-        particle_work_space(:,:, i_thread) = 0.0d0
-        do part_idx = 1, number_charged_particles
-            call particle_list(part_idx)%interpolation_particle_to_nodes(i_thread, N_x_cell, N_y_cell)    
-        end do
-        !$OMP end parallel
-    end subroutine interpolation_particle_charge_density
-
-    subroutine reset_particle_work_space()
-        integer(int32) :: i_thread
-        !$OMP parallel private(i_thread)
-        i_thread = omp_get_thread_num() + 1
-        particle_work_space(:,:, i_thread) = 0.0d0
-        !$OMP end parallel
-
-    end subroutine reset_particle_work_space
-
-    subroutine particle_mover_uniform(self, E_Field, world, del_t, i_thread)
+    subroutine particle_mover_uniform_cell(self, i_thread, E_Field, world, del_t)
         ! place subroutine in particle, then have per thread subroutine rather than keeping track of private variables
-        class(Particle), intent(in out) :: self
+        class(Particle_Per_Cell), intent(in out) :: self
         type(domain_uniform), intent(in) :: world
         real(real64), intent(in) :: E_Field(2,world%N_x,world%N_y), del_t
         integer(int32), intent(in) :: i_thread
@@ -474,262 +392,14 @@ contains
         end do
         
         number_particles_overflow_thread(i_thread) = number_particles_overflow
-    end subroutine particle_mover_uniform
-
-    subroutine push_particles_uniform(particle_list, number_charged_particles, E_Field, world, del_t)
-        type(domain_uniform), intent(in) :: world
-        real(real64), intent(in) :: E_field(2,world%N_x,world%N_y), del_t
-        integer(int32), intent(in) :: number_charged_particles
-        type(Particle), intent(in out) :: particle_list(number_charged_particles)
-        integer(int32) :: i_thread, part_idx
-
-    
-        !$OMP parallel private(i_thread, part_idx)
-        i_thread = omp_get_thread_num() + 1
-        do part_idx = 1, number_charged_particles
-            call particle_list(part_idx)%particle_mover_uniform(E_Field, world, del_t, i_thread)
-        end do
-        !$OMP end parallel
+    end subroutine particle_mover_uniform_cell
 
 
 
-    end subroutine push_particles_uniform
-
-    ! subroutine interpolation_particle_to_nodes_sorted(self, N_x_cells, N_y_cells)
-    !     ! interpolate particles to work space array
-    !     class(Particle), intent(in out) :: self
-    !     integer(int32), intent(in) :: N_x_cells, N_y_cells
-    !     integer(int32) :: i_thread, i_cell, j_cell
-    !     integer(int64) :: k, part_num
-    !     real(real64) :: d_i, d_j, xi, eta
-
-    !     ! try with ordered 
-    !     !$OMP parallel private(part_num, i_thread, i_cell,j_cell, d_i, d_j, xi, eta, k)
-    !     i_thread = omp_get_thread_num() + 1
-    !     do j_cell = 1, N_y_cells
-    !         do i_cell = 1, N_x_cells
-    !             k = (j_cell - 1) * N_x_cells + i_cell
-    !             do part_num = self%cell_indx_array(k, i_thread)+1, self%cell_indx_array(k+1, i_thread)
-    !                 xi = self%logical_position(1,part_num,i_thread)
-    !                 eta = self%logical_position(2,part_num,i_thread)
-    !                 d_i = xi - real(i_cell)
-    !                 d_j = eta - real(j_cell)
-
-    !                 self%work_space(i_cell,j_cell, i_thread) = self%work_space(i_cell,j_cell, i_thread) + (1.0d0-d_i) * (1.0d0-d_j)
-    !                 self%work_space(i_cell+1,j_cell, i_thread) = self%work_space(i_cell+1,j_cell, i_thread) + (d_i) * (1.0d0-d_j)
-    !                 self%work_space(i_cell,j_cell+1, i_thread) = self%work_space(i_cell,j_cell+1, i_thread) + (1.0d0-d_i) * (d_j)
-    !                 self%work_space(i_cell+1,j_cell+1, i_thread) = self%work_space(i_cell+1,j_cell+1, i_thread) + (d_i) * (d_j)
-
-    !             end do
-    !         end do
-    !     end do
-    !     !$OMP end parallel
-
-    ! end subroutine interpolation_particle_to_nodes_sorted
-
-
-
-    ! subroutine particle_resort(self, world, i_thread)
-    !     ! sort particle by cell, with each cell going j = 1-> N_y-1, i = 1->N_x-1
-    !     ! make sort in place so no need to 
-    !     class(Particle), intent(in out) :: self
-    !     class(domain_uniform), intent(in) :: world
-    !     integer(int32), intent(in) :: i_thread
-    !     integer(int32) :: N_x_cell, N_y_cell, wall_i, wall_j, i_cell, j_cell
-    !     real(real64) :: inv_del_x, inv_del_y, del_t_i, del_t_j, v_part(2), loc_i, loc_j, v_eta, v_xi, v_z
-    !     integer(int64) :: part_num, cell_start_indx, cell_end_indx
-    !     logical :: delete_bool
-
-    !     inv_del_x = 1.0d0 / world%del_x
-    !     inv_del_y = 1.0d0 / world%del_y
-    !     do part_num = 1, self%number_particles_resort_thread(i_thread)
-    !         loc_i = self%logical_position_copy(1, part_num, i_thread)
-    !         loc_j = self%logical_position_copy(2, part_num, i_thread)
-    !         v_part = self%velocity_copy(3:4, part_num, i_thread)
-    !         v_z = self%velocity_copy(5, part_num, i_thread)
-        
-    !         delete_bool = .false.
-    !         if (loc_i > world%N_x) then
-    !             ! backtrack to wall position where it left
-    !             wall_i = world%N_x
-    !             del_t_i = (loc_i - real(wall_i, kind = 8))/v_xi
-
-    !             ! get boundary j indices for particle
-    !             wall_j = max(min(int(loc_j - v_eta * del_t_i), world%N_y-1), 1)
-    !             delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
-    !             if (.not. delete_bool) then
-    !                 if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i, wall_j+1) == 2) then
-    !                     ! Neumann boundary
-    !                     loc_i = 2.0d0 * real(wall_i, kind = 8) - loc_i
-    !                     v_xi = -v_xi
-    !                     v_part(1) = -v_part(1)
-    !                 else
-    !                     loc_i = loc_i - real(world%N_x, kind = 8) + 1.0d0
-    !                 end if
-    !             end if
-    !         else if (loc_i < 1) then
-    !             ! backtrack to wall position where it left
-    !             wall_i = 1
-    !             del_t_i = (loc_i - real(wall_i, kind = 8))/v_xi
-
-    !             ! get boundary j indices for particle
-    !             wall_j = max(min(int(loc_j - v_eta * del_t_i), world%N_y-1), 1)
-    !             delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
-    !             if (.not. delete_bool) then
-    !                 if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i, wall_j+1) == 2) then
-    !                     ! Neumann boundary
-    !                     loc_i = 2.0d0 - loc_i
-    !                     v_xi = -v_xi
-    !                     v_part(1) = -v_part(1)
-    !                 else
-    !                     loc_i = real(world%N_x, kind = 8) - 1.0d0 + loc_i
-    !                 end if
-    !             end if
-    !         end if
-
-
-    !         ! take care of any issue with particle outside eta boundary
-    !         ! it is possible for particle to be outside both x and y, so proceed if not deleted at left-right boundary
-    !         if (.not. delete_bool .and. loc_j > world%N_y) then
-    !             ! backtrack to wall position where it left
-    !             wall_j = world%N_y
-    !             del_t_j = (loc_j - real(wall_j, kind = 8))/v_eta
-
-    !             ! get boundary i indices for particle
-    !             wall_i = max(min(int(loc_i - v_xi * del_t_j), world%N_x-1), 1)
-    !             delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-    !             if (.not. delete_bool) then
-    !                 if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i+1, wall_j) == 2) then
-    !                     ! Neumann boundary
-    !                     loc_j = 2.0d0 * real(wall_j, kind = 8) - loc_j
-    !                     v_eta = -v_eta
-    !                     v_part(2) = -v_part(2)
-    !                 else
-    !                     loc_j = loc_j - real(world%N_y, kind = 8) + 1.0d0
-    !                 end if
-    !             end if
-    !         else if (.not. delete_bool .and. loc_j < 1) then
-    !             ! backtrack to wall position where it left
-    !             wall_j = 1
-    !             del_t_j = (loc_j - real(wall_j, kind = 8))/v_eta
-
-    !             ! get boundary i indices for particle
-    !             wall_i = max(min(int(loc_i - v_xi * del_t_j), world%N_x-1), 1)
-    !             delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-    !             if (.not. delete_bool) then
-    !                 if (world%boundary_conditions(wall_i, wall_j) == 2 .or. world%boundary_conditions(wall_i+1, wall_j) == 2) then
-    !                     ! Neumann boundary
-    !                     loc_j = 2.0d0- loc_j
-    !                     v_eta = -v_eta
-    !                     v_part(2) = -v_part(2)
-    !                 else
-    !                     loc_j = real(world%N_y, kind = 8) - 1.0d0 + loc_j
-    !                 end if
-    !             end if
-    !         end if
-
-    !         if (.not. delete_bool) then
-    !             ! particle pushed back into domain from boundary
-    !             wall_i = int(loc_i) + (1 - INT(SIGN(1.0d0, v_xi)))/2
-    !             wall_j = int(loc_j) + (1 - INT(SIGN(1.0d0, v_eta)))/2
-        
-    !             ! We'll assume that particle doesn't go across many cells, so likelihood of passing dirichlet boundary and ending up in cell surrounded by plasma nodes is low
-    !             ! corner node (wall_i, wall_j) needs to be dirichlet for particle to have chance of passing dirichlet wall
-    !             if (world%boundary_conditions(wall_i, wall_j) == 1) then
-    !                 ! Find time to each wall it could have passed through
-    !                 del_t_i = (loc_i - wall_i)/v_xi
-    !                 del_t_j = (loc_j - wall_j)/v_eta
-
-    !                 if (del_t_i < del_t_j) then
-    !                     ! hits along left-right wall, check other j-th index node
-    !                     wall_j = int(loc_j)
-    !                     delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i, wall_j+1) == 1
-    !                 else
-    !                     ! hits along up-down wall, check other i-th index node
-    !                     wall_i = int(loc_i)
-    !                     delete_bool = world%boundary_conditions(wall_i, wall_j) == 1 .and. world%boundary_conditions(wall_i+1, wall_j) == 1
-    !                 end if
-    !             end if
-
-    !             if (.not. delete_bool) then
-    !                 ! Place particle at the end of the cell array
-    !                 wall_i = int(loc_i)
-    !                 wall_j = int(loc_j)
-    !                 cell_start_indx = self%cell_starting_indx(wall_i, wall_j)
-    !                 self%logical_position(1, cell_start_indx + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_i
-    !                 self%logical_position(2, cell_start_indx + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = loc_j
-    !                 self%velocity(3:4, cell_start_indx + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_part
-    !                 self%velocity(5, cell_start_indx + self%number_particles_cell_thread(wall_i, wall_j, i_thread), i_thread) = v_z
-    !                 self%number_particles_cell_thread(wall_i, wall_j, i_thread) = self%number_particles_cell_thread(wall_i, wall_j, i_thread) + 1
-    !             end if
-    !         end if
-    !     end do
-    ! end subroutine particle_resort
-
-
-    ! subroutine initializeRandCosine(self, world, irand, alpha)
-    !     ! Use acceptance-rejection method to distribute particles
-    !     ! f(x) = 1 + alpha * Cos(2 pi x/L)
-    !     class(Particle), intent(in out) :: self
-    !     type(Domain), intent(in) :: world
-    !     real(real64), intent(in) :: alpha
-    !     integer(int32), intent(in out) :: irand(numThread)
-    !     integer(int32) :: iThread, i, randNum
-    !     real(real64) :: Rand1, Rand2, x_pos, val
-    !     !$OMP parallel private(iThread, i, randNum, Rand1, Rand2, x_pos, val)
-    !     iThread = omp_get_thread_num() + 1
-    !     randNum = irand(iThread)
-    !     do i = 1, self%N_p(iThread)
-    !         Rand1 = ran2(randNum)
-    !         Rand2 = ran2(randNum)
-    !         val = (1.0d0 + alpha * COS(2 * pi * Rand2))/(1.0d0 + alpha)
-    !         do while (Rand1 > val)
-    !             Rand1 = ran2(randNum)
-    !             Rand2 = ran2(randNum)
-    !             val = (1.0d0 + alpha * COS(2 * pi * Rand2))/(1.0d0 + alpha)
-    !         end do
-    !         x_pos = Rand2 * world%L_domain + world%startX
-    !         self%phaseSpace(1,i, iThread) = world%getLFromX(x_pos)
-    !     end do
-    !     irand(iThread) = randNum
-    !     !$OMP end parallel
-    ! end subroutine initializeRandCosine
-
-    ! subroutine initializeRandSine(self, world, irand, alpha)
-    !     ! Use acceptance-rejection method to distribute particles
-    !     ! f(x) = 1 + alpha * Sin(2 pi x/L)
-    !     class(Particle), intent(in out) :: self
-    !     type(Domain), intent(in) :: world
-    !     real(real64), intent(in) :: alpha
-    !     integer(int32), intent(in out) :: irand(numThread)
-    !     integer(int32) :: iThread, i, randNum
-    !     real(real64) :: Rand1, Rand2, x_pos, val
-    !     !$OMP parallel private(iThread, i, randNum, Rand1, Rand2, x_pos, val)
-    !     iThread = omp_get_thread_num() + 1
-    !     randNum = irand(iThread)
-    !     do i = 1, self%N_p(iThread)
-    !         Rand1 = ran2(randNum)
-    !         Rand2 = ran2(randNum)
-    !         val = (1.0d0 + alpha * SIN(2 * pi * Rand2))/(1.0d0 + alpha)
-    !         do while (Rand1 > val)
-    !             Rand1 = ran2(randNum)
-    !             Rand2 = ran2(randNum)
-    !             val = (1.0d0 + alpha * SIN(2 * pi * Rand2))/(1.0d0 + alpha)
-    !         end do
-    !         x_pos = Rand2 * world%L_domain + world%startX
-    !         self%phaseSpace(1,i, iThread) = world%getLFromX(x_pos)
-    !     end do
-    !     irand(iThread) = randNum
-    !     !$OMP end parallel
-    ! end subroutine initializeRandSine
-
-    ! ------------------------ Generating and initializing velocity with Maxwellian --------------------------
-
-
-    subroutine initialize_maxwellian_temperature(self, T)
+    subroutine initialize_maxwellian_temperature_cell(self, T)
         ! random velocity generator for the particle for temperature T (eV)
         ! Use box-muller method for random guassian variable
-        class(Particle), intent(in out) :: self
+        class(Particle_Per_Cell), intent(in out) :: self
         real(real64), intent(in) :: T
         integer(int32) :: iThread, i_cell, j_cell, N_x_cell, N_y_cell
         integer(int64) :: number_particles_cell, part_num
@@ -753,27 +423,36 @@ contains
             end do
         end do
         !$OMP END PARALLEL
-    end subroutine initialize_maxwellian_temperature
+    end subroutine initialize_maxwellian_temperature_cell
 
-    function getKEAve(self) result(res)
+    subroutine get_sum_totals_cell(self)
         ! calculate average kinetic energy (temperature) in eV
-        class(Particle), intent(in) :: self
-        integer(int32) :: i_thread, j_cell, i_cell, N_x_cell, N_y_cell
-        real(real64) :: res
+        class(Particle_Per_Cell), intent(in out) :: self
+        integer(int32) :: i_thread, i_cell, j_cell, N_x_cell, N_y_cell
+        integer(int64) :: part_num
+        real(real64) :: sum_v, sum_v_sqr, v(3)
+        sum_v = 0.0d0
+        sum_v_sqr = 0.0d0
+        
+        self%total_number_particles = SUM(self%number_particles_cell_thread)
         N_x_cell = size(self%cell_starting_indx, DIM = 1)
         N_y_cell = size(self%cell_starting_indx, DIM = 2)
-        res = 0.0d0
-        !$OMP parallel private(i_thread, j_cell, i_cell) reduction(+:res)
+        !$OMP parallel private(i_thread, j_cell, i_cell, part_num, v) reduction(+:sum_v, sum_v_sqr)
         i_thread = omp_get_thread_num() + 1
         do j_cell = 1, N_y_cell
             do i_cell = 1, N_x_cell
-                res = res + SUM(self%velocity(:, self%cell_starting_indx(i_cell, j_cell):self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread) - 1, i_thread)**2) 
+                do part_num = self%cell_starting_indx(i_cell, j_cell), self%cell_starting_indx(i_cell, j_cell) + self%number_particles_cell_thread(i_cell, j_cell, i_thread) - 1
+                    v = self%velocity(:, part_num, i_thread)
+                    sum_v = sum_v + v(1)
+                    sum_v_sqr = sum_v_sqr + sum(v**2)
+                end do
             end do
         end do
-        
         !$OMP end parallel
-        res = res * self % mass * 0.5d0 / e_charge / SUM(self%number_particles_cell_thread)
-    end function getKEAve
+        self%sum_v = sum_v
+        self%sum_v_sqr = sum_v_sqr
+    end subroutine get_sum_totals_cell
+
 
     ! subroutine resize_particle_arrays(particle_list)
     !     type(Particle), intent(in out) :: self

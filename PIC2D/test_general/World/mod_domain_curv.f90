@@ -20,6 +20,7 @@ module mod_domain_curv
         procedure, public, pass(self) :: get_eta_from_Y => get_eta_from_Y_curv
         procedure, public, pass(self) :: get_cell_del_x => get_cell_del_x_curv
         procedure, public, pass(self) :: get_cell_del_y => get_cell_del_y_curv
+        procedure, public, pass(self) :: get_number_cells => get_number_cells_curv
     end type
 
     interface domain_curv
@@ -63,6 +64,30 @@ contains
         end select
 
     end function constructor_domain_curv
+
+    subroutine get_number_cells_curv(self)
+        class(domain_curv), intent(in out) :: self
+        integer :: j, i
+        integer(int64) :: num
+        real(real64) :: area
+        num = 0
+        area = 0.0d0
+        !$OMP parallel private(j,i) reduction(+:num, area)
+        !$OMP do
+        do j = 1, self%N_y-1
+            do i = 1, self%N_x-1
+                if (self%boundary_conditions(i,j) == 0 .or. self%boundary_conditions(i+1,j) == 0 &
+                .or. self%boundary_conditions(i,j+1) == 0 .or. self%boundary_conditions(i+1,j+1) == 0) then
+                    num = num + 1
+                    area = area + self%del_x(i) * self%del_y(j)
+                end if
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+        self%number_total_cells = num
+        self%total_cell_area = area
+    end subroutine get_number_cells_curv
 
     subroutine generate_node_volume_curv(self)
         class(domain_curv), intent(in out) :: self

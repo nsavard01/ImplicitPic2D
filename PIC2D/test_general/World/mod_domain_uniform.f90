@@ -18,6 +18,7 @@ module mod_domain_uniform
         procedure, public, pass(self) :: get_eta_from_Y => get_eta_from_Y_uniform
         procedure, public, pass(self) :: get_cell_del_x => get_cell_del_x_uniform
         procedure, public, pass(self) :: get_cell_del_y => get_cell_del_y_uniform
+        procedure, public, pass(self) :: get_number_cells => get_number_cells_uniform
     end type
 
     interface domain_uniform
@@ -81,6 +82,27 @@ contains
         end do
 
     end function constructor_domain_uniform
+
+    subroutine get_number_cells_uniform(self)
+        class(domain_uniform), intent(in out) :: self
+        integer :: j, i
+        integer(int64) :: num
+        num = 0
+        !$OMP parallel private(j,i) reduction(+:num)
+        !$OMP do
+        do j = 1, self%N_y-1
+            do i = 1, self%N_x-1
+                if (self%boundary_conditions(i,j) == 0 .or. self%boundary_conditions(i+1,j) == 0 &
+                .or. self%boundary_conditions(i,j+1) == 0 .or. self%boundary_conditions(i+1,j+1) == 0) then
+                    num = num + 1
+                end if
+            end do
+        end do
+        !$OMP end do
+        !$OMP end parallel
+        self%number_total_cells = num
+        self%total_cell_area = real(self%number_total_cells, kind = 8) * self%del_x * self%del_y
+    end subroutine get_number_cells_uniform
     
     function get_xi_from_X_uniform(self, x) result(xi)
         ! get xi in computational space from x
