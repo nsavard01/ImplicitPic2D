@@ -1,6 +1,7 @@
 module mod_domain_base
     use iso_fortran_env, only: int32, int64, real64
     use omp_lib
+    use constants
     implicit none
 
     ! Base world type which will contain information about the world
@@ -13,10 +14,11 @@ module mod_domain_base
     type :: domain_base
         ! store grid quantities
         real(real64), allocatable :: grid_X(:), grid_Y(:) ! spatial location in grid
-        integer(int32), allocatable :: boundary_conditions(:,:) ! type of node in each direction 
+        integer(int32), allocatable :: boundary_conditions(:,:) ! type of node in each direction
+        integer(int64), allocatable :: omp_cell_thread_indices(:,:) 
         real(real64) :: start_X, end_X, start_Y, end_Y, total_cell_area ! start and end locations of grid as reference
         integer(int32) :: N_x, N_y, N_x_cells, N_y_cells ! amount of nodes in x and y direction
-        integer(int64) :: number_total_cells 
+        integer(int64) :: number_total_cells
     contains
         procedure, public, pass(self) :: get_xi_from_X
         procedure, public, pass(self) :: get_eta_from_Y
@@ -62,6 +64,7 @@ contains
         integer, intent(in) :: upperBound, rightBound, lowerBound, leftBound
         integer, intent(in out) :: inner_box_first_x, inner_box_last_x, inner_box_first_y, inner_box_last_y
         logical, intent(in) :: center_box_bool
+        integer(int64) :: k_cell, total_cells, spacing_thread, mod_thread, index
 
         self%boundary_conditions(2:self%N_x-1, self%N_y) = upperBound
         self%boundary_conditions(self%N_x, 2:self%N_y-1) = rightBound
@@ -92,6 +95,25 @@ contains
             !$OMP end workshare
             !$OMP end parallel
         end if
+
+        allocate(self%omp_cell_thread_indices(2,number_threads_global))
+        total_cells = (self%N_x-1) * (self%N_y-1)
+        spacing_thread = total_cells/number_threads_global - 1
+        mod_thread = MOD(total_cells, number_threads_global)
+      
+        k_cell = 1
+        do index = 1, number_threads_global
+            self%omp_cell_thread_indices(1, index) = k_cell
+            if (index <= mod_thread) then
+                k_cell = k_cell + spacing_thread + 1
+            else
+                k_cell = k_cell + spacing_thread
+            end if
+            self%omp_cell_thread_indices(2, index) = k_cell
+            k_cell = k_cell + 1
+        end do
+        
+
     end subroutine form_boundary_conditions
 
     subroutine generate_node_volume(self)

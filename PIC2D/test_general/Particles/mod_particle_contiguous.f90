@@ -11,13 +11,12 @@ module mod_particle_contiguous
     use mod_particle
     implicit none
 
-   
+    integer(int64), allocatable :: cell_indx_array(:,:,:)
+    integer(int32), allocatable ::  cell_count(:,:,:)
 
     ! Particle contains particle properties and stored values in phase space
     type, extends(Particle) :: Particle_Contiguous
         integer(int64), allocatable :: number_particles_thread(:)
-        integer(int64), allocatable :: cell_indx_array(:,:,:)
-        integer(int32), allocatable ::  cell_count(:,:,:)
         logical :: count_bool
 
     contains
@@ -44,8 +43,11 @@ contains
         class(domain_base), intent(in) :: world
         character(*), intent(in) :: particleName
         call self%initialize_base_variables(mass, q, w_p, N_p, finalIdx, particleName, world%N_x, world%N_y)
-        allocate(self%number_particles_thread(number_threads_global), self%cell_count(world%N_x-1, world%N_y-1, number_threads_global), &
-            self%cell_indx_array(world%N_x-1, world%N_y-1, number_threads_global))
+        allocate(self%number_particles_thread(number_threads_global))
+        if (.not. allocated(cell_count)) then
+            allocate(cell_count(world%N_x-1, world%N_y-1, number_threads_global), &
+            cell_indx_array(world%N_x-1, world%N_y-1, number_threads_global))
+        end if
         self%count_bool = .false.
         self%number_particles_thread = self%total_number_particles/number_threads_global
        
@@ -81,7 +83,7 @@ contains
                 else
                     number_cell = 0
                 end if
-                self%cell_count(int_xi, int_eta, i_thread) = number_cell
+                cell_count(int_xi, int_eta, i_thread) = number_cell
                 do part_num = 1, number_cell
                     idx_num = idx_num + 1
                     self%logical_position(1, idx_num, i_thread) = pcg32_random_r(state_PCG) + real(int_xi, kind = 8)
@@ -121,23 +123,25 @@ contains
 
 
 
-    subroutine particle_sort(self, i_thread, N_x_cell, N_y_cell)
+    subroutine particle_sort(self, i_thread, world)
         ! sort particle by cell, with each cell going j = 1-> N_y-1, i = 1->N_x-1
         ! make sort in place so no need to 
         class(Particle_Contiguous), intent(in out) :: self
-        integer(int32), intent(in) :: N_x_cell, N_y_cell
+        class(domain_base), intent(in) :: world
+        integer(int32), intent(in) :: i_thread
         integer(int64) :: part_num, cell_end_indx
-        integer(int32) :: i_thread, eta, xi, i_cell, j_cell, cell_count
+        integer(int32) :: eta, xi, i_cell, j_cell, count, N_x_cell, N_y_cell
         real(real64) :: pos_curr(2), v_curr(3), pos_other(2), v_other(3)
-
-        
+ 
+        N_y_cell = world%N_y-1
+        N_x_cell = world%N_x-1
 
         ! get final cell index of each bin
         part_num = 0
         do j_cell = 1, N_y_cell
             do i_cell = 1, N_x_cell
-                part_num = part_num + self%cell_count(i_cell, j_cell,i_thread)
-                self%cell_indx_array(i_cell, j_cell, i_thread) = part_num
+                part_num = part_num + cell_count(i_cell, j_cell,i_thread)
+                cell_indx_array(i_cell, j_cell, i_thread) = part_num
                 ! wraps around so can use i_cell -1 even when i_cell = 0
             end do
         end do
@@ -145,21 +149,21 @@ contains
         ! order particles in place for each cell
         do j_cell = N_y_cell, 1, -1
             do i_cell = N_x_cell, 1, -1
-                cell_end_indx = self%cell_indx_array(i_cell, j_cell, i_thread)
-                cell_count = self%cell_count(i_cell, j_cell, i_thread)
-                do part_num = cell_end_indx, cell_end_indx-cell_count+1, -1
+                cell_end_indx = cell_indx_array(i_cell, j_cell, i_thread)
+                count = cell_count(i_cell, j_cell, i_thread)
+                do part_num = cell_end_indx, cell_end_indx-count+1, -1
                     pos_curr = self%logical_position(:,part_num, i_thread)
                     v_curr = self%velocity(:,part_num, i_thread)
                     xi = int(pos_curr(1))
                     eta = int(pos_curr(2))
                     do while (xi /= i_cell .or. eta /= j_cell)
-                        pos_other = self%logical_position(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
-                        v_other = self%velocity(:,self%cell_indx_array(xi, eta,i_thread), i_thread)
+                        pos_other = self%logical_position(:,cell_indx_array(xi, eta,i_thread), i_thread)
+                        v_other = self%velocity(:,cell_indx_array(xi, eta,i_thread), i_thread)
                         ! put last index in current place and then reduce that section by 1
-                        self%logical_position(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = pos_curr
-                        self%velocity(:,self%cell_indx_array(xi,eta,i_thread), i_thread) = v_curr
-                        self%cell_indx_array(xi,eta,i_thread) = self%cell_indx_array(xi,eta,i_thread)-1
-                        self%cell_count(xi,eta, i_thread) = self%cell_count(xi,eta,i_thread) - 1
+                        self%logical_position(:,cell_indx_array(xi,eta,i_thread), i_thread) = pos_curr
+                        self%velocity(:,cell_indx_array(xi,eta,i_thread), i_thread) = v_curr
+                        cell_indx_array(xi,eta,i_thread) = cell_indx_array(xi,eta,i_thread)-1
+                        cell_count(xi,eta, i_thread) = cell_count(xi,eta,i_thread) - 1
                         pos_curr = pos_other
                         v_curr = v_other
                         xi = int(pos_curr(1))
@@ -168,8 +172,8 @@ contains
                     self%logical_position(:,part_num, i_thread) = pos_curr
                     self%velocity(:, part_num, i_thread) = v_curr
                 end do
-                self%cell_count(i_cell, j_cell, i_thread) = 0
-                self%cell_indx_array(i_cell, j_cell, i_thread) = cell_end_indx-cell_count+1
+                cell_count(i_cell, j_cell, i_thread) = 0
+                cell_indx_array(i_cell, j_cell, i_thread) = cell_end_indx-count+1
             end do
         end do
         
@@ -193,7 +197,7 @@ contains
         inv_del_x = 1.0d0/world%del_x
         inv_del_y = 1.0d0/world%del_y
         delete_idx = 0
-        if (self%count_bool) self%cell_count(:,:,i_thread) = 0
+        if (self%count_bool) cell_count(:,:,i_thread) = 0
         number_particles = self%number_particles_thread(i_thread)
         do part_num = 1, number_particles
             !get particle location and velocity in 2D
@@ -346,7 +350,7 @@ contains
                 self%logical_position(2, part_num - delete_idx, i_thread) = loc_j_new
                 self%velocity(1:2, part_num - delete_idx, i_thread) = v_part
                 self%velocity(3, part_num - delete_idx, i_thread) = self%velocity(3, part_num, i_thread)
-                if (self%count_bool) self%cell_count(int(loc_i_new), int(loc_j_new), i_thread) = self%cell_count(int(loc_i_new), int(loc_j_new), i_thread) + 1
+                if (self%count_bool) cell_count(int(loc_i_new), int(loc_j_new), i_thread) = cell_count(int(loc_i_new), int(loc_j_new), i_thread) + 1
             else
                 delete_idx = delete_idx + 1
             end if
@@ -356,7 +360,7 @@ contains
         end do
         self%number_particles_thread(i_thread) = number_particles - delete_idx
 
-        if (self%count_bool) call self%particle_sort(i_thread, world%N_x-1, world%N_y-1)
+        if (self%count_bool) call self%particle_sort(i_thread, world)
 
     end subroutine particle_mover_uniform_contiguous
 
@@ -389,9 +393,9 @@ contains
         class(Particle_Contiguous), intent(in out) :: self
         integer(int32) :: i_thread
         real(real64) :: sum_v, sum_v_sqr
+
         sum_v = 0.0d0
         sum_v_sqr = 0.0d0
-        
         self%total_number_particles = SUM(self%number_particles_thread)
     
         !$OMP parallel private(i_thread) reduction(+:sum_v, sum_v_sqr)

@@ -21,7 +21,7 @@ mod_GS_Base_Even.o mod_GS_Base.o mod_CSRMAtrix.o mod_pardisoSolver.o
 solver_obj_list = $(addprefix $(solver_dir), $(OBJ_solver))
 
 particle_dir = Particles/
-OBJ_particle = mod_particle_per_cell.o mod_particle_contiguous.o mod_particle.o
+OBJ_particle = mod_particle_contiguous_decomp.o mod_particle_per_cell.o mod_particle_contiguous.o mod_particle.o
 particle_obj_list = $(addprefix $(particle_dir), $(OBJ_particle))
 
 total_obj_list = $(solver_obj_list) $(particle_obj_list) $(world_obj_list) $(rand_obj_list) $(constants_obj_list)
@@ -31,7 +31,7 @@ include_dir = $(addprefix -I,  $(total_dir_list))
 
 RM = rm -f
 
-all: $(total_obj_list) main
+all: main
 
 debug: clean setDebug main
 
@@ -42,22 +42,22 @@ setDebug:
 main: main.o 
 	$(FC) $(BASE) -o $@ main.o $(total_obj_list)
 
-main.o: main.f90 $(constants_obj_list) $(rand_obj_list) $(world_obj_list) $(particle_obj_list) $(solver_obj_list)
+main.o: main.f90 solver particle world random constants
 	$(FC) $(BASE) $(include_dir) -c  -o $@ $<
 
-$(solver_obj_list): $(constants_obj_list) $(rand_obj_list) $(world_obj_list)
+solver: world random constants
 	cd $(solver_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-$(particle_obj_list): $(constants_obj_list) $(rand_obj_list) $(world_obj_list)
+particle: world random constants
 	cd $(particle_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-$(world_obj_list):
+world: random constants
 	cd $(world_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-$(rand_obj_list): 
+random: 
 	cd $(rand_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
-$(constants_obj_list): 
+constants:
 	cd $(constants_dir); $(MAKE) "FC=$(FC)" "BASE=$(BASE)" "include_dir=$(addprefix -I../, $(total_dir_list))"
 
 clean:
