@@ -47,8 +47,8 @@ program main
     evenGridBool = .true.
     redBlackBool = .true.
     Krylov_bool = .false.
-    center_box_bool = .false.
-    particle_type = 2
+    center_box_bool = .true.
+    particle_type = 0
     curv_grid_type_x = 0
     curv_grid_type_y = 0
     
@@ -69,16 +69,16 @@ program main
     n_ave = 1.d16
     rho = e_charge * n_ave
 
-    NESW_wallBoundaries(1) = 2 ! North
+    NESW_wallBoundaries(1) = 1 ! North
     NESW_wallBoundaries(2) = 1 ! East
-    NESW_wallBoundaries(3) = 2 ! South
+    NESW_wallBoundaries(3) = 1 ! South
     NESW_wallBoundaries(4) = 1 ! West
 
     NESW_phiValues(1) = 0.0d0
     NESW_phiValues(2) = 0.0d0
     NESW_phiValues(3) = 0.0d0
     NESW_phiValues(4) = 0.0d0
-    innerPhi = 0.0d0
+    innerPhi = 5.0d0
     
     
     upperPhi = NESW_phiValues(1)
@@ -163,11 +163,11 @@ program main
 
     select type (p => particle_list(1))
     type is (Particle_Contiguous)
-        p = Particle_Contiguous(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world)
+        p = Particle_Contiguous(mass_electron, -e_charge, 1.0d0, num_part_total, 3*num_part_total, 'e', world)
     type is (Particle_Per_Cell)
-        p = Particle_Per_Cell(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world)
+        p = Particle_Per_Cell(mass_electron, -e_charge, 1.0d0, num_part_total, 3*num_part_total, 'e', world)
     type is (Particle_Contiguous_Decomp)
-        p = Particle_Contiguous_Decomp(mass_electron, -e_charge, 1.0d0, num_part_total, 2*num_part_total, 'e', world)
+        p = Particle_Contiguous_Decomp(mass_electron, -e_charge, 1.0d0, num_part_total, 3*num_part_total, 'e', world)
     end select
     call particle_list(1)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(1)%initialize_rand_uniform(world)
@@ -176,11 +176,11 @@ program main
 
     select type (p => particle_list(2))
     type is (Particle_Contiguous)
-        p = Particle_Contiguous(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world)
+        p = Particle_Contiguous(mass_proton, e_charge, 1.0d0, num_part_total, 3*num_part_total, 'H+', world)
     type is (Particle_Per_Cell)
-        p = Particle_Per_Cell(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world)
+        p = Particle_Per_Cell(mass_proton, e_charge, 1.0d0, num_part_total, 3*num_part_total, 'H+', world)
     type is (Particle_Contiguous_Decomp)
-        p = Particle_Contiguous_Decomp(mass_proton, e_charge, 1.0d0, num_part_total, 2*num_part_total, 'H+', world)
+        p = Particle_Contiguous_Decomp(mass_proton, e_charge, 1.0d0, num_part_total, 3*num_part_total, 'H+', world)
     end select
     call particle_list(2)%initialize_weight_from_n_ave(n_ave, world)
     call particle_list(2)%initialize_rand_uniform(world)

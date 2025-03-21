@@ -122,7 +122,22 @@ contains
             end do
         end do
 
+        ! do int_eta = 1, world%N_y-1
+        !     do int_xi = 1, world%N_x-1
+        !         do part_num = self%cell_starting_indx(int_xi, int_eta), self%cell_starting_indx(int_xi, int_eta) + self%number_particles_cell_thread(int_xi, int_eta, i_thread) - 1
+        !             last_xi = int(self%logical_position(1, part_num, i_thread))
+        !             last_eta = int(self%logical_position(2, part_num, i_thread))
+        !             if (last_xi /= int_xi .or. last_eta /= int_eta) then
+        !                 print *, 'issue'
+        !                 stop
+        !             end if
+        !         end do
+        !     end do
+        ! end do
+        
+
         !$OMP end parallel
+     
     end subroutine initialize_rand_uniform_cell
 
     subroutine interpolation_particle_to_nodes_cell(self, i_thread, const)
